@@ -1,5 +1,6 @@
 """Deliverable g: the API exposes a liveness probe and nothing else."""
 
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -27,3 +28,7 @@ def test_module_level_app_serves_healthz() -> None:
 
 def test_unknown_path_is_404() -> None:
     assert TestClient(create_app()).get("/nope").status_code == 404
+
+
+def test_test_client_runs_on_httpx2() -> None:
+    assert issubclass(TestClient, httpx2.Client)

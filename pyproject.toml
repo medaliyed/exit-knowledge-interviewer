@@ -12,7 +12,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx==0.28.1",
+    "httpx2==2.16.0",
     "mypy==2.4.1",
     "pytest==9.2.0",
     "ruff==0.17.4",
@@ -51,8 +51,3 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = ["infra: needs the docker compose stack running"]
 addopts = "-m 'not infra'"
-filterwarnings = [
-    # Starlette's test client now prefers httpx2 over httpx. httpx is the approved dev
-    # dependency; switching is a decision for a human (see docs/plans/phase-0.md, D1).
-    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
-]
