@@ -51,3 +51,8 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = ["infra: needs the docker compose stack running"]
 addopts = "-m 'not infra'"
+filterwarnings = [
+    # Starlette's test client now prefers httpx2 over httpx. httpx is the approved dev
+    # dependency; switching is a decision for a human (see docs/plans/phase-0.md, D1).
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
