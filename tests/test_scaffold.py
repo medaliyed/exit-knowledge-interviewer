@@ -37,3 +37,8 @@ def test_every_dependency_is_pinned() -> None:
 
 def test_python_is_3_12() -> None:
     assert sys.version_info[:2] == (3, 12)
+
+
+@pytest.mark.parametrize("module", ["mcp", "mcp.server", "psycopg"])
+def test_phase_1_dependencies_import(module: str) -> None:
+    importlib.import_module(module)

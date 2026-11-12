@@ -559,7 +559,7 @@ def plant_t1(rng: random.Random, corpus: Corpus) -> None:
             title="Customer asks for a higher burst limit on the partner tier",
             priority="P3",
             reporter=JOON_HO,
-            assignee=PRIYA,
+            assignee=EXPERT,
             created_at=created,
             resolved_at=created + minutes(300),
             description="Request forwarded from the partner support queue.",
@@ -567,7 +567,7 @@ def plant_t1(rng: random.Random, corpus: Corpus) -> None:
                 Comment(
                     JOON_HO, created + minutes(5), f"Customer message, pasted as received: {pasted}"
                 ),
-                Comment(PRIYA, created + minutes(280), "Raised the limit per the rollout page."),
+                Comment(EXPERT, created + minutes(280), "Raised the limit per the rollout page."),
             ],
             labels=["gateway", "partner"],
             plants={"T1"},
@@ -602,7 +602,7 @@ def plant_t3(rng: random.Random, corpus: Corpus) -> None:
         Commit(
             sha=new_sha(rng),
             repo="gateway",
-            author=JOON_HO,
+            author=EXPERT,
             authored_at=moment(rng, 6),
             message="chore(config): add staging upstream for the partner sandbox",
             files=[ChangedFile("config/staging.yaml", 4, 0)],
