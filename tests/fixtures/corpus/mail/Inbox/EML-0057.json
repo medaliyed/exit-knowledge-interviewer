@@ -1,0 +1,14 @@
+{
+  "body": "Is the new gateway alert threshold intended?\n\nJoon-ho",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "joon-ho.marchetti@example.com",
+  "id": "EML-0057",
+  "sensitivity": "normal",
+  "sent_at": "2026-05-22T18:08:00Z",
+  "subject": "Question about a gateway alert",
+  "thread_id": "THR-0055",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

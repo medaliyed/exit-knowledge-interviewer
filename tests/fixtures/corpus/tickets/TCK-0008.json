@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-01-26T23:54:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2025-01-27T11:03:00Z",
+      "author": "Ines Okafor",
+      "body": "Rolled the change back and re-applied it after review."
+    },
+    {
+      "at": "2025-01-27T16:32:00Z",
+      "author": "Ines Okafor",
+      "body": "Config had drifted between pools; aligned them."
+    }
+  ],
+  "created_at": "2025-01-26T18:30:00Z",
+  "description": "Raised by Ines Okafor for gateway. Details in the comments.",
+  "id": "TCK-0008",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P2",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2025-01-27T18:39:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Add a request-id header to upstream calls",
+  "type": "request"
+}

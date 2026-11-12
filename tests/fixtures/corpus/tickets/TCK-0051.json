@@ -1,0 +1,28 @@
+{
+  "assignee": "Tomasz Brandl",
+  "comments": [
+    {
+      "at": "2025-11-06T17:20:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Rolled the change back and re-applied it after review."
+    },
+    {
+      "at": "2025-11-07T05:31:00Z",
+      "author": "Tomasz Brandl",
+      "body": "No recurrence in a week, closing."
+    }
+  ],
+  "created_at": "2025-11-06T12:32:00Z",
+  "description": "Raised by Priya Lindqvist for ledger-db. Details in the comments.",
+  "id": "TCK-0051",
+  "labels": [
+    "ledger-db"
+  ],
+  "priority": "P4",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2025-11-07T07:59:00Z",
+  "status": "closed",
+  "system": "ledger-db",
+  "title": "Add an index for the period lookup",
+  "type": "incident"
+}

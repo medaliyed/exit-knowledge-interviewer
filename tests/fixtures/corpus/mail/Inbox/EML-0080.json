@@ -1,0 +1,14 @@
+{
+  "body": "Nothing open on report-export. Quiet week.\n\nTomasz",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "tomasz.brandl@example.com",
+  "id": "EML-0080",
+  "sensitivity": "normal",
+  "sent_at": "2026-10-29T12:45:00Z",
+  "subject": "Handover for the report-export on-call week",
+  "thread_id": "THR-0078",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

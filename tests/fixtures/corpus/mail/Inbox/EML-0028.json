@@ -1,0 +1,14 @@
+{
+  "body": "Nadia,\n\nAudit asked why ledger-db is missing from the standard 02:00 backup job. Is that deliberate?\n\nInes",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "ines.okafor@example.com",
+  "id": "EML-0028",
+  "sensitivity": "normal",
+  "sent_at": "2025-07-14T09:30:00Z",
+  "subject": "ledger-db backups",
+  "thread_id": "THR-0028",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

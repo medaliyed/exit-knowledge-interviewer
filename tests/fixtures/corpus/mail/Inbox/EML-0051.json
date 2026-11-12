@@ -1,0 +1,14 @@
+{
+  "body": "Notes from the billing-batch review are in the shared folder.\n\nInes",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "ines.okafor@example.com",
+  "id": "EML-0051",
+  "sensitivity": "normal",
+  "sent_at": "2026-03-19T16:34:00Z",
+  "subject": "Post-incident notes for billing-batch",
+  "thread_id": "THR-0049",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

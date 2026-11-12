@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-08-20T22:50:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2026-08-21T07:10:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Rolled the change back and re-applied it after review."
+    },
+    {
+      "at": "2026-08-21T10:57:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Added a dashboard panel for this."
+    }
+  ],
+  "created_at": "2026-08-20T15:28:00Z",
+  "description": "Raised by Joon-ho Marchetti for gateway. Details in the comments.",
+  "id": "TCK-0111",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-08-21T13:10:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Add a request-id header to upstream calls",
+  "type": "request"
+}

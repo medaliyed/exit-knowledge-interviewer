@@ -1,0 +1,14 @@
+{
+  "body": "Notes from the gateway review are in the shared folder.\n\nJoon-ho",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "joon-ho.marchetti@example.com",
+  "id": "EML-0060",
+  "sensitivity": "normal",
+  "sent_at": "2026-07-02T09:18:00Z",
+  "subject": "Post-incident notes for gateway",
+  "thread_id": "THR-0058",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

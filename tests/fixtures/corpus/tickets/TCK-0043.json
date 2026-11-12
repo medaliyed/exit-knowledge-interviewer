@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-09-25T14:52:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Fix deployed, watching it for a day."
+    },
+    {
+      "at": "2025-09-26T01:36:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-09-26T09:58:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Reproduced on staging."
+    }
+  ],
+  "created_at": "2025-09-25T13:59:00Z",
+  "description": "Raised by Tomasz Brandl for billing-batch. Details in the comments.",
+  "id": "TCK-0043",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2025-09-26T11:21:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Batch worker pod evicted during the run",
+  "type": "incident"
+}

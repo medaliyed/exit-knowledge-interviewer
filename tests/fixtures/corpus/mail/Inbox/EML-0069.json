@@ -1,0 +1,14 @@
+{
+  "body": "Your appointment is confirmed for Tuesday at 09:15.",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "occupational-health@example.com",
+  "id": "EML-0069",
+  "sensitivity": "private",
+  "sent_at": "2026-08-14T12:35:00Z",
+  "subject": "Private: appointment confirmation",
+  "thread_id": "THR-0067",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

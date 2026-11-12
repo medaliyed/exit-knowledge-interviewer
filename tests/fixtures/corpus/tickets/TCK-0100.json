@@ -1,0 +1,33 @@
+{
+  "assignee": "Tomasz Brandl",
+  "comments": [
+    {
+      "at": "2026-06-14T03:54:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2026-06-14T15:26:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    },
+    {
+      "at": "2026-06-14T16:49:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Rolled the change back and re-applied it after review."
+    }
+  ],
+  "created_at": "2026-06-13T15:47:00Z",
+  "description": "Raised by Joon-ho Marchetti for gateway. Details in the comments.",
+  "id": "TCK-0100",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-06-14T20:28:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Dashboard shows a wrong p99 for the admin API",
+  "type": "incident"
+}

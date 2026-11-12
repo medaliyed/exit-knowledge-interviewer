@@ -1,0 +1,33 @@
+{
+  "assignee": "Joon-ho Marchetti",
+  "comments": [
+    {
+      "at": "2025-07-18T05:34:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-07-18T18:31:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2025-07-19T01:52:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Config had drifted between pools; aligned them."
+    }
+  ],
+  "created_at": "2025-07-17T18:57:00Z",
+  "description": "Raised by Priya Lindqvist for billing-batch. Details in the comments.",
+  "id": "TCK-0032",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P2",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2025-07-19T04:47:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Upgrade the batch base image",
+  "type": "incident"
+}

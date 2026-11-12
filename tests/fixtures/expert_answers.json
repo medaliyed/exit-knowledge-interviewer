@@ -1,0 +1,113 @@
+{
+  "answers": {
+    "G1": {
+      "follow_ups": {
+        "steps": "Replicas first, always, then the workers. The ticket note that says workers first is wrong."
+      },
+      "freeform": null,
+      "initial": {
+        "contacts": "Platform on-call. Finance only if the run finishes after 06:00 UTC.",
+        "diagnosis": "Check the worker log for the stale snapshot line and replica lag.",
+        "pitfalls": "Re-running without the restart fails the same way and wastes an hour.",
+        "rationale": "The batch reads from the replicas, and after a failed run they keep serving the stale snapshot until they are restarted.",
+        "rollback": "Nothing to roll back; the failed run posts nothing.",
+        "steps": "Restart the ledger-db replicas, wait for them to catch up, re-run the batch.",
+        "trigger": "billing-batch aborts in the posting phase with 'ledger snapshot stale'."
+      }
+    },
+    "G2": {
+      "follow_ups": {},
+      "freeform": null,
+      "initial": {
+        "contacts": "Finance operations for content, the regulator liaison for deadlines.",
+        "diagnosis": "Look at the export job log and the row counts per sheet.",
+        "pitfalls": "Column order is contractual; never reorder columns.",
+        "rationale": "Nobody else picked it up, so the knowledge stayed with me.",
+        "rollback": "Re-publish the previous period's file from the archive bucket.",
+        "steps": "Fix forward in the writer, run the export for the period by hand, compare counts.",
+        "trigger": "Finance or the regulator needs an export, or the nightly export fails."
+      }
+    },
+    "G3": {
+      "follow_ups": {
+        "rollback": "Restore the reconciliation table from the pre-run export; the job is idempotent."
+      },
+      "freeform": null,
+      "initial": {
+        "contacts": "Finance operations, who report it and confirm the totals.",
+        "diagnosis": "Compare the last posting sequence number on both sides.",
+        "pitfalls": "Run it before the period is closed, or it needs a reopen.",
+        "rationale": "Postings made in the last minutes of the month land after the cut-off.",
+        "rollback": null,
+        "steps": "Re-run the reconciliation job with the replay flag for the last day of the month.",
+        "trigger": "Month-end totals differ between billing-batch and ledger-db."
+      }
+    },
+    "G4": {
+      "follow_ups": {},
+      "freeform": null,
+      "initial": {
+        "contacts": "Marek Dolan at the certificate vendor.",
+        "diagnosis": "Check the expiry date and the vendor's pinned fingerprint list.",
+        "pitfalls": "Renewing before the vendor confirms breaks partner traffic.",
+        "rationale": "The vendor pins our certificate and has to add the new fingerprint first.",
+        "rollback": "Re-install the previous certificate while it is still valid.",
+        "steps": "Mail the vendor a week ahead, wait for confirmation, then renew and roll.",
+        "trigger": "A gateway certificate renewal is planned."
+      }
+    },
+    "G5": {
+      "follow_ups": {},
+      "freeform": null,
+      "initial": {
+        "contacts": "Finance operations own the fiscal calendar.",
+        "diagnosis": "Check whether the change touches the period table.",
+        "pitfalls": "It only fails once a year, at the fourth-quarter close.",
+        "rationale": "The fourth quarter has a 53rd week in some years and a plain rollover skips it.",
+        "rollback": "Revert the change before the next quarter close.",
+        "steps": "Keep the special-cased period table; test with the fourth-quarter fixtures.",
+        "trigger": "Someone changes the fiscal period rollover in the posting job."
+      }
+    },
+    "G6": {
+      "follow_ups": {},
+      "freeform": null,
+      "initial": {
+        "contacts": "Platform on-call and the storage team.",
+        "diagnosis": "List replication slots on the old primary before promoting.",
+        "pitfalls": "With the slot left in place the old primary fills its disk with retained log.",
+        "rationale": "The slot pins write-ahead log that nothing will ever consume again.",
+        "rollback": "Recreate the slot when the old primary rejoins as a replica.",
+        "steps": "Drop the stale replication slot on the old primary, then follow the failover page.",
+        "trigger": "A ledger-db failover is needed."
+      }
+    },
+    "G7": {
+      "follow_ups": {},
+      "freeform": "I don't remember",
+      "initial": {
+        "contacts": null,
+        "diagnosis": null,
+        "pitfalls": null,
+        "rationale": null,
+        "rollback": null,
+        "steps": null,
+        "trigger": null
+      }
+    },
+    "G8": {
+      "follow_ups": {},
+      "freeform": null,
+      "initial": {
+        "contacts": "Engineering manager and audit.",
+        "diagnosis": "Check the separate snapshot job on replica-2.",
+        "pitfalls": "Adding it back to the 02:00 job stalls postings.",
+        "rationale": "The standard snapshot lock overlaps the settlement window.",
+        "rollback": "Add it back only if the settlement window moves.",
+        "steps": "Leave it out of the standard job; keep the 05:30 snapshot from replica-2.",
+        "trigger": "Someone asks why ledger-db is not in the standard backup job."
+      }
+    }
+  },
+  "expert": "Nadia Ferrand"
+}

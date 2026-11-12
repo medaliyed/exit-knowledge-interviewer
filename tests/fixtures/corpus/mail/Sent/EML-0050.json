@@ -1,0 +1,14 @@
+{
+  "body": "Is the new report-export alert threshold intended?\n\nNadia",
+  "cc": [],
+  "folder": "Sent",
+  "from": "nadia.ferrand@example.com",
+  "id": "EML-0050",
+  "sensitivity": "normal",
+  "sent_at": "2026-03-19T11:36:00Z",
+  "subject": "Question about a report-export alert",
+  "thread_id": "THR-0048",
+  "to": [
+    "tomasz.brandl@example.com"
+  ]
+}

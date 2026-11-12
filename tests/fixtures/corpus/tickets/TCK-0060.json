@@ -1,0 +1,28 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-12-14T18:21:00Z",
+      "author": "Ines Okafor",
+      "body": "Fix deployed, watching it for a day."
+    },
+    {
+      "at": "2025-12-15T01:23:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    }
+  ],
+  "created_at": "2025-12-14T11:25:00Z",
+  "description": "Raised by Ines Okafor for gateway. Details in the comments.",
+  "id": "TCK-0060",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2025-12-15T02:04:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Tighten the idle timeout for partner routes",
+  "type": "incident"
+}

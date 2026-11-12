@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-12-17T07:52:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-12-17T13:14:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-12-17T23:40:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    }
+  ],
+  "created_at": "2025-12-16T18:30:00Z",
+  "description": "Raised by Joon-ho Marchetti for report-export. Details in the comments.",
+  "id": "TCK-0061",
+  "labels": [
+    "report-export"
+  ],
+  "priority": "P2",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2025-12-18T02:22:00Z",
+  "status": "closed",
+  "system": "report-export",
+  "title": "Regulator export arrived late",
+  "type": "task"
+}

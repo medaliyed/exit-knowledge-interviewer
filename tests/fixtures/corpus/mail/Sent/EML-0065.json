@@ -1,0 +1,14 @@
+{
+  "body": "Can we go through the gateway capacity numbers on Thursday?\n\nNadia",
+  "cc": [],
+  "folder": "Sent",
+  "from": "nadia.ferrand@example.com",
+  "id": "EML-0065",
+  "sensitivity": "normal",
+  "sent_at": "2026-07-14T12:11:00Z",
+  "subject": "Capacity review for gateway",
+  "thread_id": "THR-0063",
+  "to": [
+    "ines.okafor@example.com"
+  ]
+}

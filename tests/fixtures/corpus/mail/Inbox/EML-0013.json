@@ -1,0 +1,14 @@
+{
+  "body": "Notes from the report-export review are in the shared folder.\n\nPriya",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "priya.lindqvist@example.com",
+  "id": "EML-0013",
+  "sensitivity": "normal",
+  "sent_at": "2025-03-15T13:36:00Z",
+  "subject": "Post-incident notes for report-export",
+  "thread_id": "THR-0013",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

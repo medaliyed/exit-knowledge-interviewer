@@ -1,0 +1,14 @@
+{
+  "body": "Shall we split the present?",
+  "cc": [],
+  "folder": "Personal",
+  "from": "jules.ferrand@example.com",
+  "id": "EML-0052",
+  "sensitivity": "personal",
+  "sent_at": "2026-04-13T08:27:00Z",
+  "subject": "Mum's birthday",
+  "thread_id": "THR-0050",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-03-17T23:18:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Reproduced on staging."
+    },
+    {
+      "at": "2026-03-18T00:28:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2026-03-18T09:12:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    }
+  ],
+  "created_at": "2026-03-17T18:45:00Z",
+  "description": "Raised by Ines Okafor for billing-batch. Details in the comments.",
+  "id": "TCK-0080",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2026-03-18T10:18:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Add a retry metric to the settlement step",
+  "type": "request"
+}

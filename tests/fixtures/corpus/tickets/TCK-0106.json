@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-07-30T23:04:00Z",
+      "author": "Ines Okafor",
+      "body": "Fix deployed, watching it for a day."
+    },
+    {
+      "at": "2026-07-31T13:48:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2026-07-31T20:36:00Z",
+      "author": "Ines Okafor",
+      "body": "No recurrence in a week, closing."
+    }
+  ],
+  "created_at": "2026-07-30T13:01:00Z",
+  "description": "Raised by Ines Okafor for gateway. Details in the comments.",
+  "id": "TCK-0106",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2026-07-31T23:59:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Access log sampling is too aggressive",
+  "type": "task"
+}

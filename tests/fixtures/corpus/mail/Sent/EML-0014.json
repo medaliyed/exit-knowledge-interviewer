@@ -1,0 +1,14 @@
+{
+  "body": "The gateway window is confirmed for Sunday 06:00 UTC.\n\nNadia",
+  "cc": [],
+  "folder": "Sent",
+  "from": "nadia.ferrand@example.com",
+  "id": "EML-0014",
+  "sensitivity": "normal",
+  "sent_at": "2025-03-25T12:43:00Z",
+  "subject": "Maintenance window for gateway",
+  "thread_id": "THR-0014",
+  "to": [
+    "tomasz.brandl@example.com"
+  ]
+}

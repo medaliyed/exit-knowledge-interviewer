@@ -1,0 +1,23 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-05-13T20:07:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Rolled the change back and re-applied it after review."
+    }
+  ],
+  "created_at": "2025-05-13T17:44:00Z",
+  "description": "Raised by Tomasz Brandl for report-export. Details in the comments.",
+  "id": "TCK-0023",
+  "labels": [
+    "report-export"
+  ],
+  "priority": "P3",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2025-05-13T22:42:00Z",
+  "status": "closed",
+  "system": "report-export",
+  "title": "Export job needs more memory at quarter close",
+  "type": "task"
+}

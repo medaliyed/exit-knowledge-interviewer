@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-04-27T12:14:00Z",
+      "author": "Priya Lindqvist",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2026-04-28T01:18:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2026-04-28T08:58:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Reproduced on staging."
+    }
+  ],
+  "created_at": "2026-04-27T09:16:00Z",
+  "description": "Raised by Priya Lindqvist for billing-batch. Details in the comments.",
+  "id": "TCK-0086",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2026-04-28T10:32:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Clarify invoice rounding for multi-currency tenants",
+  "type": "task"
+}

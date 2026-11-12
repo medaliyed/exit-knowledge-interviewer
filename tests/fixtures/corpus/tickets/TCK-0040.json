@@ -1,0 +1,29 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-09-10T15:50:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Temporary login for the staging box: user=loadtest password=FAKE-PASSWORD-ledger-Qm7x2Lp9"
+    },
+    {
+      "at": "2025-09-10T18:30:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Rotated it. Please keep credentials out of tickets."
+    }
+  ],
+  "created_at": "2025-09-10T15:20:00Z",
+  "description": "The load test needs a login on the staging ledger-db box.",
+  "id": "TCK-0040",
+  "labels": [
+    "ledger-db",
+    "staging"
+  ],
+  "priority": "P4",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2025-09-10T18:40:00Z",
+  "status": "closed",
+  "system": "ledger-db",
+  "title": "Staging ledger-db access for the load test",
+  "type": "task"
+}

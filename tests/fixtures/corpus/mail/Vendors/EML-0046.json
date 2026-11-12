@@ -1,0 +1,14 @@
+{
+  "body": "Hi Marek,\n\nWe renew the gateway certificate on 12 February. Please do the usual on your side before then and confirm once it is done.\n\nThanks,\nNadia",
+  "cc": [],
+  "folder": "Vendors",
+  "from": "nadia.ferrand@example.com",
+  "id": "EML-0046",
+  "sensitivity": "normal",
+  "sent_at": "2026-02-06T10:00:00Z",
+  "subject": "Gateway certificate renewal coming up",
+  "thread_id": "THR-0044",
+  "to": [
+    "marek.dolan@example.com"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "assignee": "Priya Lindqvist",
+  "comments": [
+    {
+      "at": "2025-02-24T08:43:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Linked the pull request."
+    }
+  ],
+  "created_at": "2025-02-24T07:28:00Z",
+  "description": "Raised by Priya Lindqvist for gateway. Details in the comments.",
+  "id": "TCK-0013",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P2",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2025-02-24T11:24:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Intermittent 502 from the canary pool",
+  "type": "task"
+}

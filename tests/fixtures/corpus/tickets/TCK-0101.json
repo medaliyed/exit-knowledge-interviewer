@@ -1,0 +1,29 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-06-15T14:51:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Latency still climbing."
+    },
+    {
+      "at": "2026-06-15T16:03:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Before promoting I dropped the stale replication slot on the old primary. Then followed the failover page from top to bottom. Writes are healthy again."
+    }
+  ],
+  "created_at": "2026-06-15T14:43:00Z",
+  "description": "Storage latency on the ledger-db primary crossed the paging threshold. Failing over to a replica.",
+  "id": "TCK-0101",
+  "labels": [
+    "ledger-db",
+    "failover"
+  ],
+  "priority": "P1",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-06-15T16:23:00Z",
+  "status": "closed",
+  "system": "ledger-db",
+  "title": "ledger-db primary failover after storage latency alarm",
+  "type": "incident"
+}

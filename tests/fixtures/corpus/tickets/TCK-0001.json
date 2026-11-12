@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2024-11-09T01:52:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2024-11-09T07:56:00Z",
+      "author": "Nadia Ferrand",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2024-11-09T16:27:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    }
+  ],
+  "created_at": "2024-11-08T14:22:00Z",
+  "description": "Raised by Priya Lindqvist for report-export. Details in the comments.",
+  "id": "TCK-0001",
+  "labels": [
+    "report-export"
+  ],
+  "priority": "P2",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2024-11-09T20:21:00Z",
+  "status": "closed",
+  "system": "report-export",
+  "title": "Add a regional breakdown to the tax export",
+  "type": "request"
+}

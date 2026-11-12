@@ -1,0 +1,14 @@
+{
+  "body": "Yes, deliberate. The standard snapshot overlaps the settlement window and its lock stalled postings twice last quarter. ledger-db takes its own snapshot at 05:30 from replica-2 instead, once settlement has closed.\n\nNadia",
+  "cc": [],
+  "folder": "Sent",
+  "from": "nadia.ferrand@example.com",
+  "id": "EML-0029",
+  "sensitivity": "normal",
+  "sent_at": "2025-07-14T11:05:00Z",
+  "subject": "Re: ledger-db backups",
+  "thread_id": "THR-0028",
+  "to": [
+    "ines.okafor@example.com"
+  ]
+}

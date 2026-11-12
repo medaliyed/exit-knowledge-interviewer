@@ -1,0 +1,14 @@
+{
+  "body": "Please add your ledger-db items to the planning sheet.\n\nNadia",
+  "cc": [],
+  "folder": "Sent",
+  "from": "nadia.ferrand@example.com",
+  "id": "EML-0075",
+  "sensitivity": "normal",
+  "sent_at": "2026-09-22T16:17:00Z",
+  "subject": "Planning: ledger-db next quarter",
+  "thread_id": "THR-0073",
+  "to": [
+    "priya.lindqvist@example.com"
+  ]
+}

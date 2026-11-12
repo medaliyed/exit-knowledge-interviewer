@@ -1,0 +1,14 @@
+{
+  "body": "The ledger-db window is confirmed for Sunday 06:00 UTC.\n\nJoon-ho",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "joon-ho.marchetti@example.com",
+  "id": "EML-0015",
+  "sensitivity": "normal",
+  "sent_at": "2025-04-06T07:08:00Z",
+  "subject": "Maintenance window for ledger-db",
+  "thread_id": "THR-0015",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

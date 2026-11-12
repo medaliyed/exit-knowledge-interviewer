@@ -1,0 +1,61 @@
+{
+  "counts": {
+    "commits": 300,
+    "emails": 80,
+    "pull_requests": 40,
+    "tickets": 120,
+    "wiki_pages": 6
+  },
+  "expert": {
+    "departure_date": "2026-12-12",
+    "email": "nadia.ferrand@example.com",
+    "name": "Nadia Ferrand",
+    "role": "Senior platform engineer"
+  },
+  "generator": "eki-fixtures",
+  "people": [
+    {
+      "email": "nadia.ferrand@example.com",
+      "name": "Nadia Ferrand",
+      "role": "Senior platform engineer"
+    },
+    {
+      "email": "tomasz.brandl@example.com",
+      "name": "Tomasz Brandl",
+      "role": "Platform engineer"
+    },
+    {
+      "email": "ines.okafor@example.com",
+      "name": "Ines Okafor",
+      "role": "Engineering manager"
+    },
+    {
+      "email": "joon-ho.marchetti@example.com",
+      "name": "Joon-ho Marchetti",
+      "role": "Site reliability engineer"
+    },
+    {
+      "email": "priya.lindqvist@example.com",
+      "name": "Priya Lindqvist",
+      "role": "Backend engineer"
+    },
+    {
+      "email": "marek.dolan@example.com",
+      "name": "Marek Dolan",
+      "role": "Certificate vendor contact"
+    }
+  ],
+  "seed": 1207,
+  "span": {
+    "end": "2026-10-31T23:59:59Z",
+    "start": "2024-11-01T00:00:00Z"
+  },
+  "systems": [
+    "billing-batch",
+    "ledger-db",
+    "gateway",
+    "report-export",
+    "notify-relay"
+  ],
+  "version": 1
+}

@@ -1,0 +1,14 @@
+{
+  "body": "Viewing confirmed, 18:30.",
+  "cc": [],
+  "folder": "Personal",
+  "from": "lettings-office@example.com",
+  "id": "EML-0042",
+  "sensitivity": "personal",
+  "sent_at": "2025-11-18T10:52:00Z",
+  "subject": "Flat viewing on Thursday",
+  "thread_id": "THR-0040",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

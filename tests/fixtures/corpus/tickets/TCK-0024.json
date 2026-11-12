@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-05-16T16:15:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Rolled the change back and re-applied it after review."
+    },
+    {
+      "at": "2025-05-17T07:01:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-05-17T10:13:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    }
+  ],
+  "created_at": "2025-05-16T09:34:00Z",
+  "description": "Raised by Priya Lindqvist for report-export. Details in the comments.",
+  "id": "TCK-0024",
+  "labels": [
+    "report-export"
+  ],
+  "priority": "P3",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2025-05-17T10:53:00Z",
+  "status": "closed",
+  "system": "report-export",
+  "title": "Regulator export arrived late",
+  "type": "request"
+}

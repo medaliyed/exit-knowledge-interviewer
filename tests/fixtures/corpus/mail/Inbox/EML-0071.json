@@ -1,0 +1,14 @@
+{
+  "body": "Nothing open on ledger-db. Quiet week.\n\nInes",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "ines.okafor@example.com",
+  "id": "EML-0071",
+  "sensitivity": "normal",
+  "sent_at": "2026-08-27T14:59:00Z",
+  "subject": "Handover for the ledger-db on-call week",
+  "thread_id": "THR-0069",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

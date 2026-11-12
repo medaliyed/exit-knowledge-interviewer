@@ -1,0 +1,14 @@
+{
+  "body": "The billing-batch window is confirmed for Sunday 06:00 UTC.\n\nNadia",
+  "cc": [],
+  "folder": "Sent",
+  "from": "nadia.ferrand@example.com",
+  "id": "EML-0023",
+  "sensitivity": "normal",
+  "sent_at": "2025-06-09T07:23:00Z",
+  "subject": "Maintenance window for billing-batch",
+  "thread_id": "THR-0023",
+  "to": [
+    "tomasz.brandl@example.com"
+  ]
+}

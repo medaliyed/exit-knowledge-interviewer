@@ -1,0 +1,28 @@
+{
+  "assignee": "Joon-ho Marchetti",
+  "comments": [
+    {
+      "at": "2025-07-13T08:27:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Rolled the change back and re-applied it after review."
+    },
+    {
+      "at": "2025-07-13T14:34:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Linked the pull request."
+    }
+  ],
+  "created_at": "2025-07-13T07:21:00Z",
+  "description": "Raised by Ines Okafor for gateway. Details in the comments.",
+  "id": "TCK-0031",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2025-07-13T17:42:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Dashboard shows a wrong p99 for the admin API",
+  "type": "request"
+}

@@ -1,0 +1,28 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-07-06T05:58:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    },
+    {
+      "at": "2025-07-06T10:58:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Added a dashboard panel for this."
+    }
+  ],
+  "created_at": "2025-07-05T15:16:00Z",
+  "description": "Raised by Ines Okafor for ledger-db. Details in the comments.",
+  "id": "TCK-0030",
+  "labels": [
+    "ledger-db"
+  ],
+  "priority": "P4",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2025-07-06T13:13:00Z",
+  "status": "closed",
+  "system": "ledger-db",
+  "title": "Rotate the read-only service account",
+  "type": "task"
+}

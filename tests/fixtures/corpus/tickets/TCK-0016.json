@@ -1,0 +1,33 @@
+{
+  "assignee": "Tomasz Brandl",
+  "comments": [
+    {
+      "at": "2025-03-20T06:30:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-03-20T08:09:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-03-20T22:31:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Added a dashboard panel for this."
+    }
+  ],
+  "created_at": "2025-03-19T15:38:00Z",
+  "description": "Raised by Tomasz Brandl for billing-batch. Details in the comments.",
+  "id": "TCK-0016",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2025-03-20T22:37:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Posting job slower than usual on the Tuesday run",
+  "type": "request"
+}

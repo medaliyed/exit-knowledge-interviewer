@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-04-25T21:04:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    },
+    {
+      "at": "2026-04-26T03:24:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    },
+    {
+      "at": "2026-04-26T16:18:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    }
+  ],
+  "created_at": "2026-04-25T07:12:00Z",
+  "description": "Raised by Priya Lindqvist for ledger-db. Details in the comments.",
+  "id": "TCK-0085",
+  "labels": [
+    "ledger-db"
+  ],
+  "priority": "P4",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2026-04-26T18:08:00Z",
+  "status": "closed",
+  "system": "ledger-db",
+  "title": "Connection pool exhausted during a load test",
+  "type": "incident"
+}

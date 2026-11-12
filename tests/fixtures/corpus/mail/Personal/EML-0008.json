@@ -1,0 +1,14 @@
+{
+  "body": "Are you two free? We cook.",
+  "cc": [],
+  "folder": "Personal",
+  "from": "camille.ferrand@example.com",
+  "id": "EML-0008",
+  "sensitivity": "personal",
+  "sent_at": "2025-01-18T11:07:00Z",
+  "subject": "Dinner on Saturday?",
+  "thread_id": "THR-0008",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

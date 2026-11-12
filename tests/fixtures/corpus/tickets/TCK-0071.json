@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-01-28T15:46:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Config had drifted between pools; aligned them."
+    },
+    {
+      "at": "2026-01-28T20:05:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Config had drifted between pools; aligned them."
+    },
+    {
+      "at": "2026-01-29T04:27:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Added a dashboard panel for this."
+    }
+  ],
+  "created_at": "2026-01-28T08:39:00Z",
+  "description": "Raised by Priya Lindqvist for ledger-db. Details in the comments.",
+  "id": "TCK-0071",
+  "labels": [
+    "ledger-db"
+  ],
+  "priority": "P3",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2026-01-29T05:43:00Z",
+  "status": "closed",
+  "system": "ledger-db",
+  "title": "Replication lag alert flapping on replica-2",
+  "type": "incident"
+}

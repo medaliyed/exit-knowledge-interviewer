@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-03-04T17:28:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2026-03-04T21:15:00Z",
+      "author": "Nadia Ferrand",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2026-03-05T03:02:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Linked the pull request."
+    }
+  ],
+  "created_at": "2026-03-04T13:36:00Z",
+  "description": "Raised by Joon-ho Marchetti for ledger-db. Details in the comments.",
+  "id": "TCK-0077",
+  "labels": [
+    "ledger-db"
+  ],
+  "priority": "P3",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-03-05T04:36:00Z",
+  "status": "closed",
+  "system": "ledger-db",
+  "title": "Replication lag alert flapping on replica-2",
+  "type": "incident"
+}

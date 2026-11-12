@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-03-29T04:16:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    },
+    {
+      "at": "2025-03-29T16:47:00Z",
+      "author": "Nadia Ferrand",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2025-03-29T23:16:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Rolled the change back and re-applied it after review."
+    }
+  ],
+  "created_at": "2025-03-28T13:50:00Z",
+  "description": "Raised by Joon-ho Marchetti for billing-batch. Details in the comments.",
+  "id": "TCK-0019",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2025-03-30T00:51:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Upgrade the batch base image",
+  "type": "task"
+}

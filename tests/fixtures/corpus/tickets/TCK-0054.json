@@ -1,0 +1,33 @@
+{
+  "assignee": "Joon-ho Marchetti",
+  "comments": [
+    {
+      "at": "2025-11-27T00:25:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    },
+    {
+      "at": "2025-11-27T12:14:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2025-11-28T01:08:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Added a dashboard panel for this."
+    }
+  ],
+  "created_at": "2025-11-26T10:29:00Z",
+  "description": "Raised by Priya Lindqvist for billing-batch. Details in the comments.",
+  "id": "TCK-0054",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2025-11-28T03:01:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Upgrade the batch base image",
+  "type": "incident"
+}

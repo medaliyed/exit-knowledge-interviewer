@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-03-12T04:41:00Z",
+      "author": "Nadia Ferrand",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2026-03-12T15:16:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    },
+    {
+      "at": "2026-03-12T18:52:00Z",
+      "author": "Priya Lindqvist",
+      "body": "No recurrence in a week, closing."
+    }
+  ],
+  "created_at": "2026-03-11T17:44:00Z",
+  "description": "Raised by Priya Lindqvist for gateway. Details in the comments.",
+  "id": "TCK-0079",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P4",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2026-03-12T21:15:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Add a request-id header to upstream calls",
+  "type": "request"
+}

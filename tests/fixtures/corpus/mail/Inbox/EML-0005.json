@@ -1,0 +1,14 @@
+{
+  "body": "Nothing open on billing-batch. Quiet week.\n\nPriya",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "priya.lindqvist@example.com",
+  "id": "EML-0005",
+  "sensitivity": "normal",
+  "sent_at": "2024-12-09T12:55:00Z",
+  "subject": "Handover for the billing-batch on-call week",
+  "thread_id": "THR-0005",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

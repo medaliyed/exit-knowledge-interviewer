@@ -1,0 +1,28 @@
+{
+  "assignee": "Priya Lindqvist",
+  "comments": [
+    {
+      "at": "2026-04-22T15:46:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Reproduced on staging."
+    },
+    {
+      "at": "2026-04-23T06:35:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Reproduced on staging."
+    }
+  ],
+  "created_at": "2026-04-22T07:35:00Z",
+  "description": "Raised by Ines Okafor for billing-batch. Details in the comments.",
+  "id": "TCK-0084",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2026-04-23T09:34:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Upgrade the batch base image",
+  "type": "task"
+}

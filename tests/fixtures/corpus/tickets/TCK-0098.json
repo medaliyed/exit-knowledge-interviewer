@@ -1,0 +1,28 @@
+{
+  "assignee": "Tomasz Brandl",
+  "comments": [
+    {
+      "at": "2026-06-10T17:33:00Z",
+      "author": "Tomasz Brandl",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2026-06-10T23:50:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Config had drifted between pools; aligned them."
+    }
+  ],
+  "created_at": "2026-06-10T13:40:00Z",
+  "description": "Raised by Priya Lindqvist for gateway. Details in the comments.",
+  "id": "TCK-0098",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2026-06-11T02:09:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Access log sampling is too aggressive",
+  "type": "incident"
+}

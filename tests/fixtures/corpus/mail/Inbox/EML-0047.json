@@ -1,0 +1,16 @@
+{
+  "body": "Facilities will post the replacement badge to Tomasz at home: 14 rue des Tilleuls, 99990 Exempleville.\n\nInes",
+  "cc": [
+    "tomasz.brandl@example.com"
+  ],
+  "folder": "Inbox",
+  "from": "ines.okafor@example.com",
+  "id": "EML-0047",
+  "sensitivity": "normal",
+  "sent_at": "2026-02-21T16:28:00Z",
+  "subject": "Replacement badge for Tomasz",
+  "thread_id": "THR-0045",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

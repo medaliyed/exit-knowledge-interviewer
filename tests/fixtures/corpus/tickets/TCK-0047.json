@@ -1,0 +1,23 @@
+{
+  "assignee": "Priya Lindqvist",
+  "comments": [
+    {
+      "at": "2025-10-14T12:27:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Fix deployed, watching it for a day."
+    }
+  ],
+  "created_at": "2025-10-14T09:56:00Z",
+  "description": "Raised by Tomasz Brandl for gateway. Details in the comments.",
+  "id": "TCK-0047",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P2",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2025-10-14T15:58:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Dashboard shows a wrong p99 for the admin API",
+  "type": "incident"
+}

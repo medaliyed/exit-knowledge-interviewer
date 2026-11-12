@@ -1,0 +1,14 @@
+{
+  "body": "The report-export window is confirmed for Sunday 06:00 UTC.\n\nInes",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "ines.okafor@example.com",
+  "id": "EML-0034",
+  "sensitivity": "normal",
+  "sent_at": "2025-09-01T11:27:00Z",
+  "subject": "Maintenance window for report-export",
+  "thread_id": "THR-0032",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

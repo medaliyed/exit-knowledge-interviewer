@@ -1,0 +1,23 @@
+{
+  "assignee": "Priya Lindqvist",
+  "comments": [
+    {
+      "at": "2026-03-27T16:13:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Reproduced on staging."
+    }
+  ],
+  "created_at": "2026-03-27T09:58:00Z",
+  "description": "Raised by Priya Lindqvist for gateway. Details in the comments.",
+  "id": "TCK-0081",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P2",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2026-03-27T18:34:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Dashboard shows a wrong p99 for the admin API",
+  "type": "request"
+}

@@ -1,0 +1,23 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-05-17T18:43:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Linked the pull request."
+    }
+  ],
+  "created_at": "2026-05-17T13:08:00Z",
+  "description": "Raised by Priya Lindqvist for gateway. Details in the comments.",
+  "id": "TCK-0094",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P4",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2026-05-17T20:46:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Add a request-id header to upstream calls",
+  "type": "incident"
+}

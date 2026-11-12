@@ -1,0 +1,14 @@
+{
+  "body": "Here is the call I used:\n\ncurl -H 'Authorization: Bearer FAKE-TOKEN-3b9f6e2a8c4d1075' https://export.internal.example.com/hooks/test\n\nPriya",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "priya.lindqvist@example.com",
+  "id": "EML-0040",
+  "sensitivity": "normal",
+  "sent_at": "2025-11-14T09:30:00Z",
+  "subject": "Webhook test against the export service",
+  "thread_id": "THR-0038",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

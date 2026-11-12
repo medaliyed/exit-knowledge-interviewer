@@ -1,0 +1,29 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-02-28T08:18:00Z",
+      "author": "Ines Okafor",
+      "body": "Same pattern as last time."
+    },
+    {
+      "at": "2026-02-28T10:47:00Z",
+      "author": "Nadia Ferrand",
+      "body": "I applied the usual fix. Totals reconcile now."
+    }
+  ],
+  "created_at": "2026-02-28T08:06:00Z",
+  "description": "Finance reports that the month-end totals in billing-batch and ledger-db differ by a few hundred entries.",
+  "id": "TCK-0074",
+  "labels": [
+    "month-end",
+    "billing-batch"
+  ],
+  "priority": "P2",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2026-02-28T10:52:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Month-end reconciliation mismatch between billing-batch and ledger-db",
+  "type": "incident"
+}

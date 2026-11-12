@@ -1,0 +1,28 @@
+{
+  "assignee": "Priya Lindqvist",
+  "comments": [
+    {
+      "at": "2025-09-20T22:33:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2025-09-21T08:25:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    }
+  ],
+  "created_at": "2025-09-20T08:56:00Z",
+  "description": "Raised by Joon-ho Marchetti for report-export. Details in the comments.",
+  "id": "TCK-0041",
+  "labels": [
+    "report-export"
+  ],
+  "priority": "P2",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2025-09-21T10:29:00Z",
+  "status": "closed",
+  "system": "report-export",
+  "title": "Column widths are wrong in the settlement sheet",
+  "type": "incident"
+}

@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-01-06T23:36:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Rolled the change back and re-applied it after review."
+    },
+    {
+      "at": "2026-01-07T05:57:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Reproduced on staging."
+    },
+    {
+      "at": "2026-01-07T14:03:00Z",
+      "author": "Nadia Ferrand",
+      "body": "No recurrence in a week, closing."
+    }
+  ],
+  "created_at": "2026-01-06T12:11:00Z",
+  "description": "Raised by Joon-ho Marchetti for billing-batch. Details in the comments.",
+  "id": "TCK-0064",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-01-07T14:58:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Batch worker pod evicted during the run",
+  "type": "incident"
+}

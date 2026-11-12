@@ -1,0 +1,23 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-01-04T05:14:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Linked the pull request."
+    }
+  ],
+  "created_at": "2025-01-03T15:14:00Z",
+  "description": "Raised by Priya Lindqvist for billing-batch. Details in the comments.",
+  "id": "TCK-0005",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P4",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2025-01-04T07:01:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Posting job slower than usual on the Tuesday run",
+  "type": "request"
+}

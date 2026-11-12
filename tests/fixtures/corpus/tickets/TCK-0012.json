@@ -1,0 +1,23 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-02-15T04:26:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Added a dashboard panel for this."
+    }
+  ],
+  "created_at": "2025-02-14T14:13:00Z",
+  "description": "Raised by Tomasz Brandl for gateway. Details in the comments.",
+  "id": "TCK-0012",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2025-02-15T07:28:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Tighten the idle timeout for partner routes",
+  "type": "incident"
+}

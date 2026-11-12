@@ -1,0 +1,33 @@
+{
+  "assignee": "Joon-ho Marchetti",
+  "comments": [
+    {
+      "at": "2025-02-11T23:51:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    },
+    {
+      "at": "2025-02-12T04:17:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Linked the pull request."
+    },
+    {
+      "at": "2025-02-12T06:12:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Linked the pull request."
+    }
+  ],
+  "created_at": "2025-02-11T18:26:00Z",
+  "description": "Raised by Priya Lindqvist for gateway. Details in the comments.",
+  "id": "TCK-0010",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P3",
+  "reporter": "Priya Lindqvist",
+  "resolved_at": "2025-02-12T07:48:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Tighten the idle timeout for partner routes",
+  "type": "task"
+}

@@ -1,0 +1,23 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-10-24T00:51:00Z",
+      "author": "Ines Okafor",
+      "body": "Added a dashboard panel for this."
+    }
+  ],
+  "created_at": "2026-10-23T13:51:00Z",
+  "description": "Raised by Ines Okafor for ledger-db. Details in the comments.",
+  "id": "TCK-0119",
+  "labels": [
+    "ledger-db"
+  ],
+  "priority": "P3",
+  "reporter": "Ines Okafor",
+  "resolved_at": null,
+  "status": "open",
+  "system": "ledger-db",
+  "title": "Connection pool exhausted during a load test",
+  "type": "incident"
+}

@@ -1,0 +1,14 @@
+{
+  "body": "Please add your billing-batch items to the planning sheet.\n\nTomasz",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "tomasz.brandl@example.com",
+  "id": "EML-0043",
+  "sensitivity": "normal",
+  "sent_at": "2025-12-25T10:25:00Z",
+  "subject": "Planning: billing-batch next quarter",
+  "thread_id": "THR-0041",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

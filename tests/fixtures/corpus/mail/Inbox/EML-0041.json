@@ -1,0 +1,14 @@
+{
+  "body": "Can we go through the billing-batch capacity numbers on Thursday?\n\nJoon-ho",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "joon-ho.marchetti@example.com",
+  "id": "EML-0041",
+  "sensitivity": "normal",
+  "sent_at": "2025-11-14T10:53:00Z",
+  "subject": "Capacity review for billing-batch",
+  "thread_id": "THR-0039",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}

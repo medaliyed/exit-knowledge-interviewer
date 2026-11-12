@@ -1,0 +1,33 @@
+{
+  "assignee": "Priya Lindqvist",
+  "comments": [
+    {
+      "at": "2026-01-18T04:31:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2026-01-18T16:18:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Added a dashboard panel for this."
+    },
+    {
+      "at": "2026-01-18T17:25:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Fix deployed, watching it for a day."
+    }
+  ],
+  "created_at": "2026-01-17T17:56:00Z",
+  "description": "Raised by Joon-ho Marchetti for billing-batch. Details in the comments.",
+  "id": "TCK-0068",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-01-18T18:46:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Upgrade the batch base image",
+  "type": "request"
+}

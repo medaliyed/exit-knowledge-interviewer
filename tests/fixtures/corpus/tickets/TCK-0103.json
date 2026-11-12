@@ -1,0 +1,29 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-07-02T11:37:00Z",
+      "author": "Joon-ho Marchetti",
+      "body": "Paging the platform on-call."
+    },
+    {
+      "at": "2026-07-02T12:40:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Restarted the ledger-db replicas, then re-ran billing-batch. Run completed and the totals match."
+    }
+  ],
+  "created_at": "2026-07-02T11:31:00Z",
+  "description": "The nightly billing-batch run aborted in the posting phase with exit code 3. The worker log shows 'ledger snapshot stale'.",
+  "id": "TCK-0103",
+  "labels": [
+    "billing-batch",
+    "on-call"
+  ],
+  "priority": "P1",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-07-02T12:55:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "billing-batch run failed during the posting phase",
+  "type": "incident"
+}

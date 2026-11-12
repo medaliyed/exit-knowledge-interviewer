@@ -1,0 +1,33 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-07-31T23:02:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Fix deployed, watching it for a day."
+    },
+    {
+      "at": "2026-08-01T12:08:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Fix deployed, watching it for a day."
+    },
+    {
+      "at": "2026-08-02T00:07:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Rolled the change back and re-applied it after review."
+    }
+  ],
+  "created_at": "2026-07-31T09:27:00Z",
+  "description": "Raised by Ines Okafor for gateway. Details in the comments.",
+  "id": "TCK-0107",
+  "labels": [
+    "gateway"
+  ],
+  "priority": "P4",
+  "reporter": "Ines Okafor",
+  "resolved_at": "2026-08-02T03:39:00Z",
+  "status": "closed",
+  "system": "gateway",
+  "title": "Add a request-id header to upstream calls",
+  "type": "task"
+}

@@ -1,0 +1,28 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2025-03-22T04:15:00Z",
+      "author": "Tomasz Brandl",
+      "body": "Fix deployed, watching it for a day."
+    },
+    {
+      "at": "2025-03-22T07:53:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    }
+  ],
+  "created_at": "2025-03-21T18:34:00Z",
+  "description": "Raised by Tomasz Brandl for report-export. Details in the comments.",
+  "id": "TCK-0017",
+  "labels": [
+    "report-export"
+  ],
+  "priority": "P3",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2025-03-22T09:36:00Z",
+  "status": "closed",
+  "system": "report-export",
+  "title": "Export for the previous period is empty",
+  "type": "request"
+}

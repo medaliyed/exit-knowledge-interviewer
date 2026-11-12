@@ -1,0 +1,28 @@
+{
+  "assignee": "Priya Lindqvist",
+  "comments": [
+    {
+      "at": "2026-05-04T05:18:00Z",
+      "author": "Tomasz Brandl",
+      "body": "No recurrence in a week, closing."
+    },
+    {
+      "at": "2026-05-04T18:58:00Z",
+      "author": "Priya Lindqvist",
+      "body": "Rolled the change back and re-applied it after review."
+    }
+  ],
+  "created_at": "2026-05-03T18:33:00Z",
+  "description": "Raised by Tomasz Brandl for billing-batch. Details in the comments.",
+  "id": "TCK-0089",
+  "labels": [
+    "billing-batch"
+  ],
+  "priority": "P3",
+  "reporter": "Tomasz Brandl",
+  "resolved_at": "2026-05-04T21:49:00Z",
+  "status": "closed",
+  "system": "billing-batch",
+  "title": "Add a retry metric to the settlement step",
+  "type": "task"
+}

@@ -1,0 +1,28 @@
+{
+  "assignee": "Nadia Ferrand",
+  "comments": [
+    {
+      "at": "2026-07-11T18:24:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Config had drifted between pools; aligned them."
+    },
+    {
+      "at": "2026-07-12T00:32:00Z",
+      "author": "Nadia Ferrand",
+      "body": "Needs a maintenance window; scheduled for Thursday."
+    }
+  ],
+  "created_at": "2026-07-11T08:55:00Z",
+  "description": "Raised by Joon-ho Marchetti for report-export. Details in the comments.",
+  "id": "TCK-0104",
+  "labels": [
+    "report-export"
+  ],
+  "priority": "P4",
+  "reporter": "Joon-ho Marchetti",
+  "resolved_at": "2026-07-12T03:41:00Z",
+  "status": "closed",
+  "system": "report-export",
+  "title": "Regulator export arrived late",
+  "type": "incident"
+}

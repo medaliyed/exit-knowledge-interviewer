@@ -1,0 +1,14 @@
+{
+  "body": "Is the new ledger-db alert threshold intended?\n\nTomasz",
+  "cc": [],
+  "folder": "Inbox",
+  "from": "tomasz.brandl@example.com",
+  "id": "EML-0064",
+  "sensitivity": "normal",
+  "sent_at": "2026-07-08T17:09:00Z",
+  "subject": "Question about a ledger-db alert",
+  "thread_id": "THR-0062",
+  "to": [
+    "nadia.ferrand@example.com"
+  ]
+}
