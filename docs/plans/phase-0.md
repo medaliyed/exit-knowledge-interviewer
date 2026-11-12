@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task, in order a to h, in the session that wrote it. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** awaiting human approval. No implementation code exists yet.
+**Status:** approved on 2026-11-12 with all recommended options (D1 to D7) and implemented the same day. See "Outcome" at the end for what differs from the plan as written.
 
 **Goal:** A repo where `uv sync`, `docker compose up -d`, `uv run pytest -q`, ruff and mypy all work, with the runbook entry template, its citation validator, a deterministic synthetic corpus and a `/healthz` API in place for phase 1 to build on.
 
@@ -548,3 +548,13 @@ When task h is committed, list:
 ## Out of scope for phase 0
 
 Redaction, MCP servers, database schema and migrations, embeddings, LangGraph, LiteLLM, the Langfuse SDK, approval and export functions, model-name settings, anything under `evals/scenarios/` or `evals/golden/`. Phase 1 is not planned here.
+
+## Outcome
+
+Implemented in order a to h, one commit per deliverable. Differences from the plan as written:
+
+- **ruff and docs:** ruff 0.17 formats Python blocks inside Markdown, so `docs/` is excluded from ruff. The sketches in this plan are not runnable code.
+- **Task b, live checks:** the Postgres checks passed against a running container (PostgreSQL 16.15, pgvector 0.8.7, `langfuse` database present). The Langfuse services were never started, so `test_langfuse_healthy` has not run. Published ports are limited to Postgres (5432) and the Langfuse UI (3000); Langfuse telemetry is switched off.
+- **Task e, extra guard:** pydantic's `model_copy(update=...)` skips validators, so the runbook models override it to validate updates. Without this a copy could become an approved entry with an uncited claim.
+- **Task f, test layout:** the per-plant tests are one parametrised test backed by `tests/fixtures/checks.py`, so the same checks also run against corpora built from other seeds. G4 has no vendor replies, and N1 also carries three tagged commits.
+- **Task g, httpx:** Starlette's test client now prefers `httpx2` and warns when used with `httpx`. `httpx` stays, as approved in D1, and that one warning is filtered in the pytest config. Moving to `httpx2` needs a human decision because it is a new dependency.

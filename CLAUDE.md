@@ -24,9 +24,11 @@ Docker Compose for local infra.
 docker compose up -d                      # local infra (Postgres+pgvector, Langfuse)
 uv sync                                   # install pinned dependencies
 uv run pytest -q                          # tests
+uv run pytest -m infra                    # live checks; needs the compose stack up
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run uvicorn eki.api.app:app --reload   # API on :8000
+uv run python -m tests.fixtures.generator # regenerate the synthetic corpus
 ```
 
 ## Layout
