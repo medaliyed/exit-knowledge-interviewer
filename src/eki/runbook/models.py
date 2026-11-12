@@ -6,8 +6,10 @@ support it. A section the expert could not answer is recorded as an open
 question; it is never filled in by invention.
 """
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Annotated, Literal, Self, cast, get_args
+from typing import Annotated, Any, Literal, Self, cast, get_args
 
 from pydantic import (
     AwareDatetime,
@@ -28,6 +30,16 @@ SECTION_NAMES: tuple[SectionName, ...] = get_args(SectionName)
 
 class _Model(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
+        """Copy, validating any update.
+
+        Pydantic's own ``model_copy(update=...)`` skips validation, which would let a
+        copy break the invariants the model enforces at construction.
+        """
+        if not update:
+            return super().model_copy(deep=deep)
+        return type(self).model_validate({**dict(self), **update})
 
 
 class ArtifactCitation(_Model):
@@ -59,6 +71,26 @@ class Section(_Model):
     """In order. For ``steps`` the order is the procedure."""
     open_question: NonBlank | None = None
     """What the expert could not answer. Set instead of guessing."""
+
+
+@dataclass(frozen=True)
+class UncitedClaim:
+    """Where an uncited claim sits in an entry, and what it says."""
+
+    section: SectionName
+    index: int
+    text: str
+
+    def __str__(self) -> str:
+        return f'uncited claim in {self.section}[{self.index}]: "{self.text}"'
+
+
+class UncitedClaimError(ValueError):
+    """Raised when an entry holds claims without a citation. Names every one of them."""
+
+    def __init__(self, claims: tuple[UncitedClaim, ...]) -> None:
+        self.claims = claims
+        super().__init__("; ".join(str(claim) for claim in claims))
 
 
 class EntryStatus(StrEnum):
@@ -103,8 +135,31 @@ class RunbookEntry(_Model):
                 raise ValueError("an approved entry needs approved_by")
             if self.approved_at is None:
                 raise ValueError("an approved entry needs approved_at")
+            # F9: uncited claims block publication, whichever code path built the entry.
+            validate_citations(self)
         elif self.approved_by is not None or self.approved_at is not None:
             raise ValueError(
                 f"a {self.status.value} entry must not carry approved_by or approved_at"
             )
         return self
+
+
+def find_uncited_claims(entry: RunbookEntry) -> tuple[UncitedClaim, ...]:
+    """Every claim without a citation, in template order then position.
+
+    All seven sections count: anything written in the template is something a
+    reader may act on, so there is no claim that is exempt from citation.
+    """
+    return tuple(
+        UncitedClaim(section=name, index=index, text=claim.text)
+        for name in SECTION_NAMES
+        for index, claim in enumerate(entry.section(name).claims)
+        if not claim.citations
+    )
+
+
+def validate_citations(entry: RunbookEntry) -> None:
+    """Raise ``UncitedClaimError`` naming each uncited claim; return ``None`` if there is none."""
+    uncited = find_uncited_claims(entry)
+    if uncited:
+        raise UncitedClaimError(uncited)
