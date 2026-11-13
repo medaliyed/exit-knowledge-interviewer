@@ -30,16 +30,24 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run uvicorn eki.api.app:app --reload   # API on :8000
 uv run python -m tests.fixtures.generator # regenerate the synthetic corpus
+uv run pytest -m live -s                  # ONE real-model check; needs model names and a provider key, costs money
 uv run eki migrate                        # then: eki ingest --since D --until D | eki map --run ID | eki gaps --run ID
+uv run eki plan --run ID                  # draft the interview plan, then: eki interview --plan ID
 ```
+
+Models are named in `EKI_MODEL_INTERVIEWER` and `EKI_MODEL_DRAFTER` (LiteLLM names);
+the provider key goes in `.env` under the provider's own name. Tests never call a
+real model: they use `ScriptedModel` from `tests/fakes.py`.
 
 ## Layout
 
 ```
 src/eki/
-  api/        FastAPI app, chat API, SSE
-  graph/      LangGraph workflow and the interviewer node
+  api/        FastAPI app: plan review and the interview chat (SSE)
+  graph/      LangGraph workflow: fixed nodes around the one agentic node
   ingest/     connectors' client side, redaction, indexing
+  interview/  plan, question drafting, the interviewer node and its six tools, storage, service
+  llm/        ChatModel interface, LiteLLM implementation, tracing
   mapping/    topic clustering, gap scoring
   runbook/    entry template, citation validation, approval
   search/     hybrid search and Q&A
@@ -67,4 +75,9 @@ docs/plans/   one approved plan per phase
 - Plan one phase at a time, save it to `docs/plans/phase-N.md`, and wait for
   human approval before writing implementation code.
 - After each deliverable: run pytest, ruff and mypy, show the output, commit.
-- The pipeline never reads `tests/fixtures/answer_key.json`; only tests do.
+- The pipeline never reads `tests/fixtures/answer_key.json` or
+  `expert_answers.json`; only tests do.
+- A confidential answer is stored and flagged. It never goes to a model, a
+  trace, the workflow state or an API response.
+- The interviewer's tools read artifacts or change interview state. Never add
+  one that approves, publishes, sends or writes to a source.

@@ -156,3 +156,148 @@ def test_a_reversed_date_range_is_refused(
 ) -> None:
     assert main(["ingest", "--since", "2026-01-01", "--until", "2025-01-01"]) == 2
     assert "before" in capsys.readouterr().err.lower()
+
+
+# --- phase 2: plan and interview ---
+
+
+def use_fake_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the CLI build its service with rule-following fakes instead of a real model."""
+    from eki.config import Settings
+    from eki.graph.workflow import Limits
+    from eki.interview.service import InterviewService
+    from tests.fakes import ScriptedModel, checklist_interviewer
+    from tests.interview_support import make_service, quoting_drafter
+
+    def build(settings: Settings) -> InterviewService:
+        return make_service(
+            settings.database_url.get_secret_value(),
+            agent=None,
+            drafter=ScriptedModel(quoting_drafter, name="drafter"),
+            interviewer=ScriptedModel(checklist_interviewer, name="interviewer"),
+            limits=Limits(plan_size=2),
+        )
+
+    monkeypatch.setattr("eki.cli.build_service", build)
+
+
+def typed(monkeypatch: pytest.MonkeyPatch, *lines: str) -> None:
+    """Feed lines to the interview prompt; the input ends after the last one."""
+    remaining = list(lines)
+
+    def read(prompt: str = "") -> str:
+        if not remaining:
+            raise EOFError
+        return remaining.pop(0)
+
+    monkeypatch.setattr("builtins.input", read)
+
+
+def planned(capsys: pytest.CaptureFixture[str]) -> tuple[str, str]:
+    """Ingest, map and plan. Returns the plan ID and what the plan command printed."""
+    run_id = ingest(capsys)
+    assert main(["map", "--run", run_id]) == 0
+    capsys.readouterr()
+    assert main(["plan", "--run", run_id]) == 0
+    out = capsys.readouterr().out
+    plan_id = out.strip().splitlines()[-1].split()[-1]
+    uuid.UUID(plan_id)
+    return plan_id, out
+
+
+def test_migrate_also_creates_the_checkpoint_tables(scratch_database: None) -> None:
+    assert main(["migrate"]) == 0
+    with connect(get_settings()) as conn:
+        assert conn.execute("SELECT count(*) FROM checkpoints").fetchone() == (0,)
+
+
+def test_plan_shows_questions_with_their_quotes(
+    scratch_database: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_fake_models(monkeypatch)
+    plan_id, out = planned(capsys)
+    # Two by score, plus two more whose tickets contradict each other on the restart order.
+    assert f"Plan {plan_id} (draft), 4 topics" in out
+    assert "its sources contradict each other" in out
+    assert "Which is right?" in out
+    assert out.count("       Q: ") >= 2
+    assert out.count("          from ") >= 2
+    assert "gap score" in out
+    assert f"eki interview --plan {plan_id}" in out
+    for secret in FAKE_CREDENTIALS:
+        assert secret not in out
+
+
+def test_interview_in_the_terminal_with_quit_and_resume(
+    scratch_database: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_fake_models(monkeypatch)
+    plan_id, _ = planned(capsys)
+    typed(
+        monkeypatch,
+        "/skip",
+        "/confidential Ask Marek, privately.",
+        "",
+        "Restart it.",
+        "/correct x",
+        "/correct 6 Restart it twice.",
+        "/quit",
+    )
+    assert main(["interview", "--plan", plan_id]) == 0
+    first = capsys.readouterr().out
+    assert f"Plan approved by {EXPERT_NAME}." in first
+    assert "--- Topic" not in first.split("Plan approved")[0]
+    assert "left open trigger: skipped by expert" in first
+    assert "noted diagnosis: confidential" in first
+    assert "Marek" not in first, "a confidential answer is not echoed"
+    assert "noted steps: Restart it." in first
+    assert "usage: /correct TURN NEW-TEXT" in first
+    assert "turn 6 corrected (steps updated)" in first
+    assert f"Stopped. Continue with: eki interview --plan {plan_id}" in first
+
+    typed(monkeypatch, *["I don't know."] * 7)
+    assert main(["interview", "--plan", plan_id]) == 0
+    second = capsys.readouterr().out
+    assert "Plan approved" not in second, "the second run resumes; it does not approve again"
+    assert "[turn 7, rollback]" in second, "it continues at the question that was waiting"
+    assert "--- Topic 2 of 4:" in second
+    assert "Interview finished: 2 sections noted, 26 left open." in second
+
+    typed(monkeypatch)
+    assert main(["interview", "--plan", plan_id]) == 0
+    assert "Interview finished" in capsys.readouterr().out
+
+
+def test_end_of_input_stops_like_quit(
+    scratch_database: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_fake_models(monkeypatch)
+    plan_id, _ = planned(capsys)
+    typed(monkeypatch)
+    assert main(["interview", "--plan", plan_id, "--approve-as", "Someone Else"]) == 0
+    out = capsys.readouterr().out
+    assert "Plan approved by Someone Else." in out
+    assert "Stopped. Continue with" in out
+
+
+def test_plan_and_interview_errors(
+    scratch_database: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_fake_models(monkeypatch)
+    assert main(["migrate"]) == 0
+    assert main(["plan", "--run", str(uuid.uuid4())]) == 1
+    assert "no completed run" in capsys.readouterr().err
+    assert main(["interview", "--plan", str(uuid.uuid4())]) == 1
+    assert "no plan" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as excinfo:
+        main(["interview", "--plan", "not-a-uuid"])
+    assert excinfo.value.code == 2
+
+
+def test_plan_without_a_model_name_is_a_usage_error(
+    scratch_database: None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("EKI_MODEL_DRAFTER", "")
+    get_settings.cache_clear()
+    assert main(["plan", "--run", str(uuid.uuid4())]) == 2
+    assert "EKI_MODEL_DRAFTER is not set" in capsys.readouterr().err

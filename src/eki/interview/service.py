@@ -160,6 +160,11 @@ class InterviewService:
             raise NotFoundError(f"no plan {plan_id}")
         return plan
 
+    async def session_for_plan(self, plan_id: UUID) -> UUID | None:
+        """The session opened by approving this plan, if it has been approved."""
+        with self._connect() as conn:
+            return await db(store.session_of_plan, conn, plan_id)
+
     async def edit_plan(
         self, plan_id: UUID, edit: Callable[[InterviewPlan], InterviewPlan]
     ) -> InterviewPlan:

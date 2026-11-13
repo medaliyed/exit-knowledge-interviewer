@@ -63,5 +63,6 @@ pythonpath = ["."]
 markers = [
     "infra: needs the whole docker compose stack running",
     "db: needs Postgres with pgvector (docker compose up -d postgres)",
+    "live: calls the configured real model; needs a provider key and costs money",
 ]
-addopts = "-m 'not infra and not db'"
+addopts = "-m 'not infra and not db and not live'"

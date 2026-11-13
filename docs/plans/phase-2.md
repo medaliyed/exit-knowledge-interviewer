@@ -204,3 +204,57 @@ List what is verified with evidence, a sample transcript, and what is not verifi
 ## Out of scope for phase 2
 
 Runbook synthesis, citations on claims, approval of entries, search, export (phase 3). Mail, red-team suite, evals in CI, audit log (phase 4). Authentication. A web UI. Phase 3 is not planned here.
+
+
+---
+
+## Outcome
+
+Implemented on 2026-11-13, tasks a to j, one commit each (plus one follow-up fix to task a).
+
+### Verified
+
+| What | Evidence |
+| --- | --- |
+| Unit tests | `uv run pytest -q`: 323 passed |
+| Database tests | `uv run pytest -q -m db`: 104 passed |
+| Live infrastructure | `uv run pytest -q -m infra`: 5 passed, including a trace sent to the local Langfuse and read back |
+| Lint, format, types | `ruff check`, `ruff format --check`, `mypy` (strict): clean |
+| Whole interview on the fixture corpus | `tests/test_phase2_acceptance.py`: plan from the real ranking, one filler topic removed, 22 turns, G3 complete after one follow-up on rollback, G7 open in her words, T6 contradiction asked first and verbatim |
+| Resume | Same acceptance run with a new service (new connections, new compiled graph) after every message: identical transcript, notes and open items |
+| No secret stored, sent or traced | The five planted values are absent from every table (including the checkpoint tables), from everything both fake models received and from everything traced |
+| Review focus 1 to 7 | `test_session_resumes_after_restart`, `test_secret_in_an_answer_is_redacted_everywhere`, `test_fabricated_quote_is_rejected`, `test_turn_limit_marks_remaining_sections_open`, `test_model_failure_leaves_session_resumable`, `test_unknown_answer_is_recorded_as_open`, `test_concurrent_messages_conflict` |
+| Real server process | `uvicorn eki.api.app:app` against the local database: `/healthz` 200, unknown plan and session 404 |
+| Real command line without a key | `eki plan` fails cleanly ("the model could not be reached") and leaves no plan and no checkpoint |
+
+### Not verified
+
+- **Anything about a real model.** No provider key exists, so `tests/test_live_model.py` has never run. Whether a real model follows up on G3, leaves G7 open, asks about the contradiction, or writes good questions is unknown.
+- **The LiteLLM call against a real provider.** Request and response mapping is tested against a stand-in for `litellm.acompletion`, not a provider.
+- **CI.** The workflow has never run: the repository has no remote.
+- **The SSE stream in a browser or over a real network.** It is tested through the FastAPI test client only.
+- **Two messages truly at the same moment.** The conflict is tested by holding the session lock from a second connection, not by racing two requests.
+- **Traces of a whole interview in Langfuse.** One synthetic call was sent and read back; a full interview was traced only into a recording fake.
+- **Mutation checks.** None were run in this phase.
+
+### Deviations from the plan
+
+1. **LiteLLM 1.108.1, not 1.108.2.** 1.108.2 was published 22 hours inside the seven-day cooldown, so the newest release outside it was pinned.
+2. **Model names are checked when a model is needed, not when settings load.** As required fields they would have broken `eki migrate`, `ingest`, `map` and `gaps` for anyone without a model. `eki.config.model_name` raises a clear error instead.
+3. **Two modules not in the file list.** `interview/conflicts.py` implements D5's "sources contradict each other" with one narrow rule ("X first, then Y" against "Y first, then X"). `interview/service.py` holds the operations shared by the API and the command line.
+4. **The interviewer, workflow and control tests are `db` tests.** They exercise the real store and the real checkpointer, so they need Postgres.
+5. **The runtime guard for redacted text is re-redaction at the boundary.** `RedactedText` cannot be told from `str` at run time, so the LiteLLM model and the tracer redact everything once more on the way out.
+6. **A quote may differ from the artifact in whitespace only**, and must be at least 12 characters.
+7. **A correction replaces the affected notes with the expert's own words** and needs no model call. A correction of a confidential answer stays confidential.
+8. **Confidential text never enters the workflow state.** The workflow is resumed with the turn number only, so checkpoints never hold it. The API masks it as `[confidential]`.
+9. **Test-first was not kept in two places.** The plan module (task d) and the command-line commands (task j) were written in the same step as their tests, not after a failing run.
+
+### Known limitations
+
+- **Deleting a run does not delete its checkpoints.** The interview tables cascade; the LangGraph checkpoint tables do not. They hold redacted, non-confidential text. Retention belongs to phase 4.
+- **The same contradiction can be asked twice**, once under the incident topic and once under the system topic that contains the same tickets.
+- **The contradiction detector sees ordering statements only.** Any other disagreement relies on the drafting model.
+- **Traces carry no latency.** A call is reported after it returns.
+- **LiteLLM loads the local `.env` into the process environment when imported** (its default development mode). That is how a provider key placed in `.env` reaches it. Its price-list download at import is switched off.
+- **Some filler topics still outrank planted gaps** (carried over from phase 1), so the expert's pruning step matters.
+- **The API has no authentication** (D8). Run it on localhost only.

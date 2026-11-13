@@ -1,6 +1,7 @@
 """Test doubles for the model: nothing here talks to a network."""
 
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,3 +127,66 @@ class RecordingTracer:
             parts += [call.reply_text or "", call.error or ""]
             parts += [json.dumps(c.arguments) for c in call.tool_calls]
         return "\n".join(parts)
+
+
+_LABELLED = re.compile(
+    r"^(Trigger|Diagnosis|Steps|Rollback|Contacts|Pitfalls|Rationale): (.+)$", re.MULTILINE
+)
+_UNKNOWN = re.compile(r"don't (remember|know)", re.IGNORECASE)
+_PROGRESS = re.compile(r" (Still missing: [a-z, ]+\.|Every section is covered\.)$")
+_FIRST_DRAFTED = re.compile(r"^1\. (.+)$", re.MULTILINE)
+
+
+def checklist_interviewer(messages: Sequence[Message], tools: Sequence[ToolSpec]) -> Reply:
+    """An interviewer policy that needs no model: ask, note what was answered, ask what is missing.
+
+    It follows the same rules the real interviewer is prompted with, so a whole interview can
+    run in a test. It proves the workflow, not the judgement of a real model.
+    """
+    handled: set[str] = set()
+    asked: dict[str, str] = {}
+    for message in messages:
+        for call in message.tool_calls:
+            if call.name in ("record_note", "mark_open"):
+                handled.add(str(call.arguments["section"]))
+            elif call.name == "ask_expert":
+                asked[call.id] = str(call.arguments["section"])
+        resolved = "skipped this question" in message.content or "confidentially" in message.content
+        if message.role == "tool" and message.tool_call_id in asked and resolved:
+            handled.add(asked[message.tool_call_id])
+    calls: list[tuple[str, dict[str, Any]]] = []
+    last = messages[-1]
+    answered = last.role == "tool" and last.tool_call_id in asked
+    if answered and "The expert answered:\n" in last.content:
+        section = asked[str(last.tool_call_id)]
+        answer = _PROGRESS.sub("", last.content.split("The expert answered:\n", 1)[1])
+        labelled = _LABELLED.findall(answer)
+        if labelled:
+            found = [(label.lower(), text) for label, text in labelled]
+            calls += [
+                ("record_note", {"section": name, "text": text})
+                for name, text in found
+                if name not in handled
+            ]
+            handled |= {name for name, _ in found}
+        elif _UNKNOWN.search(answer):
+            targets = (
+                [section] if len(asked) > 1 else [s for s in SECTION_ORDER if s not in handled]
+            )
+            reason = f'The expert said: "{answer}"'
+            calls += [("mark_open", {"section": name, "reason": reason}) for name in targets]
+            handled |= set(targets)
+        else:
+            calls.append(("record_note", {"section": section, "text": answer}))
+            handled.add(section)
+    missing = [name for name in SECTION_ORDER if name not in handled]
+    if not missing:
+        calls.append(("finish_topic", {}))
+    elif not asked:
+        drafted = _FIRST_DRAFTED.search(messages[1].content)
+        question = drafted.group(1) if drafted else "What should your successor know about this?"
+        calls.append(("ask_expert", {"question": question, "section": missing[0]}))
+    else:
+        question = f"You did not mention the {missing[0]}. What is it?"
+        calls.append(("ask_expert", {"question": question, "section": missing[0]}))
+    return tool_reply(*calls)

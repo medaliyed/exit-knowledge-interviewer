@@ -1,13 +1,16 @@
-"""The ``eki`` command line: run the phase 1 pipeline.
+"""The ``eki`` command line: ingest, map, plan and interview.
 
     eki migrate                      apply database migrations
     eki ingest --since D --until D   read the expert's git history and tickets, redact, store, index
     eki map --run ID                 build topics and gap scores for a run
     eki gaps --run ID [--json]       show the ranked topics
+    eki plan --run ID                draft an interview plan (calls the drafting model)
+    eki interview --plan ID          approve the plan and run the interview in the terminal
 
 The expert, the work email domains and the source directory come from settings
 (``EKI_EXPERT_NAME`` and friends) and can be overridden on the command line.
-Output shows labels, counts and scores. It never shows artifact bodies.
+Output shows labels, counts, scores, drafted questions with the short passage
+each one quotes, and the interview itself. It never shows whole artifact bodies.
 """
 
 import argparse
@@ -21,12 +24,23 @@ from uuid import UUID
 
 import psycopg
 
-from eki.config import get_settings, work_domains
+from eki.config import ConfigError, get_settings, work_domains
 from eki.db import connect, migrate
+from eki.graph.workflow import setup_checkpoints
 from eki.ingest.embedding import HashingEmbedder
 from eki.ingest.index import index_run
 from eki.ingest.pipeline import IngestError, ingest_from_source, load, store
 from eki.ingest.scope import Scope
+from eki.interview.models import InterviewPlan
+from eki.interview.service import (
+    ConflictError,
+    Event,
+    InterviewService,
+    NotFoundError,
+    SessionView,
+    build_service,
+)
+from eki.llm import ModelError
 from eki.mapping.scoring import score_topics
 from eki.mapping.store import load_mapping, save_mapping
 from eki.mapping.topics import build_topics
@@ -62,6 +76,13 @@ def _parser() -> argparse.ArgumentParser:
     gaps.add_argument("--run", type=UUID, required=True)
     gaps.add_argument("--json", action="store_true", help="machine-readable output")
     gaps.add_argument("--limit", type=int, default=None, help="show only the top N")
+
+    plan = commands.add_parser("plan", help="draft an interview plan for a mapped run")
+    plan.add_argument("--run", type=UUID, required=True)
+
+    interview = commands.add_parser("interview", help="approve a plan and run its interview")
+    interview.add_argument("--plan", type=UUID, required=True)
+    interview.add_argument("--approve-as", help="who approves the plan (default: the expert)")
     return parser
 
 
@@ -72,6 +93,7 @@ def _fail(message: str, code: int = FAILURE) -> int:
 
 def _migrate(conn: psycopg.Connection) -> int:
     applied = migrate(conn)
+    setup_checkpoints(get_settings().database_url.get_secret_value())
     print("Applied: " + ", ".join(applied) if applied else "Database is up to date.")
     return 0
 
@@ -166,9 +188,122 @@ def _gaps(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _show_plan(plan: InterviewPlan) -> None:
+    print(f"Plan {plan.id} ({plan.status}), {len(plan.topics)} topics")
+    for position, topic in enumerate(plan.topics, start=1):
+        print(f"{position:>3}. {topic.system or '-'}: {topic.label}  ({topic.reason})")
+        for question in topic.questions:
+            print(f"       Q: {question.text}")
+            if question.artifact_id and question.quote:
+                print(f'          from {question.artifact_id}: "{question.quote}"')
+        for reason in topic.dropped:
+            print(f"       dropped a drafted question: {reason}")
+
+
+async def _plan(service: InterviewService, run_id: UUID) -> int:
+    plan = await service.draft_plan(run_id)
+    _show_plan(plan)
+    print(f"Review it, then run: eki interview --plan {plan.id}")
+    return 0
+
+
+def _show_event(event: Event) -> None:
+    kind = event["type"]
+    if kind == "topic":
+        print(f"\n--- Topic {event['index']} of {event['total']}: {event['label']} ---")
+    elif kind == "note":
+        detail = "confidential" if event.get("confidential") else event.get("text", "")
+        print(f"  noted {event['section']}: {detail}")
+    elif kind == "open":
+        print(f"  left open {event['section']}: {event['reason']}")
+    elif kind == "corrected":
+        sections = ", ".join(event["sections"]) or "no note"
+        print(f"  turn {event['corrects']} corrected ({sections} updated)")
+    elif kind in ("error", "recovered"):
+        print(f"  {event['message']}")
+
+
+HELP = (
+    "Type your answer. Other commands: /skip, /confidential ANSWER, "
+    "/correct TURN NEW-TEXT, /quit (you can continue later)."
+)
+
+
+async def _say(service: InterviewService, session_id: UUID, line: str) -> None:
+    """Send one line typed by the expert and print what the interviewer did with it."""
+    command, _, rest = line.partition(" ")
+    try:
+        if command == "/skip":
+            stream = await service.post(session_id, "skip")
+        elif command == "/confidential":
+            stream = await service.post(session_id, "answer", rest, confidential=True)
+        elif command == "/correct":
+            number, _, text = rest.strip().partition(" ")
+            if not number.isdigit():
+                print("  usage: /correct TURN NEW-TEXT")
+                return
+            stream = await service.post(session_id, "correct", text, corrects=int(number))
+        else:
+            stream = await service.post(session_id, "answer", line)
+    except (ValueError, NotFoundError, ConflictError) as refused:
+        print(f"  not accepted: {refused}")
+        return
+    async for event in stream:
+        _show_event(event)
+
+
+async def _interview(service: InterviewService, plan_id: UUID, approver: str | None) -> int:
+    plan = await service.get_plan(plan_id)
+    session_id = await service.session_for_plan(plan_id)
+    if session_id is None:
+        if not approver:
+            return _fail("nobody to approve the plan: set EKI_EXPERT_NAME or --approve-as", 2)
+        _show_plan(plan)
+        view: SessionView = await service.approve(plan_id, approver)
+        print(f"Plan approved by {approver}.")
+        session_id = view.session.id
+    print(HELP)
+    while True:
+        view = await service.view(session_id)
+        if view.session.status == "finished":
+            print(
+                f"\nInterview finished: {len(view.notes)} sections noted, "
+                f"{len(view.open_items)} left open."
+            )
+            return 0
+        if view.waiting is None:
+            # The process stopped mid-step last time: let the workflow reach its question.
+            await _say(service, session_id, "(continue)")
+            continue
+        print(f"\n[turn {view.waiting.ordinal}, {view.waiting.section}] {view.waiting.text}")
+        try:
+            line = input("> ").strip()
+        except EOFError:
+            line = "/quit"
+        if line == "/quit":
+            print(f"Stopped. Continue with: eki interview --plan {plan_id}")
+            return 0
+        if line:
+            await _say(service, session_id, line)
+
+
+def _interview_commands(arguments: argparse.Namespace) -> int:
+    settings = get_settings()
+    service = build_service(settings)
+    try:
+        if arguments.command == "plan":
+            return asyncio.run(_plan(service, arguments.run))
+        approver = arguments.approve_as or settings.expert_name
+        return asyncio.run(_interview(service, arguments.plan, approver))
+    finally:
+        service.tracer.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
+        if arguments.command in ("plan", "interview"):
+            return _interview_commands(arguments)
         with connect(get_settings()) as conn:
             if arguments.command == "migrate":
                 return _migrate(conn)
@@ -177,8 +312,12 @@ def main(argv: list[str] | None = None) -> int:
             if arguments.command == "map":
                 return _map(conn, arguments.run)
             return _gaps(conn, arguments)
-    except IngestError as error:
+    except ConfigError as error:
+        return _fail(str(error), USAGE_ERROR)
+    except (IngestError, NotFoundError, ConflictError) as error:
         return _fail(str(error))
+    except ModelError:
+        return _fail("the model could not be reached; nothing was lost, run the command again")
     except psycopg.OperationalError:
         return _fail("cannot reach the database; is `docker compose up -d postgres` running?")
 
