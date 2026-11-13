@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 import psycopg
 from langgraph.types import Command
 
+from eki.config import Settings, model_name, work_domains
 from eki.graph.workflow import (
     AgentNode,
     Deps,
@@ -24,7 +25,7 @@ from eki.graph.workflow import (
     open_workflow,
     thread_config,
 )
-from eki.ingest.embedding import Embedder
+from eki.ingest.embedding import Embedder, HashingEmbedder
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store
 from eki.interview.interviewer import interview_topic
@@ -38,6 +39,7 @@ from eki.interview.models import (
 )
 from eki.interview.plan import approve as approve_plan
 from eki.llm import ChatModel, ModelError
+from eki.llm.litellm_model import LiteLLMModel
 from eki.runbook.models import SectionName
 
 Event = dict[str, Any]
@@ -348,6 +350,26 @@ class InterviewService:
                 ),
                 None,
             )
-            yield {**waiting} if waiting is not None else {"type": "done"}
+            yield dict(waiting) if waiting is not None else {"type": "done"}
         finally:
             conn.close()
+
+
+def build_service(settings: Settings) -> InterviewService:
+    """The service as configured by the environment. Raises ``ConfigError`` without model names."""
+    domains = work_domains(settings)
+
+    def model(role: Literal["interviewer", "drafter"]) -> ChatModel:
+        return LiteLLMModel(
+            model_name(settings, role),
+            timeout=settings.model_timeout_seconds,
+            work_email_domains=domains,
+        )
+
+    return InterviewService(
+        dsn=settings.database_url.get_secret_value(),
+        drafter=model("drafter"),
+        interviewer=model("interviewer"),
+        embedder=HashingEmbedder(),
+        work_email_domains=domains,
+    )

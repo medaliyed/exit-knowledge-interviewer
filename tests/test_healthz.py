@@ -1,4 +1,4 @@
-"""Deliverable g: the API exposes a liveness probe and nothing else."""
+"""The API exposes a liveness probe, and since phase 2 the plan and session routes."""
 
 import httpx2
 import pytest
@@ -13,8 +13,15 @@ def test_healthz_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_healthz_is_the_only_api_route() -> None:
-    assert set(create_app().openapi()["paths"]) == {"/healthz"}
+def test_api_routes_are_exactly_these() -> None:
+    assert set(create_app().openapi()["paths"]) == {
+        "/healthz",
+        "/runs/{run_id}/plan",
+        "/plans/{plan_id}",
+        "/plans/{plan_id}/approve",
+        "/sessions/{session_id}",
+        "/sessions/{session_id}/messages",
+    }
 
 
 def test_app_starts_without_environment(monkeypatch: pytest.MonkeyPatch) -> None:
