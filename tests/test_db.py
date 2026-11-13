@@ -19,7 +19,15 @@ TABLES = {
     "topics",
     "topic_artifacts",
     "gap_scores",
+    "interview_plans",
+    "plan_topics",
+    "questions",
+    "sessions",
+    "turns",
+    "notes",
+    "open_items",
 }
+MIGRATIONS = ["0001_init.sql", "0002_interview.sql"]
 
 
 def table_names(empty_conn: psycopg.Connection) -> set[str]:
@@ -31,14 +39,16 @@ def table_names(empty_conn: psycopg.Connection) -> set[str]:
 
 def test_migrate_creates_schema(empty_conn: psycopg.Connection) -> None:
     applied = migrate(empty_conn)
-    assert applied == ["0001_init.sql"]
+    assert applied == MIGRATIONS
     assert table_names(empty_conn) == TABLES
 
 
 def test_migrate_is_idempotent(empty_conn: psycopg.Connection) -> None:
     migrate(empty_conn)
     assert migrate(empty_conn) == []
-    assert empty_conn.execute("SELECT count(*) FROM schema_migrations").fetchone() == (1,)
+    assert empty_conn.execute("SELECT count(*) FROM schema_migrations").fetchone() == (
+        len(MIGRATIONS),
+    )
 
 
 def insert_run_and_artifact(empty_conn: psycopg.Connection) -> uuid.UUID:
