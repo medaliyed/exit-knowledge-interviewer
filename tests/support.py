@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from psycopg import sql
+
 from mcp_servers.common.source import Scope
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -70,3 +72,25 @@ def read_only_copy(destination: Path, *, without: tuple[str, ...] = ()) -> Path:
 def make_writable(root: Path) -> None:
     for path in [root, *root.rglob("*")]:
         path.chmod(path.stat().st_mode | stat.S_IWUSR)
+
+
+def tables_containing(conn: Any, schema: str, needle: str) -> list[str]:
+    """Every ``table.column`` of a schema that contains the needle, in text or binary columns."""
+    columns = conn.execute(
+        "SELECT table_name, column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = %s ORDER BY table_name, ordinal_position",
+        (schema,),
+    ).fetchall()
+    found = []
+    for table, column, data_type in columns:
+        target = sql.SQL("{}.{}").format(sql.Identifier(schema), sql.Identifier(table))
+        if data_type == "bytea":
+            condition = sql.SQL("position(convert_to(%s, 'UTF8') in {}) > 0")
+        else:
+            condition = sql.SQL("position(%s in {}::text) > 0")
+        query = sql.SQL("SELECT count(*) FROM {} WHERE ").format(target) + condition.format(
+            sql.Identifier(column)
+        )
+        if conn.execute(query, (needle,)).fetchone()[0]:
+            found.append(f"{table}.{column}")
+    return found

@@ -3,8 +3,10 @@
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-from eki.llm import Message, Reply, ToolSpec
+from eki.llm import Message, Reply, ToolCall, ToolSpec
 
 Policy = Callable[[Sequence[Message], Sequence[ToolSpec]], Reply]
 
@@ -54,3 +56,47 @@ class ScriptedModel:
                 parts += [json.dumps(c.arguments, ensure_ascii=False) for c in message.tool_calls]
             parts += [json.dumps(t.parameters) + t.description for t in call.tools]
         return "\n".join(parts)
+
+
+def tool_reply(*calls: tuple[str, dict[str, Any]], text: str = "") -> Reply:
+    """A model reply that calls tools, with stable call IDs."""
+    global _call_counter
+    made = []
+    for name, arguments in calls:
+        _call_counter += 1
+        made.append(ToolCall(id=f"call-{_call_counter}", name=name, arguments=arguments))
+    return Reply(text=text, tool_calls=tuple(made))
+
+
+_call_counter = 0
+SECTION_ORDER = ("trigger", "diagnosis", "steps", "rollback", "contacts", "pitfalls", "rationale")
+
+
+def expert_answers() -> dict[str, Any]:
+    """The simulated expert's scripted answers. Tests only: the pipeline never reads this file."""
+    path = Path(__file__).resolve().parent / "fixtures" / "expert_answers.json"
+    answers: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))["answers"]
+    return answers
+
+
+class SimulatedExpert:
+    """Answers for one topic the way the fixture says the expert would.
+
+    The first question gets everything she volunteers, one labelled line per
+    section. A later question about a section gets her follow-up for it.
+    """
+
+    def __init__(self, script: dict[str, Any] | None) -> None:
+        self._script = script
+        self._asked = False
+
+    def answer(self, section: str | None) -> str:
+        if self._script is None or self._script["freeform"]:
+            return "I don't remember" if self._script is None else str(self._script["freeform"])
+        initial, follow_ups = self._script["initial"], self._script["follow_ups"]
+        if not self._asked:
+            self._asked = True
+            return "\n".join(
+                f"{name.capitalize()}: {initial[name]}" for name in SECTION_ORDER if initial[name]
+            )
+        return str(follow_ups.get(section) or initial.get(section) or "I don't know.")

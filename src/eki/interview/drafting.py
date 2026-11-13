@@ -58,15 +58,15 @@ def artifact_text(artifact: Artifact) -> RedactedText:
     return RedactedText(f"{artifact.title}\n\n{artifact.body}")
 
 
-def as_data(blocks: Sequence[tuple[str, str]]) -> RedactedText:
-    """Wrap (artifact ID, redacted text) pairs in delimiters that the text cannot contain."""
+def as_data(blocks: Sequence[tuple[str, str]], kind: str = "ARTIFACT") -> RedactedText:
+    """Wrap (label, redacted text) pairs in delimiters that the text cannot contain."""
     joined = "\n".join(text for _, text in blocks)
     boundary = hashlib.blake2b(joined.encode(), digest_size=6).hexdigest()
     while boundary in joined:
         boundary = hashlib.blake2b(boundary.encode(), digest_size=6).hexdigest()
     return RedactedText(
         "\n".join(
-            f"<<<ARTIFACT {artifact_id} {boundary}\n{text}\n{boundary} END>>>"
+            f"<<<{kind} {artifact_id} {boundary}\n{text}\n{boundary} END>>>"
             for artifact_id, text in blocks
         )
     )

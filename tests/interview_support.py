@@ -14,6 +14,7 @@ from eki.ingest.embedding import HashingEmbedder
 from eki.ingest.pipeline import store as store_snapshot
 from eki.ingest.redaction import RedactedText
 from eki.interview import store
+from eki.interview.interviewer import interview_topic
 from eki.interview.models import SECTIONS
 from eki.interview.service import Event, InterviewService
 from eki.llm import ChatModel, Message, Reply, ToolSpec
@@ -88,7 +89,10 @@ def quoting_drafter(messages: Sequence[Message], tools: Sequence[ToolSpec]) -> R
 
 
 async def one_question_agent(deps: Deps, state: InterviewState) -> dict[str, Any]:
-    """Stands in for the interviewer: one question per topic, then every section is noted."""
+    """Stands in for the interviewer: one question per topic, then every section is noted.
+
+    Pass ``agent=None`` to ``make_service`` to get the real interviewer instead.
+    """
     session_id, topic_id = UUID(str(state["session_id"])), str(state["topic_id"])
     step = state.get("step", 0) + 1
     pending = state.get("pending")
@@ -116,7 +120,7 @@ async def one_question_agent(deps: Deps, state: InterviewState) -> dict[str, Any
 def make_service(
     dsn: str,
     *,
-    agent: AgentNode = one_question_agent,
+    agent: AgentNode | None = one_question_agent,
     drafter: ChatModel | None = None,
     interviewer: ChatModel | None = None,
     limits: Limits | None = None,
@@ -127,8 +131,8 @@ def make_service(
         interviewer=interviewer or ScriptedModel([], name="interviewer"),
         embedder=HashingEmbedder(),
         work_email_domains=WORK_DOMAINS,
-        agent=agent,
         limits=limits or Limits(),
+        agent=agent or interview_topic,
     )
 
 

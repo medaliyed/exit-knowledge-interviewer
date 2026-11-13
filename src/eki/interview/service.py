@@ -27,6 +27,7 @@ from eki.graph.workflow import (
 from eki.ingest.embedding import Embedder
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store
+from eki.interview.interviewer import interview_topic
 from eki.interview.models import (
     InterviewPlan,
     Note,
@@ -74,7 +75,7 @@ class InterviewService:
     interviewer: ChatModel
     embedder: Embedder
     work_email_domains: frozenset[str]
-    agent: AgentNode
+    agent: AgentNode = interview_topic
     limits: Limits = field(default_factory=Limits)
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
