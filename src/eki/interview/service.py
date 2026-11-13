@@ -15,6 +15,8 @@ import psycopg
 from langgraph.types import Command
 
 from eki.config import Settings, model_name, work_domains
+from eki.errors import ConflictError as ConflictError
+from eki.errors import NotFoundError as NotFoundError
 from eki.graph.workflow import (
     AgentNode,
     Deps,
@@ -45,14 +47,6 @@ from eki.runbook.models import SectionName
 
 Event = dict[str, Any]
 Action = Literal["answer", "skip", "correct"]
-
-
-class NotFoundError(Exception):
-    """No such run, plan, session or turn."""
-
-
-class ConflictError(Exception):
-    """The request does not fit the current state, for example an edit to an approved plan."""
 
 
 class BusyError(ConflictError):

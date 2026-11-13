@@ -40,6 +40,7 @@ from eki.interview.drafting import draft_questions
 from eki.interview.plan import DEFAULT_LIMIT, build_plan, with_questions
 from eki.llm import ChatModel
 from eki.mapping.store import load_mapping
+from eki.runbook.service import synthesise
 
 
 class WorkflowError(Exception):
@@ -192,7 +193,6 @@ async def _next_topic(deps: Deps, state: InterviewState) -> dict[str, Any]:
         "topic_done": False,
     }
     if index >= len(plan.topics):
-        await db(store.finish_session, deps.conn, session_id)
         return {**fresh, "topic_id": None, "status": "done"}
     topic_id = plan.topics[index].topic_id
     await db(store.set_current_topic, deps.conn, session_id, topic_id)
@@ -220,6 +220,16 @@ async def _check_complete(deps: Deps, state: InterviewState) -> dict[str, Any]:
     return {"topic_done": False, "notices": [*state.get("notices", []), notice]}
 
 
+async def _synthesise(deps: Deps, state: InterviewState) -> dict[str, Any]:
+    def work() -> None:
+        with deps.conn.transaction():
+            store.finish_session(deps.conn, UUID(str(state["session_id"])))
+            synthesise(deps.conn, UUID(str(state["session_id"])))
+
+    await db(work)
+    return {"status": "done"}
+
+
 def build_graph(
     deps: Deps, interview_topic: AgentNode
 ) -> StateGraph[InterviewState, None, InterviewState, InterviewState]:
@@ -238,13 +248,15 @@ def build_graph(
     graph.add_node("next_topic", bound(_next_topic))
     graph.add_node("interview_topic", bound(agent))
     graph.add_node("check_complete", bound(_check_complete))
+    graph.add_node("synthesise", bound(_synthesise))
+    graph.add_edge("synthesise", END)
     graph.add_edge(START, "draft_plan")
     graph.add_edge("draft_plan", "await_review")
     graph.add_edge("await_review", "next_topic")
     graph.add_conditional_edges(
         "next_topic",
         lambda state: "done" if state.get("status") == "done" else "interview",
-        {"done": END, "interview": "interview_topic"},
+        {"done": "synthesise", "interview": "interview_topic"},
     )
     graph.add_conditional_edges(
         "interview_topic",

@@ -97,8 +97,8 @@ Tables: `runbook_entries` (ID, session, topic, title, status, content as validat
 
 **Files:** `src/eki/graph/workflow.py`, `src/eki/runbook/service.py`, `tests/test_workflow_synthesis.py` (`db`).
 
-- [ ] Failing tests: when the last topic finishes, one draft entry exists per plan topic; the session still ends as finished; a restart during synthesis leaves no duplicate; synthesis on request replaces drafts and keeps approved and rejected entries; `test_unfinished_session_cannot_be_synthesised`; the existing phase 2 workflow tests still pass.
-- [ ] Implement. Commit `feat(F9): synthesise draft entries when the interview ends`.
+- [x] Failing tests: when the last topic finishes, one draft entry exists per plan topic; the session still ends as finished; a restart during synthesis leaves no duplicate; synthesis on request replaces drafts and keeps approved and rejected entries; `test_unfinished_session_cannot_be_synthesised`; the existing phase 2 workflow tests still pass.
+- [x] Implement. Commit `feat(F9): synthesise draft entries when the interview ends`.
 
 ### Task d: Approve and reject (F10)
 
