@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from eki.llm import Message, Reply, ToolCall, ToolSpec
+from eki.llm.tracing import ModelCall
 
 Policy = Callable[[Sequence[Message], Sequence[ToolSpec]], Reply]
 
@@ -100,3 +101,28 @@ class SimulatedExpert:
                 f"{name.capitalize()}: {initial[name]}" for name in SECTION_ORDER if initial[name]
             )
         return str(follow_ups.get(section) or initial.get(section) or "I don't know.")
+
+
+class RecordingTracer:
+    """Keeps every traced model call, for assertions."""
+
+    def __init__(self) -> None:
+        self.calls: list[ModelCall] = []
+        self.flushed = 0
+
+    def record(self, call: ModelCall) -> str | None:
+        self.calls.append(call)
+        return None
+
+    def flush(self) -> None:
+        self.flushed += 1
+
+    def text(self) -> str:
+        """Everything that was traced, as one string, for scanning."""
+        parts: list[str] = []
+        for call in self.calls:
+            parts += [m.content for m in call.messages]
+            parts += [json.dumps(c.arguments) for m in call.messages for c in m.tool_calls]
+            parts += [call.reply_text or "", call.error or ""]
+            parts += [json.dumps(c.arguments) for c in call.tool_calls]
+        return "\n".join(parts)

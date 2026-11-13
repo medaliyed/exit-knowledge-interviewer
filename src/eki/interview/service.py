@@ -40,6 +40,7 @@ from eki.interview.models import (
 from eki.interview.plan import approve as approve_plan
 from eki.llm import ChatModel, ModelError
 from eki.llm.litellm_model import LiteLLMModel
+from eki.llm.tracing import NullTracer, TracedModel, Tracer, build_tracer
 from eki.runbook.models import SectionName
 
 Event = dict[str, Any]
@@ -90,16 +91,37 @@ class InterviewService:
     work_email_domains: frozenset[str]
     agent: AgentNode = interview_topic
     limits: Limits = field(default_factory=Limits)
+    tracer: Tracer = field(default_factory=NullTracer)
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def _connect(self) -> psycopg.Connection:
         return psycopg.connect(self.dsn, autocommit=True)
 
-    def _deps(self, conn: psycopg.Connection) -> Deps:
+    def _deps(
+        self,
+        conn: psycopg.Connection,
+        *,
+        run_id: UUID | None = None,
+        plan_id: UUID | None = None,
+        session_id: UUID | None = None,
+    ) -> Deps:
+        """Node dependencies, with both models traced under the given IDs."""
+
+        def traced(model: ChatModel, step: str) -> ChatModel:
+            return TracedModel(
+                model,
+                self.tracer,
+                step=step,
+                work_email_domains=self.work_email_domains,
+                run_id=None if run_id is None else str(run_id),
+                plan_id=None if plan_id is None else str(plan_id),
+                session_id=None if session_id is None else str(session_id),
+            )
+
         return Deps(
             conn=conn,
-            drafter=self.drafter,
-            interviewer=self.interviewer,
+            drafter=traced(self.drafter, "draft"),
+            interviewer=traced(self.interviewer, "interview"),
             embedder=self.embedder,
             work_email_domains=self.work_email_domains,
             limits=self.limits,
@@ -114,7 +136,8 @@ class InterviewService:
             if not await db(store.run_exists, conn, run_id):
                 raise NotFoundError(f"no completed run {run_id}")
             try:
-                async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
+                deps = self._deps(conn, run_id=run_id, plan_id=plan_id)
+                async with open_workflow(self.dsn, deps, self.agent) as workflow:
                     await workflow.ainvoke(
                         {"run_id": str(run_id), "plan_id": str(plan_id)},
                         thread_config(plan_id),
@@ -166,9 +189,11 @@ class InterviewService:
                 await db(store.save_plan, conn, approve_plan(plan, by, self.clock()))
             elif await db(store.session_of_plan, conn, plan_id) is not None:
                 raise ConflictError("the plan is already approved")
-            async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
+            new_session = await db(store.session_of_plan, conn, plan_id) or uuid4()
+            deps = self._deps(conn, run_id=plan.run_id, plan_id=plan_id, session_id=new_session)
+            async with open_workflow(self.dsn, deps, self.agent) as workflow:
                 await workflow.ainvoke(
-                    Command(resume={"session_id": str(uuid4())}),
+                    Command(resume={"session_id": str(new_session)}),
                     thread_config(plan_id),
                     durability="sync",
                 )
@@ -326,7 +351,10 @@ class InterviewService:
                     "message": "The session had stopped mid-step. It continues now; "
                     "an answer in this message was not used.",
                 }
-            async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
+            deps = self._deps(
+                conn, run_id=session.run_id, plan_id=session.plan_id, session_id=session.id
+            )
+            async with open_workflow(self.dsn, deps, self.agent) as workflow:
                 try:
                     async for mode, chunk in workflow.astream(
                         command, config, stream_mode=["custom"], durability="sync"
@@ -372,4 +400,5 @@ def build_service(settings: Settings) -> InterviewService:
         interviewer=model("interviewer"),
         embedder=HashingEmbedder(),
         work_email_domains=domains,
+        tracer=build_tracer(settings),
     )

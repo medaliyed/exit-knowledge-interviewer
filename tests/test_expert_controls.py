@@ -159,3 +159,46 @@ async def test_a_correction_is_redacted_like_any_answer(scratch: Scratch) -> Non
     assert current.turns[-1].text == "Use token=[REDACTED:credential] instead."
     with scratch.connect() as conn:
         assert tables_containing(conn, scratch.schema, "FAKE-TOKEN-3b9f6e2a8c4d1075") == []
+
+
+async def test_traces_carry_ids_and_never_a_confidential_answer(scratch: Scratch) -> None:
+    """Task P2-i: every model call is traced under its run and session; secrets never are."""
+    from eki.graph.workflow import Limits
+    from tests.fakes import RecordingTracer, ScriptedModel
+    from tests.interview_support import make_service, seed_run
+    from tests.support import FAKE_CREDENTIALS
+
+    with scratch.connect() as conn:
+        run_id = seed_run(conn)
+    tracer = RecordingTracer()
+    script = [
+        tool_reply(ask("Who do you call?", "contacts")),
+        tool_reply(ask("How do you log in?", "steps")),
+        tool_reply(note("steps", "With the shared account."), ask("What triggers it?")),
+    ]
+    service = make_service(
+        scratch.dsn,
+        agent=None,
+        interviewer=ScriptedModel(script, name="interviewer"),
+        limits=Limits(plan_size=1),
+        tracer=tracer,
+    )
+    plan = await service.draft_plan(run_id)
+    view = await service.approve(plan.id, "Nadia Ferrand")
+    await say(service, view.session.id, VENDOR_CONTACT, confidential=True)
+    await say(
+        service, view.session.id, f"With password={FAKE_CREDENTIALS[1]} on the shared account."
+    )
+    assert [(c.step, c.model) for c in tracer.calls] == [
+        ("draft", "drafter"),
+        ("interview", "interviewer"),
+        ("interview", "interviewer"),
+        ("interview", "interviewer"),
+    ]
+    assert {c.run_id for c in tracer.calls} == {str(run_id)}
+    assert {c.plan_id for c in tracer.calls} == {str(plan.id)}
+    assert [c.session_id for c in tracer.calls] == [None, *[str(view.session.id)] * 3]
+    traced = tracer.text()
+    assert "Marek" not in traced
+    assert FAKE_CREDENTIALS[1] not in traced
+    assert "password=[REDACTED:credential]" in traced

@@ -36,8 +36,8 @@ MINOR_SYSTEM = "notify-relay"  # exists only so that non-gap N2 has somewhere to
 
 # Trap T3. Generic shapes on purpose: nothing here imitates a real provider's key format.
 FAKE_API_KEY = "FAKE-APIKEY-7d1e4c90b2a853f6"
-FAKE_PASSWORD = "FAKE-PASSWORD-ledger-Qm7x2Lp9"  # noqa: S105
-FAKE_TOKEN = "FAKE-TOKEN-3b9f6e2a8c4d1075"  # noqa: S105
+FAKE_PASSWORD = "FAKE-PASSWORD-ledger-Qm7x2Lp9"
+FAKE_TOKEN = "FAKE-TOKEN-3b9f6e2a8c4d1075"
 # Trap T4.
 PHONE_NUMBER = "+33 1 99 00 42 17"
 HOME_ADDRESS = "14 rue des Tilleuls, 99990 Exempleville"

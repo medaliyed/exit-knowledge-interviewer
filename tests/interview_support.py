@@ -18,6 +18,7 @@ from eki.interview.interviewer import interview_topic
 from eki.interview.models import SECTIONS
 from eki.interview.service import Event, InterviewService
 from eki.llm import ChatModel, Message, Reply, ToolSpec
+from eki.llm.tracing import NullTracer, Tracer
 from eki.mapping.models import DocStatus, GapScore, Topic, TopicKind
 from eki.mapping.store import save_mapping
 from tests import builders
@@ -124,6 +125,7 @@ def make_service(
     drafter: ChatModel | None = None,
     interviewer: ChatModel | None = None,
     limits: Limits | None = None,
+    tracer: Tracer | None = None,
 ) -> InterviewService:
     return InterviewService(
         dsn=dsn,
@@ -133,6 +135,7 @@ def make_service(
         work_email_domains=WORK_DOMAINS,
         limits=limits or Limits(),
         agent=agent or interview_topic,
+        tracer=tracer or NullTracer(),
     )
 
 
