@@ -99,7 +99,7 @@ class Turn(_Model):
     """Position in the session's transcript, from 1."""
     topic_id: str | None
     speaker: Literal["interviewer", "expert"]
-    kind: Literal["question", "answer", "skip", "correction"]
+    kind: Literal["question", "answer", "skip", "correction", "edit"]
     text: RedactedText
     confidential: bool = False
     section: SectionName | None = None

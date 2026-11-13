@@ -212,7 +212,7 @@ def add_expert_turn(
     conn: psycopg.Connection,
     session_id: UUID,
     topic_id: str | None,
-    kind: Literal["answer", "skip", "correction"],
+    kind: Literal["answer", "skip", "correction", "edit"],
     text: RedactedText,
     *,
     answers: int | None = None,
