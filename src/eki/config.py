@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     """Comma separated. Email addresses on these domains are kept; all others are redacted."""
     source_dir: Path | None = None
 
+    # Models, reached through LiteLLM. No default on purpose: the choice is the operator's.
+    # The provider key is read by LiteLLM from the provider's own variable, never from here.
+    model_interviewer: str | None = None
+    model_drafter: str | None = None
+    model_timeout_seconds: float = 60.0
+
+
+class ConfigError(Exception):
+    """A setting needed for this command is missing."""
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -43,3 +53,11 @@ def get_settings() -> Settings:
 
 def work_domains(settings: Settings) -> frozenset[str]:
     return frozenset(d.strip().lower() for d in settings.work_email_domains.split(",") if d.strip())
+
+
+def model_name(settings: Settings, role: Literal["interviewer", "drafter"]) -> str:
+    """The configured model for a role. Raises ``ConfigError`` when it is not set."""
+    name = settings.model_interviewer if role == "interviewer" else settings.model_drafter
+    if not name:
+        raise ConfigError(f"EKI_MODEL_{role.upper()} is not set (a LiteLLM model name)")
+    return name
