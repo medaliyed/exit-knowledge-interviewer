@@ -90,8 +90,8 @@ Tables: `runbook_entries` (ID, session, topic, title, status, content as validat
 
 **Produces:** `build_entry(session_id, topic, notes, open_items) -> RunbookEntry`, a pure function.
 
-- [ ] Failing tests: each note becomes a claim citing its turn; a `steps` note is split into ordered claims that all cite the same turn; an open item becomes the open question with the expert's reason; a confidential note becomes the fixed open question and its text appears nowhere; superseded notes are ignored; the result is a draft with no missing section and no uncited claim; `test_synthesis_is_repeatable`; a topic with no notes and no open items is refused.
-- [ ] Implement. Commit `feat(F9): build cited runbook entries from interview notes`.
+- [x] Failing tests: each note becomes a claim citing its turn; a `steps` note is split into ordered claims that all cite the same turn; an open item becomes the open question with the expert's reason; a confidential note becomes the fixed open question and its text appears nowhere; superseded notes are ignored; the result is a draft with no missing section and no uncited claim; `test_synthesis_is_repeatable`; a topic with no notes and no open items is refused.
+- [x] Implement. Commit `feat(F9): build cited runbook entries from interview notes`.
 
 ### Task c: Synthesis in the workflow
 
