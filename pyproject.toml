@@ -12,6 +12,9 @@ dependencies = [
     "uvicorn==0.54.0",
 ]
 
+[project.scripts]
+eki = "eki.cli:main"
+
 [dependency-groups]
 dev = [
     "httpx2==2.16.0",

@@ -51,3 +51,21 @@ def test_triggers_on_push_and_pull_request(workflow: str) -> None:
 
 def test_uv_version_is_pinned(workflow: str) -> None:
     assert re.search(r'version:\s*"0\.13\.7"', workflow)
+
+
+def test_database_tests_run_against_a_pinned_postgres_service(workflow: str) -> None:
+    assert re.search(
+        r"^\s+services:\n\s+postgres:\n\s+image: pgvector/pgvector:0\.8\.7-pg16$",
+        workflow,
+        flags=re.MULTILINE,
+    )
+    assert "run: uv run pytest -q -m db" in workflow
+    assert "--health-cmd" in workflow
+
+
+def test_database_port_is_bound_to_localhost(workflow: str) -> None:
+    assert "- 127.0.0.1:5432:5432" in workflow
+
+
+def test_ci_database_url_points_at_the_service(workflow: str) -> None:
+    assert re.search(r"EKI_DATABASE_URL: postgresql://\S+@localhost:5432/eki", workflow)

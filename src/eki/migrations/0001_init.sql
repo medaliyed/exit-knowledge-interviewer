@@ -1,7 +1,8 @@
 -- Phase 1 schema: one ingest run is one immutable snapshot of what was read, mapped and scored.
 -- Everything stored here has already been redacted.
 
-CREATE EXTENSION IF NOT EXISTS vector;
+-- In the public schema, so every schema on the search path can use the type.
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 CREATE TABLE ingest_runs (
     id            uuid PRIMARY KEY,

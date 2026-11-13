@@ -439,3 +439,38 @@ List what is verified with the evidence, the full ranked gap table for the fixtu
 ## Out of scope for phase 1
 
 Mail (F3), question drafting (F6), the interviewer and LangGraph (F7, F8), runbook synthesis and approval (F9, F10), search over approved entries (F11), export (F12), the audit log (F13), LiteLLM and the Langfuse SDK, connectors to real GitHub, GitLab or Jira instances. Phase 2 is not planned here.
+
+## Outcome
+
+Implemented in order a to j on 2026-11-12 and 2026-11-13. On the fixture corpus the pipeline ingests 262 artifacts, builds 37 topics and ranks them; the formula and thresholds are exactly as written above and were not adjusted after seeing the result.
+
+Where the reachable plants landed (rank out of 37):
+
+| Plant | Topic | Rank | Score | Doc status |
+| --- | --- | --- | --- | --- |
+| G2 | system report-export | 2 | 86.0 | none |
+| G1 | incident: billing-batch run failed during the posting phase | 4 | 79.5 | none |
+| G3 | incident: month-end reconciliation mismatch | 5 | 77.8 | none |
+| G7 | procedure: `config/flags.yaml` toggles | 9 | 68.9 | none |
+| G5 | decision: the rejected pull request | 17 | 41.3 | none |
+| G6 | incident: ledger-db primary failover | 22 | 38.5 | documented |
+| G4 | procedure: gateway certificate renewal | 27 | 32.2 | documented |
+| N1 | procedure: gateway rate-limit rollout | low | under 10 | documented |
+| N2 | system notify-relay | low | under 10 | none |
+| N3 | no single topic (bumps are spread over three repos) | - | - | - |
+
+What this shows, plainly:
+
+- **G6 and G4 rank low, as predicted.** A wiki page exists for both, and what the page lacks (the manual step, the vendor) cannot be seen without a model (G6, phase 2) or mail (G4, phase 4).
+- **Ordinary work outranks some gaps.** Several filler topics score 70 to 87 because the generator happens to assign every ticket with those titles to the expert, and nothing documents them. By the formula they are real candidates. The expert prunes the plan in phase 2 (F6), which is where that judgement belongs.
+- **Acceptance wording changed in one place.** A plant is matched to the *smallest* topic holding 80% of its in-scope artifacts, because a system topic holds everything in its system and would match trivially. "Every gap outscores every non-gap" holds for the non-gaps that map to a topic; N3 maps to none.
+
+Differences from the plan as written:
+
+- Migrations live in `src/eki/migrations/` so they ship with the package. `doc_status` and `linked_documents` are columns of `gap_scores`.
+- `Scope` lives in `eki.ingest.scope`; `pull` takes it as a third argument. Ingest keeps its own strict models of what servers send (`eki/ingest/wire.py`) instead of importing server code.
+- The high-entropy detector requires a digit, ignores UUIDs and does not treat `/` as part of a token, to avoid redacting file paths and run IDs.
+- Embedding tokens are `[a-z0-9]+`, so "billing-batch" and "billing batch" match.
+- Vector search turns on pgvector's iterative scan, since the run filter is applied after the approximate index.
+- Topic artifact IDs are stored sorted, not chronological.
+- Mutation check: forcing exclusivity to 1, ignoring documentation, disabling staleness and disabling title merging each make the acceptance tests fail.

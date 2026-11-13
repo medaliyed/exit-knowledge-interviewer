@@ -24,7 +24,7 @@ from eki.ingest import wire
 from eki.ingest.documents import paths_mentioned
 from eki.ingest.models import ActivitySummary, Artifact, Snapshot
 from eki.ingest.redaction import KINDS, RedactedText, redact
-from mcp_servers.common.source import Scope
+from eki.ingest.scope import Scope
 
 log = logging.getLogger("eki.ingest")
 

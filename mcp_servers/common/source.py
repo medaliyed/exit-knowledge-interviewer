@@ -6,29 +6,18 @@ server was given and refuses everything else, including mail and the answer key.
 """
 
 import json
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from eki.ingest.redaction import KINDS, redact
+from eki.ingest.scope import Scope
+
+__all__ = ["Redactor", "Scope", "SourceAccessError", "SourceReader", "parse_time"]
 
 
 class SourceAccessError(PermissionError):
     """Raised for any attempt to read outside the directories a server may open."""
-
-
-@dataclass(frozen=True)
-class Scope:
-    expert_name: str
-    expert_email: str
-    since: datetime
-    until: datetime
-    """Inclusive on both ends. Both are timezone-aware."""
-    work_email_domains: frozenset[str]
-
-    def contains(self, moment: datetime) -> bool:
-        return self.since <= moment <= self.until
 
 
 def parse_time(text: str) -> datetime:

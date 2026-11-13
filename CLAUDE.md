@@ -24,11 +24,13 @@ Docker Compose for local infra.
 docker compose up -d                      # local infra (Postgres+pgvector, Langfuse)
 uv sync                                   # install pinned dependencies
 uv run pytest -q                          # tests
+uv run pytest -m db                       # database tests; needs `docker compose up -d postgres`
 uv run pytest -m infra                    # live checks; needs the compose stack up
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run uvicorn eki.api.app:app --reload   # API on :8000
 uv run python -m tests.fixtures.generator # regenerate the synthetic corpus
+uv run eki migrate                        # then: eki ingest --since D --until D | eki map --run ID | eki gaps --run ID
 ```
 
 ## Layout
@@ -41,7 +43,7 @@ src/eki/
   mapping/    topic clustering, gap scoring
   runbook/    entry template, citation validation, approval
   search/     hybrid search and Q&A
-mcp_servers/  one read-only MCP server per source
+mcp_servers/  one read-only MCP server per source (git_server, tickets_server); they redact before returning
 tests/        tests; fixtures in tests/fixtures/
 evals/        scenarios/ and golden/ are human-owned
 docs/plans/   one approved plan per phase
