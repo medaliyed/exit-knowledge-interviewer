@@ -1,49 +1,17 @@
 """Deliverable f (F2): the stored snapshot is complete, isolated, atomic and free of secrets."""
 
 import uuid
-from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import psycopg
 import pytest
-from mcp import Client
 from psycopg import sql
 
-from eki.config import get_settings
-from eki.db import connect, migrate
 from eki.ingest.models import Snapshot
-from eki.ingest.pipeline import IngestError, load, pull, store
-from mcp_servers.git_server import build_server as build_git
-from mcp_servers.tickets_server import build_server as build_tickets
-from tests.support import CORPUS, FAKE_CREDENTIALS, FULL_SPAN
+from eki.ingest.pipeline import IngestError, load, store
+from tests.support import FAKE_CREDENTIALS
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
-
-
-@pytest.fixture
-def conn() -> Iterator[psycopg.Connection]:
-    schema = f"test_{uuid.uuid4().hex[:12]}"
-    connection = connect(get_settings())
-    connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
-    connection.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
-    connection.commit()
-    migrate(connection)
-    try:
-        yield connection
-    finally:
-        connection.rollback()
-        connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
-        connection.commit()
-        connection.close()
-
-
-@pytest.fixture
-async def snapshot() -> Snapshot:
-    async with (
-        Client(build_git(FULL_SPAN, CORPUS), raise_exceptions=True) as git,
-        Client(build_tickets(FULL_SPAN, CORPUS), raise_exceptions=True) as tickets,
-    ):
-        return await pull(git, tickets, FULL_SPAN)
 
 
 async def test_store_then_load_round_trips(conn: psycopg.Connection, snapshot: Snapshot) -> None:
