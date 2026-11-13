@@ -1,6 +1,7 @@
 """Deliverable h (F4): artifacts are grouped into systems, incidents, procedures and decisions."""
 
 import random
+from typing import Any
 
 from eki.ingest.embedding import HashingEmbedder
 from eki.mapping.models import Topic, TopicKind
@@ -14,7 +15,7 @@ def topics_of(kind: TopicKind, topics: tuple[Topic, ...]) -> list[Topic]:
     return [t for t in topics if t.kind is kind]
 
 
-def build(artifacts: list) -> tuple[Topic, ...]:  # type: ignore[type-arg]
+def build(artifacts: list[Any]) -> tuple[Topic, ...]:
     return build_topics(snapshot(artifacts), EMBEDDER)
 
 

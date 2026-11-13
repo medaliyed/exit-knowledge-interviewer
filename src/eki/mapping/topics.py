@@ -137,7 +137,7 @@ def build_topics(snapshot: Snapshot, embedder: Embedder) -> tuple[Topic, ...]:
             kind=kind,
             system=system,
             label=label,
-            artifact_ids=tuple(ids),
+            artifact_ids=tuple(sorted(ids, key=lambda i: i.encode())),
         )
         for kind, system, label, ids in drafts
     ]

@@ -7,7 +7,6 @@ carries IDs and counts only, never content.
 """
 
 import logging
-import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -22,6 +21,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ValidationError
 
 from eki.ingest import wire
+from eki.ingest.documents import paths_mentioned
 from eki.ingest.models import ActivitySummary, Artifact, Snapshot
 from eki.ingest.redaction import KINDS, RedactedText, redact
 from mcp_servers.common.source import Scope
@@ -30,7 +30,6 @@ log = logging.getLogger("eki.ingest")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PAGE_SIZE = 100
-DOCUMENT_PATH = re.compile(r"`([\w.-]+(?:/[\w.-]+)+)`")
 
 
 class IngestError(RuntimeError):
@@ -225,8 +224,8 @@ def _document_artifact(raw: wire.WireDocument, domains: frozenset[str]) -> Artif
 
 
 def mentioned_paths(documents: list[wire.WireDocument]) -> set[str]:
-    """File paths a wiki page mentions in backticks, such as `deploy/cron.yaml`."""
-    return {path for document in documents for path in DOCUMENT_PATH.findall(document.body)}
+    """File paths any wiki page mentions in backticks, such as `deploy/cron.yaml`."""
+    return {path for document in documents for path in paths_mentioned(document.body)}
 
 
 async def pull(git: Client, tickets: Client, scope: Scope) -> Snapshot:
