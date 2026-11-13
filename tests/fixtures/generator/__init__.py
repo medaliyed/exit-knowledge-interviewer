@@ -25,7 +25,7 @@ __all__ = ["DEFAULT_OUT_DIR", "DEFAULT_SEED", "RefusingToOverwriteError", "build
 
 def build(seed: int) -> Corpus:
     """Build the corpus in memory: plants first, then filler, then stable ordering and IDs."""
-    rng = random.Random(seed)  # noqa: S311 - reproducible test data, not cryptography
+    rng = random.Random(seed)
     corpus = Corpus()
     plant_everything(rng, corpus)
     fill_everything(rng, corpus)
