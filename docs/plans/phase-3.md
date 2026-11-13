@@ -104,8 +104,8 @@ Tables: `runbook_entries` (ID, session, topic, title, status, content as validat
 
 **Files:** `src/eki/runbook/review.py`, `src/eki/runbook/service.py`, `tests/test_review.py`, `tests/test_review_service.py` (`db`).
 
-- [ ] Failing tests: approve sets status, approver and time and records a decision; an approver who is not the run's expert is refused; an entry with an uncited claim or a missing section cannot be approved; approving twice is refused; reject needs a reason and records it; a rejected entry cannot be approved without an edit; an all-open entry can be approved; `test_decisions_are_serialised`; unknown entry gives not-found.
-- [ ] Implement. Commit `feat(F10): expert approves or rejects each runbook entry`.
+- [x] Failing tests: approve sets status, approver and time and records a decision; an approver who is not the run's expert is refused; an entry with an uncited claim or a missing section cannot be approved; approving twice is refused; reject needs a reason and records it; a rejected entry cannot be approved without an edit; an all-open entry can be approved; `test_decisions_are_serialised`; unknown entry gives not-found.
+- [x] Implement. Commit `feat(F10): expert approves or rejects each runbook entry`.
 
 ### Task e: Edit and re-approval (F10)
 

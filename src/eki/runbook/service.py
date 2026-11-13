@@ -1,13 +1,16 @@
 """Runbook operations shared by HTTP and CLI, independent of model configuration."""
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from uuid import UUID
 
 import psycopg
 
 from eki.errors import ConflictError, NotFoundError
+from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
-from eki.runbook import store
+from eki.runbook import review, store
 from eki.runbook.models import SECTION_NAMES, EntryStatus, InterviewTurnCitation, RunbookEntry
 from eki.runbook.synthesis import build_entry
 
@@ -69,6 +72,8 @@ def synthesise(conn: psycopg.Connection, session_id: UUID) -> tuple[store.Stored
 @dataclass
 class RunbookService:
     dsn: str
+    work_email_domains: frozenset[str] = field(default_factory=frozenset)
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def _connect(self) -> psycopg.Connection:
         return psycopg.connect(self.dsn, autocommit=True)
@@ -89,3 +94,64 @@ class RunbookService:
             if stored is None:
                 raise NotFoundError(f"no entry {entry_id}")
             return stored
+
+    def history(self, entry_id: UUID) -> tuple[store.Decision, ...]:
+        with self._connect() as conn:
+            if store.load_entry(conn, str(entry_id)) is None:
+                raise NotFoundError(f"no entry {entry_id}")
+            return store.decisions(conn, str(entry_id))
+
+    def _clean(self, text: str) -> RedactedText:
+        return redact(text, work_email_domains=self.work_email_domains).text
+
+    def _change(
+        self,
+        entry_id: UUID,
+        by: str,
+        action: store.DecisionAction,
+        apply: Callable[[psycopg.Connection, store.StoredEntry, str], RunbookEntry],
+        *,
+        reason: RedactedText | None = None,
+    ) -> store.StoredEntry:
+        with self._connect() as conn, conn.transaction():
+            previous = store.load_entry(conn, str(entry_id))
+            if previous is None:
+                raise NotFoundError(f"no entry {entry_id}")
+            # Lock session first everywhere, including edits, synthesis and corrections.
+            conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (previous.session_id,))
+            previous = store.load_entry(conn, str(entry_id), lock=True)
+            if previous is None:
+                raise NotFoundError(f"no entry {entry_id}")
+            row = conn.execute(
+                "SELECT r.expert_name FROM ingest_runs r JOIN interview_plans p ON p.run_id = r.id "
+                "JOIN sessions s ON s.plan_id = p.id WHERE s.id = %s",
+                (previous.session_id,),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("the entry's session no longer exists")
+            review.check_expert(by, row[0])
+            changed = apply(conn, previous, row[0])
+            validate_sources(conn, previous.session_id, changed)
+            result = store.save_entry(conn, previous.session_id, changed, rejection_reason=reason)
+            store.add_decision(conn, changed.id, action, self._clean(by), self.clock(), reason)
+            return result
+
+    def approve(self, entry_id: UUID, by: str) -> store.StoredEntry:
+        return self._change(
+            entry_id,
+            by,
+            "approve",
+            lambda conn, previous, expert: review.approve(
+                previous.entry, self._clean(by), expert, self.clock()
+            ),
+        )
+
+    def reject(self, entry_id: UUID, by: str, reason: str) -> store.StoredEntry:
+        clean = self._clean(reason)
+        return self._change(
+            entry_id,
+            by,
+            "reject",
+            lambda conn, previous, expert: review.reject(previous.entry, clean),
+            reason=clean,
+        )
