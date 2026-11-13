@@ -3,14 +3,17 @@
 import os
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 import psycopg
 import pytest
 from mcp import Client
 from psycopg import sql
+from psycopg.conninfo import make_conninfo
 
 from eki.config import get_settings
 from eki.db import connect, migrate
+from eki.graph.workflow import setup_checkpoints
 from eki.ingest.models import Snapshot
 from eki.ingest.pipeline import pull
 from mcp_servers.git_server import build_server as build_git
@@ -44,6 +47,36 @@ def _scratch_connection(*, migrated: bool) -> Iterator[psycopg.Connection]:
         connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
         connection.commit()
         connection.close()
+
+
+@dataclass(frozen=True)
+class Scratch:
+    """A migrated throwaway schema that any number of connections can share."""
+
+    schema: str
+    dsn: str
+    """A connection string whose search path is the scratch schema."""
+
+    def connect(self) -> psycopg.Connection:
+        return psycopg.connect(self.dsn, autocommit=True)
+
+
+@pytest.fixture
+def scratch() -> Iterator[Scratch]:
+    """Committed scratch schema with every migration and the checkpoint tables."""
+    schema = f"test_{uuid.uuid4().hex[:12]}"
+    base = get_settings().database_url.get_secret_value()
+    with psycopg.connect(base, autocommit=True) as admin:
+        admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+    dsn = make_conninfo(base, options=f"-c search_path={schema},public")
+    try:
+        with psycopg.connect(dsn) as connection:
+            migrate(connection)
+        setup_checkpoints(dsn)
+        yield Scratch(schema=schema, dsn=dsn)
+    finally:
+        with psycopg.connect(base, autocommit=True) as admin:
+            admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 
 
 @pytest.fixture

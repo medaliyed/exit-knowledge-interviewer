@@ -31,6 +31,13 @@ def _stored(value: str) -> RedactedText:
     return RedactedText(value)
 
 
+def run_exists(conn: psycopg.Connection, run_id: UUID) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM ingest_runs WHERE id = %s AND status = 'completed'", (run_id,)
+    ).fetchone()
+    return row is not None
+
+
 def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
     """Insert or replace a plan with its topics and questions, atomically."""
     with conn.transaction():
@@ -245,6 +252,21 @@ def load_turns(conn: psycopg.Connection, session_id: UUID) -> tuple[Turn, ...]:
         )
         for r in rows
     )
+
+
+def load_turn(conn: psycopg.Connection, session_id: UUID, ordinal: int) -> Turn | None:
+    return next((t for t in load_turns(conn, session_id) if t.ordinal == ordinal), None)
+
+
+def waiting_question(conn: psycopg.Connection, session_id: UUID) -> Turn | None:
+    """The interviewer's latest question, if the expert has not responded to it yet."""
+    turns = load_turns(conn, session_id)
+    questions = [t for t in turns if t.kind == "question"]
+    if not questions:
+        return None
+    last = questions[-1]
+    answered = any(t.answers == last.ordinal for t in turns)
+    return None if answered else last
 
 
 def record_note(
