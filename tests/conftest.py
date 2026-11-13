@@ -1,5 +1,6 @@
 """Shared pytest configuration and fixtures."""
 
+import os
 import uuid
 from collections.abc import Iterator
 
@@ -15,6 +16,11 @@ from eki.ingest.pipeline import pull
 from mcp_servers.git_server import build_server as build_git
 from mcp_servers.tickets_server import build_server as build_tickets
 from tests.support import CORPUS, FULL_SPAN
+
+# LiteLLM loads the local .env file when imported unless told it is in production.
+# Tests must not depend on a developer's .env, and must never download its price list.
+os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 
 @pytest.fixture(scope="session")

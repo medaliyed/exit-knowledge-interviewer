@@ -5,6 +5,7 @@ LiteLLM reads the provider key from the provider's usual environment variable
 """
 
 import json
+import os
 from collections.abc import Sequence
 from typing import Any
 
@@ -27,8 +28,7 @@ class LiteLLMModel:
         self._max_tokens = max_tokens
 
     async def complete(self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()) -> Reply:
-        # Imported here: the import is slow and most commands never call a model.
-        import litellm
+        litellm = _litellm()
 
         request: dict[str, Any] = {
             "model": self.name,
@@ -100,6 +100,19 @@ class LiteLLMModel:
             input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
         )
+
+
+def _litellm() -> Any:
+    """Import LiteLLM on first use: the import is slow and most commands never call a model.
+
+    By default LiteLLM downloads a price list from the internet when imported; the copy that
+    ships with the package is used instead. In its default mode LiteLLM also loads the local
+    ``.env`` file, which is how a provider key placed there reaches it.
+    """
+    os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+    import litellm
+
+    return litellm
 
 
 def _arguments(raw: Any) -> dict[str, Any]:
