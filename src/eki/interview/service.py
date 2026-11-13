@@ -68,6 +68,17 @@ class SessionView:
     open_items: tuple[OpenItem, ...]
 
 
+@dataclass(frozen=True)
+class _Next:
+    """How to go on after the expert's message was accepted."""
+
+    command: Command[Any] | None = None
+    events: list[Event] = field(default_factory=list)
+    recovered: bool = False
+    run: bool = True
+    """False when the workflow has ended and only the tables changed."""
+
+
 @dataclass
 class InterviewService:
     dsn: str
@@ -208,11 +219,11 @@ class InterviewService:
                 raise NotFoundError(f"no session {session_id}")
             if not await db(store.try_lock, conn, session.plan_id):
                 raise BusyError("another message for this session is being handled")
-            command = await self._accept(conn, session, action, text, confidential, corrects)
+            following = await self._accept(conn, session, action, text, confidential, corrects)
         except BaseException:
             conn.close()
             raise
-        return self._stream(conn, session, command)
+        return self._stream(conn, session, following)
 
     async def _pending(self, conn: psycopg.Connection, session: Session) -> dict[str, Any] | None:
         """The question the workflow is stopped at, from its checkpoint."""
@@ -231,39 +242,87 @@ class InterviewService:
         text: str,
         confidential: bool,
         corrects: int | None,
-    ) -> Command[Any] | None:
-        """Validate and store the expert's message. Returns how to continue the workflow."""
+    ) -> "_Next":
+        """Validate and store the expert's message, and say how the workflow continues."""
+        pending = None if session.status == "finished" else await self._pending(conn, session)
+        if action == "correct":
+            event = await db(self._correct, conn, session, text, corrects)
+            if session.status == "finished":
+                return _Next(run=False, events=[event])
+            resume: Command[Any] | None = (
+                None if pending is None else Command(resume={"turn": event["turn"]})
+            )
+            return _Next(command=resume, events=[event], recovered=pending is None)
         if session.status == "finished":
             raise ConflictError("the interview is finished")
-        pending = await self._pending(conn, session)
         if pending is None:
             # The process stopped mid-step. Continue it; the message is not used.
-            return None
-        if action != "answer":
-            raise ValueError(f"unsupported action: {action}")
-        if not text.strip():
-            raise ValueError("an answer needs text")
-        answer: RedactedText = redact(text, work_email_domains=self.work_email_domains).text
+            return _Next(recovered=True)
+        kind: Literal["answer", "skip"]
+        if action == "skip":
+            answer, kind = RedactedText("(skipped)"), "skip"
+        elif action == "answer":
+            if not text.strip():
+                raise ValueError("an answer needs text")
+            answer, kind = redact(text, work_email_domains=self.work_email_domains).text, "answer"
+        else:
+            raise ValueError(f"unknown action: {action}")
         turn = await db(
             store.add_expert_turn,
             conn,
             session.id,
             pending.get("topic_id"),
-            "answer",
+            kind,
             answer,
             answers=int(pending["turn"]),
+            confidential=confidential and kind == "answer",
         )
-        return Command(resume={"turn": turn})
+        return _Next(command=Command(resume={"turn": turn}))
+
+    def _correct(
+        self, conn: psycopg.Connection, session: Session, text: str, corrects: int | None
+    ) -> Event:
+        """Store a correction and replace the notes taken from the corrected turn (F8)."""
+        if corrects is None:
+            raise ValueError("a correction must say which turn it corrects")
+        if not text.strip():
+            raise ValueError("a correction needs text")
+        target = store.load_turn(conn, session.id, corrects)
+        if target is None:
+            raise NotFoundError(f"no turn {corrects} in this session")
+        if target.speaker != "expert" or target.kind == "skip":
+            raise ValueError("only something the expert said can be corrected")
+        clean = redact(text, work_email_domains=self.work_email_domains).text
+        with conn.transaction():
+            turn = store.add_expert_turn(
+                conn,
+                session.id,
+                target.topic_id,
+                "correction",
+                clean,
+                corrects=corrects,
+                confidential=target.confidential,
+            )
+            changed = store.replace_notes_from_turn(conn, session.id, corrects, clean, turn)
+        sections = [section for _, section in changed]
+        return {"type": "corrected", "turn": turn, "corrects": corrects, "sections": sections}
 
     async def _stream(
-        self, conn: psycopg.Connection, session: Session, command: Command[Any] | None
+        self, conn: psycopg.Connection, session: Session, following: "_Next"
     ) -> AsyncIterator[Event]:
         config = thread_config(session.plan_id)
+        command = following.command
         try:
-            if command is None:
+            for event in following.events:
+                yield event
+            if not following.run:
+                yield {"type": "done"}
+                return
+            if following.recovered:
                 yield {
                     "type": "recovered",
-                    "message": "The session had stopped mid-step. Your message was not used.",
+                    "message": "The session had stopped mid-step. It continues now; "
+                    "an answer in this message was not used.",
                 }
             async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
                 try:

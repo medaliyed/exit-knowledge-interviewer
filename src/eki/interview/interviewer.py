@@ -20,7 +20,7 @@ from eki.graph.workflow import Deps, InterviewState, WorkflowError, db, emit
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store, tools
 from eki.interview.drafting import as_data
-from eki.interview.models import SECTIONS, PlannedTopic
+from eki.interview.models import SECTIONS, PlannedTopic, Turn
 from eki.llm import Message, Reply, ToolCall, message_from_dict, message_to_dict
 from eki.runbook.models import SectionName
 
@@ -46,6 +46,7 @@ NUDGE = RedactedText(
 )
 LIMIT_REACHED = RedactedText("the question limit for this topic was reached")
 STOPPED = RedactedText("the interviewer stopped before covering this section")
+SKIPPED = RedactedText("skipped by expert")
 
 
 def _brief(topic: PlannedTopic, question_limit: int) -> RedactedText:
@@ -148,20 +149,89 @@ class _Step:
         brief = _brief(topic, self.deps.limits.turns_per_topic)
         self.messages = [Message("system", SYSTEM), Message("user", brief)]
 
-    async def take_response(self, ordinal: int) -> None:
-        """Hand the expert's response to the pending question back to the model."""
+    async def take_response(self, ordinal: int) -> bool:
+        """Hand the expert's response to the pending question back to the model.
+
+        Returns False for a correction: the question is still waiting for its answer.
+        """
         assert self.pending is not None  # noqa: S101
         turn = await db(store.load_turn, self.conn, self.session_id, ordinal)
         if turn is None or turn.speaker != "expert":
             raise WorkflowError(f"turn {ordinal} is not something the expert said")
-        self.last_turn = turn.ordinal
-        body = "\n".join([*self.notices, f"The expert answered:\n{turn.text}"])
-        self.say(str(self.pending["call_id"]), body)
+        section: SectionName = self.pending["section"]
+        if turn.kind == "correction":
+            if turn.topic_id == self.topic_id:
+                self.notices.append(await self.correction_notice(turn))
+            return False
+        if turn.kind == "skip":
+            body = "The expert skipped this question. Do not ask it again."
+            checklist = await db(store.checklist, self.conn, self.session_id, self.topic_id)
+            if checklist[section] == "missing":
+                await db(
+                    store.mark_open,
+                    self.conn,
+                    self.session_id,
+                    self.topic_id,
+                    section,
+                    SKIPPED,
+                    turn=turn.ordinal,
+                )
+                emit(
+                    {
+                        "type": "open",
+                        "topic_id": self.topic_id,
+                        "section": section,
+                        "reason": SKIPPED,
+                    }
+                )
+                body += f" Section {section} is now open."
+        elif turn.confidential:
+            # The answer itself never reaches the model, a trace or the workflow state.
+            await db(
+                store.record_note,
+                self.conn,
+                self.session_id,
+                self.topic_id,
+                section,
+                store.CONFIDENTIAL_NOTE,
+                turn=turn.ordinal,
+                confidential=True,
+            )
+            emit(
+                {
+                    "type": "note",
+                    "topic_id": self.topic_id,
+                    "section": section,
+                    "confidential": True,
+                }
+            )
+            body = (
+                "The expert answered confidentially. The answer is not shown to you. "
+                f"Section {section} is recorded as answered: do not ask about it again "
+                "and do not record a note for it."
+            )
+        else:
+            self.last_turn = turn.ordinal
+            body = f"The expert answered:\n{turn.text}"
+        self.say(
+            str(self.pending["call_id"]), "\n".join([*self.notices, body + await self.remaining()])
+        )
         for call_id, text in self.pending.get("after", []):
             self.say(str(call_id), str(text))
         self.notices = []
         self.pending = None
         self.expert_turns += 1
+        return True
+
+    async def correction_notice(self, turn: Turn) -> str:
+        if turn.confidential:
+            return "The expert corrected a confidential answer. It is not shown to you."
+        notes = await db(store.load_notes, self.conn, self.session_id)
+        sections = [n.section for n in notes if n.turn == turn.ordinal]
+        notice = f'The expert corrected an earlier answer (turn {turn.corrects}): "{turn.text}"'
+        if sections:
+            notice += " The notes for " + ", ".join(sections) + " now hold the correction."
+        return notice
 
     # --- the model's side ---
 
@@ -264,6 +334,9 @@ class _Step:
             return "Refused: section must be one of " + ", ".join(SECTIONS) + "."
         if not isinstance(text, str) or not text.strip():
             return "Refused: a note needs text."
+        checklist = await db(store.checklist, self.conn, self.session_id, self.topic_id)
+        if checklist[section] == "confidential":
+            return f"Refused: {section} was answered confidentially and takes no note."
         if self.last_turn is None:
             return (
                 "Refused: a note must come from something the expert said about this topic. "
@@ -307,7 +380,8 @@ class _Step:
         if self.pending is not None:
             public = {k: v for k, v in self.pending.items() if k not in ("call_id", "after")}
             response = interrupt(public)
-            await self.take_response(int(response["turn"]))
+            if not await self.take_response(int(response["turn"])):
+                return self.result()
         elif not self.messages:
             await self.open_topic()
         if self.notices:

@@ -25,6 +25,10 @@ from eki.interview.models import (
 )
 from eki.runbook.models import SectionName
 
+CONFIDENTIAL_NOTE = RedactedText(
+    "Answered confidentially. The answer is in the flagged turn and is not repeated here."
+)
+
 
 def _stored(value: str) -> RedactedText:
     # Only this module writes these tables, and it accepts nothing but redacted text.
@@ -325,25 +329,32 @@ def replace_notes_from_turn(
 ) -> tuple[tuple[str, SectionName], ...]:
     """Supersede every note taken from one turn with the expert's correction, word for word.
 
+    A confidential note stays confidential: its replacement carries the marker, not the text.
     Returns the (topic, section) pairs that changed, sorted.
     """
     with conn.transaction():
         rows = conn.execute(
             "UPDATE notes SET superseded = true WHERE session_id = %s AND turn_ordinal = %s "
-            "AND NOT superseded RETURNING topic_id, section",
+            "AND NOT superseded RETURNING topic_id, section, confidential",
             (session_id, corrected_turn),
         ).fetchall()
-        changed = tuple(sorted((str(r[0]), r[1]) for r in rows))
         with conn.cursor() as cursor:
             cursor.executemany(
-                "INSERT INTO notes (session_id, topic_id, section, text, turn_ordinal) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO notes (session_id, topic_id, section, text, turn_ordinal, "
+                "confidential) VALUES (%s, %s, %s, %s, %s, %s)",
                 [
-                    (session_id, topic_id, section, text, correction_turn)
-                    for topic_id, section in changed
+                    (
+                        session_id,
+                        topic_id,
+                        section,
+                        CONFIDENTIAL_NOTE if confidential else text,
+                        correction_turn,
+                        confidential,
+                    )
+                    for topic_id, section, confidential in rows
                 ],
             )
-    return changed
+    return tuple(sorted((str(r[0]), r[1]) for r in rows))
 
 
 def load_notes(
