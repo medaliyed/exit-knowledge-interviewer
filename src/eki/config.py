@@ -6,6 +6,7 @@ Every value comes from an ``EKI_``-prefixed environment variable (or the local
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr
@@ -27,7 +28,18 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = None
     langfuse_secret_key: SecretStr | None = None
 
+    # The expert being interviewed and where their source data lives (used by the `eki` CLI).
+    expert_name: str | None = None
+    expert_email: str | None = None
+    work_email_domains: str = "example.com"
+    """Comma separated. Email addresses on these domains are kept; all others are redacted."""
+    source_dir: Path | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def work_domains(settings: Settings) -> frozenset[str]:
+    return frozenset(d.strip().lower() for d in settings.work_email_domains.split(",") if d.strip())

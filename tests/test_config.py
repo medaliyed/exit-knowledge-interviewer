@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from eki.config import Settings, get_settings
+from eki.config import Settings, get_settings, work_domains
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATABASE_URL = "postgresql://someuser:s3cr3t-pw@dbhost:5432/eki"
@@ -15,6 +15,10 @@ EKI_VARIABLES = (
     "EKI_LANGFUSE_HOST",
     "EKI_LANGFUSE_PUBLIC_KEY",
     "EKI_LANGFUSE_SECRET_KEY",
+    "EKI_EXPERT_NAME",
+    "EKI_EXPERT_EMAIL",
+    "EKI_WORK_EMAIL_DOMAINS",
+    "EKI_SOURCE_DIR",
 )
 
 
@@ -81,3 +85,9 @@ def test_env_example_covers_every_field() -> None:
     }
     expected = {f"EKI_{name.upper()}" for name in Settings.model_fields}
     assert expected - keys == set()
+
+
+def test_work_domains_are_split_and_normalised(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EKI_DATABASE_URL", DATABASE_URL)
+    monkeypatch.setenv("EKI_WORK_EMAIL_DOMAINS", "Example.com, corp.test ,")
+    assert work_domains(settings_without_dotenv()) == {"example.com", "corp.test"}
