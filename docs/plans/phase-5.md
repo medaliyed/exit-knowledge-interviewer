@@ -277,3 +277,11 @@ passed, followed by all 11 focused delivery checks after adding two actual
 process-death cases. Those terminate a separate process before acknowledgement
 or after its first note commit, then resume the saved answer once. Ruff lint,
 format and strict mypy passed. Provider calls remained disabled.
+
+
+### 5b / F15 — pending by user request
+
+The user chose to leave live validation pending on 2026-11-14. The guarded
+availability check produced three skips and no provider calls. The detailed
+[validation record](phase-5-live.md) captures the results and resume criteria.
+Implementation of the remaining deliverables continues independently.
