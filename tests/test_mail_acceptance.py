@@ -13,6 +13,7 @@ from eki.ingest.pipeline import ingest_from_source, load, store
 from eki.mapping.models import TopicKind
 from eki.mapping.scoring import score_topics
 from eki.mapping.topics import build_topics
+from tests.fixtures.generator.world import HOME_ADDRESS, PHONE_NUMBER
 from tests.support import CORPUS, FAKE_CREDENTIALS, FIXTURES, FULL_SPAN
 
 pytestmark = [pytest.mark.anyio, pytest.mark.eval]
@@ -24,7 +25,10 @@ async def test_mail_reveals_backup_decision_and_recurring_vendor_contact() -> No
     key = json.loads((FIXTURES / "answer_key.json").read_text())
     present = {a.id for a in snapshot.artifacts}
     assert not set(key["excluded_mail_ids"]) & present
-    assert all(secret not in snapshot.model_dump_json() for secret in FAKE_CREDENTIALS)
+    assert all(
+        secret not in snapshot.model_dump_json()
+        for secret in (*FAKE_CREDENTIALS, HOME_ADDRESS, PHONE_NUMBER)
+    )
     topics = build_topics(snapshot, HashingEmbedder())
     scores = score_topics(topics, snapshot, as_of=snapshot.until)
     assert {s.topic_id for s in scores} == {t.id for t in topics}

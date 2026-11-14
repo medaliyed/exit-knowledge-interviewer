@@ -49,14 +49,6 @@ def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
         previous = conn.execute(
             "SELECT status FROM interview_plans WHERE id = %s FOR UPDATE", (plan.id,)
         ).fetchone()
-        if plan.status == "approved" and (previous is None or previous[0] != "approved"):
-            append_event(
-                conn,
-                "approval",
-                "completed",
-                AuditDetails(operation="approve_plan", target_id=plan.id),
-                run_id=plan.run_id,
-            )
         conn.execute(
             "INSERT INTO interview_plans (id, run_id, status, approved_by, approved_at) "
             "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
@@ -95,6 +87,15 @@ def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
                     for t in plan.topics
                     for position, q in enumerate(t.questions)
                 ],
+            )
+
+        if plan.status == "approved" and (previous is None or previous[0] != "approved"):
+            append_event(
+                conn,
+                "approval",
+                "completed",
+                AuditDetails(operation="approve_plan", target_id=plan.id),
+                run_id=plan.run_id,
             )
 
 

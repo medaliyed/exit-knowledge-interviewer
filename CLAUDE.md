@@ -1,7 +1,7 @@
 # eki: Exit-Knowledge Interviewer
 
 Before an expert retires or leaves, an agent interviews them systematically. It
-ingests their tickets, code history and (last phase) emails, maps the gaps,
+ingests their tickets, code history and explicitly selected emails, maps the gaps,
 asks about them, and turns the answers into a searchable, cited runbook. The
 design is a fixed LangGraph workflow with ONE agentic node (the interviewer):
 Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable
@@ -14,7 +14,7 @@ Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
 
 Python 3.12 with uv. FastAPI (async, SSE). LangGraph 1.x with Postgres
 checkpointer. Postgres 16 + pgvector. MCP Python SDK, one read-only server per
-source (git, tickets, later mail). LiteLLM as model gateway, model names from
+source (git, tickets, selected-folder mail). LiteLLM as model gateway, model names from
 config. Langfuse self-hosted via Docker for tracing. pytest, ruff, mypy.
 Docker Compose for local infra.
 
@@ -30,7 +30,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run uvicorn eki.api.app:app --reload   # API on :8000
 uv run python -m tests.fixtures.generator # regenerate the synthetic corpus
-uv run pytest -m live -s                  # ONE real-model check; needs model names and a provider key, costs money
+uv run pytest -m live -s -rs              # opt-in real-model checks; needs models/provider key, costs money
 uv run eki migrate                        # then: eki ingest --since D --until D | eki map --run ID | eki gaps --run ID
 uv run eki plan --run ID                  # draft the interview plan, then: eki interview --plan ID
 uv run eki entries --plan ID              # list generated runbook entries and their status
@@ -39,11 +39,16 @@ uv run eki access --run ID --owner SUBJECT --readers SUBJECT  # trusted local op
 uv run eki search "month-end reconciliation" --json          # requires EKI_API_TOKEN
 uv run eki ask "How do I roll back reconciliation?" --json
 uv run eki export --run ID --output runbook.md               # new file only
+uv run eki ingest --since D --until D --mail-folder Inbox --mail-folder Sent
+uv run eki audit --run ID --after 0 --limit 100
+uv run python evals/run.py --junit reports/quality.xml         # deterministic quality/privacy gate
+uv run pytest -m live -s -rs tests/test_live_retrieval.py       # explicit opt-in provider checks
 ```
 
 Models are named in `EKI_MODEL_INTERVIEWER` and `EKI_MODEL_DRAFTER` (LiteLLM names);
-the provider key goes in `.env` under the provider's own name. Tests never call a
-real model: they use `ScriptedModel` from `tests/fakes.py`.
+the provider key goes in `.env` under the provider's own name. Default tests use
+`ScriptedModel` from `tests/fakes.py`; only explicitly selected live tests call
+real providers with credentials exported to the test process.
 
 ## Layout
 
@@ -57,7 +62,8 @@ src/eki/
   mapping/    topic clustering, gap scoring
   runbook/    entry template, deterministic synthesis, storage, citation checks, expert review
   search/     approved-only hybrid search, semantic/offline embeddings, cited extractive Q&A
-mcp_servers/  one read-only MCP server per source (git_server, tickets_server); they redact before returning
+  audit.py    durable metadata-only model/tool/decision history
+mcp_servers/  read-only git_server, tickets_server and mail_server; redact before returning
 tests/        tests; fixtures in tests/fixtures/
 evals/        scenarios/ and golden/ are human-owned
 docs/plans/   one approved plan per phase
@@ -218,5 +224,104 @@ Search, answer and export never fetch a transcript to expand a citation.
 
 Tests use synthetic fixtures and scripted model/provider doubles. Semantic
 retrieval quality, real-model evidence selection and large-corpus performance
-remain unverified. Phase 4 (mail, red-team/evals in CI and audit log) remains
-outside this phase; the human-owned eval directories are untouched.
+remain unverified unless the opt-in live checks are configured and run. Phase 4
+is implemented below; the human-owned eval directories remain untouched.
+
+
+## Phase 4: hardened local pipeline (F3, F13)
+
+Apply `uv run eki migrate` before using the new functionality. Migration 0006
+adds append-only audit storage; 0007 stores selected mail folders on ingest runs.
+All sources remain synthetic local JSON/Markdown. No live mailbox, GitHub or
+issue-tracker account adapter is implied by these local connectors.
+
+### Durable audit
+
+Audit is independent of best-effort Langfuse tracing. It records every runtime
+chat/provider embedding call, interviewer tool attempt, and ingestion MCP call.
+Plan approval, entry decisions/corrections and ownership/reader changes are
+recorded in the same transaction as their state change. Ingestion stores the
+snapshot, index and completion event atomically; failures retain attempt/failure
+metadata without leaving a completed snapshot. Before a provider/tool call,
+audit persistence must succeed. SSE audit outages return `audit_unavailable` and
+the session can be retried. An interrupted call can have a started event without
+a completion; retries are separate attempts with distinct call IDs.
+
+Events contain ID/time, correlation ID, internal call ID, run ID, stable user
+subject, kind, phase and an allowlisted details model (operation/model name,
+target UUID, counts/version/usage). No prompts, answers, queries, arguments,
+results, reasons, credentials or mail bodies are included. Multi-run model calls
+produce scoped events linked by call ID without exposing other run IDs through
+a run's audit listing. Authenticated identity propagates through async/worker/SSE
+execution; local CLI activity is attributed to `local-operator`.
+
+`GET /runs/{id}/audit?after=0&limit=100` requires owner/admin access. It returns
+`events` and `next_after`; readers cannot access audit history. `eki audit --run ID`
+is the trusted local operator equivalent. Pagination uses ascending committed
+event IDs (limits 1–500). A short per-schema transaction lock orders audit inserts
+through commit, so concurrent commits cannot fall behind a returned cursor.
+No provider work runs while this lock is held. Events survive run deletion;
+archived-run API audit access requires an admin. Normal SQL update/delete/truncate
+is refused. This is application append-only storage, not tamper-proof protection
+against a database administrator who can alter/drop schema objects.
+
+### Selected-folder mail
+
+Mail is disabled unless the operator explicitly supplies one or more
+`--mail-folder` arguments to `eki ingest`:
+
+```bash
+uv run eki ingest --since 2024-11-01 --until 2026-10-31 \
+  --mail-folder Inbox --mail-folder Sent --mail-folder Vendors
+```
+
+Selections are fixed at MCP server startup and stored with the snapshot.
+`mcp_servers.mail_server` exposes only read-only `list_messages` and `get_message`.
+Tools cannot widen folder scope. Personal/private folder components, traversal,
+globs, absolute paths, symlinks and invalid selections are refused. Only normal
+messages involving the expert inside the selected folders/date range are
+returned. Unknown, personal or private sensitivity flags are excluded even in
+Inbox. The expert's email must belong to a configured work domain. Attachments,
+HTML expansion, mailbox sending/editing/deletion and remote mailbox authentication
+are not implemented. Exclusion is based on paths/metadata/consent, not a semantic
+classifier that can detect mislabeled private prose.
+
+The client separately validates returned folder, sensitivity, timestamp,
+participation, role, IDs and pagination, then redacts text/participants again.
+Email artifacts use source `mail` and kind `email`; original message IDs and
+thread IDs are retained. Threads become procedure/decision topics, repeated
+correspondents become contact topics, and same-system subject matches link
+related non-mail artifacts. This exposes the fixture's backup decision and
+recurring vendor dependency. Mail-only authorship shares describe the selected
+folders, not an unseen whole mailbox. Topic ranking retains the existing formula.
+Git/ticket-only runs retain their previous behavior when no folders are selected.
+
+### Evaluation and live validation
+
+`uv run python evals/run.py --junit reports/quality.xml` runs explicit `eval` and
+`redteam` contracts against disposable database schemas and produces a JUnit
+report plus a GitHub job summary in CI. `--unit-only` excludes database tests.
+CI runs this gate on push/pull request, with no provider models or paid calls.
+The runner never creates/edits `evals/scenarios/` or `evals/golden/`.
+
+The checks cover fixed retrieval topics and answer sections, abstention,
+confidentiality/redaction, forced malicious tool calls, model metadata/JSON keys,
+source path escapes, access revocation, forged citations, provider/audit failure
+recovery, approval atomicity, concurrent audit pagination and the full mail to
+approved-runbook flow. These are synthetic regression contracts, not broad model
+quality benchmarks or a formal security proof.
+
+Live provider checks are opt-in:
+
+```bash
+uv run pytest -m live -s -rs tests/test_live_retrieval.py
+```
+
+Configure `EKI_MODEL_EMBEDDING` and/or `EKI_MODEL_ANSWERER` with supported LiteLLM
+names, and explicitly export the provider credential to the test process. `.env`
+values alone do not authorize paid test calls. Live embedding models must support
+256 dimensions. The checks exercise semantic paraphrases, grounded evidence
+selection and abstention. On this implementation run they skipped because neither
+model was configured; real-provider semantic/selection quality remains unverified.
+
+See `docs/plans/phase-4.md` for the implementation record and final verification.

@@ -107,3 +107,47 @@ async def test_readers_cannot_read_audit_history(scratch: Scratch) -> None:
         events = list_events(conn, world.run_id)
         assert events[-1]["user_id"] == OWNER.subject and events[-1]["kind"] == "access"
         assert interviews.load_session(conn, world.session_id) is not None
+
+
+@pytest.mark.redteam
+async def test_audit_cursor_cannot_skip_a_late_commit(scratch: Scratch) -> None:
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import Event
+    from uuid import uuid4
+
+    from eki.audit import AuditDetails, append_event
+
+    run_id = uuid4()
+    first_inserted, second_started, release = Event(), Event(), Event()
+
+    def first() -> None:
+        with scratch.connect() as conn, conn.transaction():
+            append_event(
+                conn, "tool", "completed", AuditDetails(operation="get_artifact"), run_id=run_id
+            )
+            first_inserted.set()
+            assert release.wait(5)
+
+    def second() -> None:
+        assert first_inserted.wait(5)
+        with scratch.connect() as conn, conn.transaction():
+            second_started.set()
+            append_event(
+                conn, "tool", "completed", AuditDetails(operation="search_artifacts"), run_id=run_id
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a, b = pool.submit(first), pool.submit(second)
+        try:
+            assert second_started.wait(5)
+            with pytest.raises(TimeoutError):
+                b.result(timeout=0.1)
+            with scratch.connect() as conn:
+                assert list_events(conn, run_id) == []
+        finally:
+            release.set()
+        a.result(timeout=5)
+        b.result(timeout=5)
+    with scratch.connect() as conn:
+        events = list_events(conn, run_id)
+        assert [e["details"]["operation"] for e in events] == ["get_artifact", "search_artifacts"]  # type: ignore[index]

@@ -92,6 +92,12 @@ def set_readers(
     with conn.transaction():
         conn.execute("SELECT 1 FROM ingest_runs WHERE id = %s FOR UPDATE", (run_id,))
         require_manager(conn, run_id, principal)
+        conn.execute("DELETE FROM run_readers WHERE run_id = %s", (run_id,))
+        with conn.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO run_readers (run_id, subject) VALUES (%s,%s)",
+                [(run_id, s) for s in sorted({s.strip() for s in subjects})],
+            )
         append_event(
             conn,
             "access",
@@ -99,9 +105,3 @@ def set_readers(
             AuditDetails(operation="set_readers", count=len(set(subjects))),
             run_id=run_id,
         )
-        conn.execute("DELETE FROM run_readers WHERE run_id = %s", (run_id,))
-        with conn.cursor() as cursor:
-            cursor.executemany(
-                "INSERT INTO run_readers (run_id, subject) VALUES (%s,%s)",
-                [(run_id, s) for s in sorted({s.strip() for s in subjects})],
-            )

@@ -128,21 +128,28 @@ def append_event(
     scope = run_id or next(iter(context.run_ids), None)
     details = AuditDetails.model_validate(details.model_dump())
     try:
-        conn.execute(
-            "INSERT INTO audit_events "
-            "(event_id, correlation_id, call_id, run_id, user_id, kind, phase, details) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-            (
-                uuid4(),
-                context.correlation_id,
-                call_id,
-                scope,
-                context.user_id,
-                kind,
-                phase,
-                Jsonb(details.model_dump(mode="json", exclude_none=True)),
-            ),
-        )
+        with conn.transaction():
+            # Serializing inserts until commit makes numeric cursors commit-ordered.
+            # Audit writes are the final DB step of state-changing operations.
+            conn.execute(
+                "SELECT pg_advisory_xact_lock("
+                "hashtextextended(current_schema() || '.audit_events', 0))"
+            )
+            conn.execute(
+                "INSERT INTO audit_events "
+                "(event_id, correlation_id, call_id, run_id, user_id, kind, phase, details) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    uuid4(),
+                    context.correlation_id,
+                    call_id,
+                    scope,
+                    context.user_id,
+                    kind,
+                    phase,
+                    Jsonb(details.model_dump(mode="json", exclude_none=True)),
+                ),
+            )
     except psycopg.Error:
         raise AuditError("audit storage unavailable; operation refused") from None
 

@@ -429,3 +429,25 @@ def test_cli_selected_mail_and_audit(
     assert any(e["kind"] == "tool" and e["details"]["operation"] == "list_messages" for e in events)
     assert any(e["kind"] == "ingest" and e["phase"] == "completed" for e in events)
     assert main(["ingest", *RANGE, "--mail-folder", "Personal"]) == 1
+
+
+@pytest.mark.redteam
+def test_failed_ingest_rolls_back_snapshot_and_records_failure(
+    scratch_database: None, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from eki.ingest.pipeline import IngestError
+
+    assert main(["migrate"]) == 0
+    capsys.readouterr()
+
+    def fail(*args: object, **kwargs: object) -> int:
+        raise IngestError("simulated indexing failure")
+
+    monkeypatch.setattr("eki.cli.index_run", fail)
+    assert main(["ingest", *RANGE]) == 1
+    with connect(get_settings()) as conn:
+        assert conn.execute("SELECT count(*) FROM ingest_runs").fetchone() == (0,)
+        phases = conn.execute(
+            "SELECT phase FROM audit_events WHERE kind = 'ingest' ORDER BY id"
+        ).fetchall()
+        assert phases == [("started",), ("failed",)]

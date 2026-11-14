@@ -182,16 +182,16 @@ def _ingest(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
         recorder.record("ingest", "started", AuditDetails(operation="ingest"), call_id=call_id)
         try:
             snapshot = asyncio.run(ingest_from_source(scope, Path(source_dir).resolve()))
-            store(conn, snapshot, run_id=run_id)
-            chunks = index_run(conn, run_id, HashingEmbedder())
-            append_event(
-                conn,
-                "ingest",
-                "completed",
-                AuditDetails(operation="ingest", count=len(snapshot.artifacts)),
-                call_id=call_id,
-            )
-            conn.commit()
+            with conn.transaction():
+                store(conn, snapshot, run_id=run_id)
+                chunks = index_run(conn, run_id, HashingEmbedder())
+                append_event(
+                    conn,
+                    "ingest",
+                    "completed",
+                    AuditDetails(operation="ingest", count=len(snapshot.artifacts)),
+                    call_id=call_id,
+                )
         except BaseException:
             conn.rollback()
             recorder.record("ingest", "failed", AuditDetails(operation="ingest"), call_id=call_id)

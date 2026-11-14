@@ -1,6 +1,7 @@
 # Phase 4: Harden (F3, F13)
 
-Status: authorized by the user's instruction to implement Phase 4; work in progress.
+Status: implemented and verified on 2026-11-14, authorized by the user's
+instruction to implement Phase 4.
 No new dependencies, no new agentic workflow node, no real source systems and no
 changes to human-owned `evals/scenarios/` or `evals/golden/`.
 
@@ -59,7 +60,7 @@ changes to human-owned `evals/scenarios/` or `evals/golden/`.
   run report; skip unavailable provider configurations without inventing results.
 - [x] d / F3: selected-folder read-only mail MCP adapter, client revalidation,
   ingestion/CLI integration, thread topics, privacy and corpus acceptance tests.
-- [ ] e / P4-e: full end-to-end acceptance, documentation, results and limits.
+- [x] e / P4-e: full end-to-end acceptance, documentation, results and limits.
 
 After each deliverable run and report `uv run pytest -q`,
 `uv run pytest -q -m db`, `uv run ruff check .`,
@@ -75,3 +76,47 @@ credentials, private sources or confidential text in tests/reports/logs.
 was made. Adapter/guard implementation is verified; actual semantic/provider
 quality is explicitly not claimed. Export provider credentials to the test
 process and configure the desired models before rerunning these checks.
+
+## Outcome
+
+Implemented in five requirement-scoped deliverables. All verification uses
+synthetic sources and disposable database schemas; real source systems and the
+human-owned evaluation directories were not changed. No dependencies were added.
+
+| Deliverable | Verified behavior |
+| --- | --- |
+| F13 | Durable metadata-only audit of model/tool attempts, plan approval, entry review and ACL changes; authenticated actor propagation; owner/admin API and trusted-operator CLI; retained history and append-only SQL guards. |
+| P4-b | Adversarial regression checks and a reproducible CI quality gate with JUnit output; redaction of JSON keys/model metadata; safe provider failures and source-path boundaries. |
+| P4-c | Explicit opt-in live semantic retrieval and evidence-selector checks, plus guards that skip before provider calls when configuration/credentials are absent. |
+| F3 | Explicit selected-folder synthetic mail ingestion, read-only MCP tools, independent client scope validation, saved consent, thread decisions and recurring contact topics. |
+| P4-e | Full selected-mail-to-interview-to-approved-runbook flow, confidential-answer isolation, cited Q&A/export, edit demotion and reader revocation. Failed indexing rolls back the snapshot while retaining failure audit; concurrent audit commits cannot be skipped by a cursor. |
+
+Final verification completed successfully:
+
+| Command | Result |
+| --- | --- |
+| `uv run pytest -q` | 373 passed |
+| `uv run pytest -q -m db` | 180 passed |
+| `uv run ruff check .` | Passed |
+| `uv run ruff format --check .` | Passed |
+| `uv run mypy` | Passed |
+| `uv run python evals/run.py --junit reports/quality.xml` | 78 passed; zero failures, errors or skips |
+| `uv run pytest -q -m infra` | 5 passed |
+| `uv run pytest -q -m live -rs` | 3 skipped: no interview provider key; embedding and answerer models not configured |
+| `git diff --check` | Passed |
+
+The 78-check gate overlaps the unit/database suites. It includes six fixed
+top-one retrieval cases, four supported cited-answer cases and four unsupported
+question abstentions, plus fixture acceptance and adversarial boundary checks.
+These fixed expectations are test-owned and are never read by the pipeline.
+
+Apply migrations with `uv run eki migrate` before running the updated application.
+The operational commands, mail selection example, audit endpoints and provider
+setup are documented in `CLAUDE.md`, `mcp_servers/README.md` and `evals/README.md`.
+
+Limits: this is a hardened local synthetic pipeline, not a remote mailbox
+integration. Folder/metadata-based exclusions do not classify mislabeled private
+prose. Database administrators remain trusted; append-only triggers do not resist
+schema alteration. Provider semantic/selection quality and production-scale
+performance remain unverified. Audit inserts serialize briefly per schema to
+preserve cursor order; this has not been load-tested.
