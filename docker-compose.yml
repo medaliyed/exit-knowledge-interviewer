@@ -1,5 +1,9 @@
 # Local infrastructure for eki: Postgres 16 + pgvector for the app, plus self-hosted Langfuse.
 #
+# The project name is pinned so volume names do not depend on the folder name.
+# "agents" keeps the volumes created before the project moved into its own folder.
+name: agents
+#
 # Usage:  cp .env.example .env   (then change the values)   &&   docker compose up -d
 #
 # - Every secret comes from .env. Nothing here has a default, so a missing value fails loudly.
