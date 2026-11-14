@@ -1,6 +1,5 @@
 """F9: turn recorded notes into cited claims, without a model or new wording."""
 
-import re
 from collections.abc import Sequence
 from uuid import UUID, uuid5
 
@@ -12,6 +11,7 @@ from eki.runbook.models import (
     RunbookEntry,
     Section,
 )
+from eki.runbook.steps import claim_texts
 
 CONFIDENTIAL = "Answered confidentially; not published."
 
@@ -29,12 +29,7 @@ def build_entry(
             if note.confidential:
                 sections[name] = Section(open_question=CONFIDENTIAL)
             else:
-                # Split only at sentence boundaries followed by whitespace; keep punctuation.
-                texts = (
-                    re.split(r"(?<=[.!?])\s+", note.text.strip())
-                    if name == "steps"
-                    else [note.text]
-                )
+                texts = claim_texts(name, note.text)
                 citation = InterviewTurnCitation(session_id=str(session_id), turn_index=note.turn)
                 sections[name] = Section(
                     claims=tuple(Claim(text=t, citations=(citation,)) for t in texts if t.strip())

@@ -56,3 +56,16 @@ def test_open_and_confidential_sections() -> None:
 def test_incomplete_topic_is_refused() -> None:
     with pytest.raises(ValueError, match="missing"):
         build_entry(uuid4(), topic("t"), [], [])
+
+
+def test_steps_are_not_cut_at_abbreviations() -> None:
+    """Regression: "e.g." and "Dr." used to end a step, leaving fragments like "ledger.log."."""
+    said = "Check the logs, e.g. ledger.log. Ask Dr. Brandl. 1 retry is enough."
+    notes = [Note(topic_id="t", section=s, text=RedactedText(said), turn=2) for s in SECTION_NAMES]
+    entry = build_entry(uuid4(), topic("t"), notes, [])
+    assert [c.text for c in entry.steps.claims] == [
+        "Check the logs, e.g. ledger.log.",
+        "Ask Dr. Brandl.",
+        "1 retry is enough.",
+    ]
+    assert [c.text for c in entry.rollback.claims] == [said], "only steps are cut"

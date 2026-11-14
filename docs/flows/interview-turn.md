@@ -88,7 +88,10 @@ sequenceDiagram
 12. **Last topic** (steps 15 to 17) - the session is marked finished and one
     draft entry per topic is built from the notes, in one transaction, with no
     model call (`src/eki/graph/workflow.py:227`,
-    `src/eki/runbook/service.py:54`).
+    `src/eki/runbook/service.py:55`). Procedure notes become ordered steps at
+    sentence boundaries or explicit numbered/bulleted list items; common
+    abbreviations stay intact. Every step cites the note's source turn
+    (`src/eki/runbook/steps.py`, `src/eki/runbook/synthesis.py`).
 
 **Skip:** the section is recorded as open with the reason "skipped by expert"
 and the model is told not to ask again (`src/eki/interview/interviewer.py:174`).
@@ -97,6 +100,9 @@ and the model is told not to ask again (`src/eki/interview/interviewer.py:174`).
 the corrected turn is replaced by the correction word for word, and any runbook
 entry citing that turn is updated and returned to draft, all in one transaction
 (`src/eki/interview/service.py:318`). The pending question stays open.
+Procedure claims use the same step splitter as synthesis, and all replacement
+steps cite the correction turn. Other sections retain the correction as one
+claim (`src/eki/runbook/service.py:251`).
 
 ## Failure modes
 

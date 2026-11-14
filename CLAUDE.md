@@ -105,6 +105,9 @@ Completed interviews automatically produce one private draft runbook entry per
 plan topic. Synthesis copies notes without a model call; each claim cites a
 non-confidential expert turn of the same topic. All seven sections contain
 claims or an open question. Confidential sections use only the fixed marker.
+Procedure steps use sentence or explicit numbered/bulleted list boundaries,
+preserving abbreviations such as `e.g.` and `Dr.`. Synthesis and corrections
+use the same splitter; every resulting step cites its source turn.
 
 Use `eki entries --plan ID` to list entries and `eki review --plan ID` to review
 drafts. Review defaults to the expert recorded on the run; `--review-as NAME`

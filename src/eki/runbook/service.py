@@ -21,6 +21,7 @@ from eki.runbook.models import (
     Section,
     SectionName,
 )
+from eki.runbook.steps import claim_texts
 from eki.runbook.synthesis import build_entry
 
 
@@ -276,15 +277,16 @@ def correct_entries(
                 )
                 if cites_target:
                     if not replaced:
-                        claims.append(
+                        claims.extend(
                             Claim(
-                                text=text,
+                                text=step,
                                 citations=(
                                     InterviewTurnCitation(
                                         session_id=str(session_id), turn_index=correction_turn
                                     ),
                                 ),
                             )
+                            for step in claim_texts(name, text)
                         )
                     replaced = True
                 else:

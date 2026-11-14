@@ -190,3 +190,55 @@ async def test_review_is_told_what_the_cited_answer_does_not_say(scratch: Scratc
     assert service.unsupported(session)[second.entry.id] == (), "so is a correction"
     with pytest.raises(NotFoundError):
         service.unsupported(UUID(int=0))
+
+
+@pytest.mark.parametrize(
+    ("said", "steps"),
+    [
+        (
+            "Stop the worker. Check the queue, e.g. the export queue. Start the worker.",
+            ["Stop the worker.", "Check the queue, e.g. the export queue.", "Start the worker."],
+        ),
+        (
+            "1. Stop the worker. Wait. 2. Check the queue. 3. Start the worker.",
+            ["Stop the worker. Wait.", "Check the queue.", "Start the worker."],
+        ),
+        (
+            "- Stop the worker. Wait.\n- Check the queue.\n- Start the worker.",
+            ["Stop the worker. Wait.", "Check the queue.", "Start the worker."],
+        ),
+    ],
+)
+async def test_a_correction_keeps_the_procedure_as_steps(
+    scratch: Scratch, said: str, steps: list[str]
+) -> None:
+    """Regression: a correction after synthesis used to merge every step into one claim."""
+    session = await finished(scratch)
+    service = RunbookService(scratch.dsn)
+    entry_id = UUID(service.list(session)[0].entry.id)
+    service.approve(entry_id, EXPERT)
+    events = await say(make_service(scratch.dsn), session, said, action="correct", corrects=2)
+
+    corrected = service.get(entry_id).entry
+    assert corrected.status == "draft"
+    assert [c.text for c in corrected.steps.claims] == steps
+    assert len({c.citations for c in corrected.steps.claims}) == 1, "all cite the correction"
+    assert [c.text for c in corrected.trigger.claims] == [said], "other sections stay whole"
+    rebuilt = service.synthesise(session)[0].entry
+    assert rebuilt.steps == corrected.steps, "the same steps whichever way they were built"
+    assert service.unsupported(session)[str(entry_id)] == ()
+
+    # Correcting several claims from the same turn replaces the procedure just once.
+    service.approve(entry_id, EXPERT)
+    await say(
+        make_service(scratch.dsn),
+        session,
+        "Pause the worker. Resume the worker.",
+        action="correct",
+        corrects=events[0]["turn"],
+    )
+    again = service.get(entry_id).entry
+    assert again.status == "draft"
+    assert [c.text for c in again.steps.claims] == ["Pause the worker.", "Resume the worker."]
+    assert service.synthesise(session)[0].entry.steps == again.steps
+    assert service.approve(entry_id, EXPERT).entry.status == "approved"

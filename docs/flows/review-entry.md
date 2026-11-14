@@ -112,6 +112,9 @@ the run, or as `--review-as NAME`, and the same approval rules apply
   from the current transcript. Readers never receive it
   (`src/eki/api/app.py:302`).
 - **A correction to a cited answer reopens approval.** It replaces the claim
-  text and returns the entry to draft (`src/eki/runbook/service.py:250`).
+  text and returns the entry to draft (`src/eki/runbook/service.py:251`).
+  Procedure text is split into the same ordered steps as synthesis, respecting
+  abbreviations and explicit lists. Each step cites the correction turn;
+  unrelated claims keep their text and citations (`src/eki/runbook/steps.py`).
 - **Approved entries are indexed lazily**, on the next search; see
   [search-and-ask.md](search-and-ask.md).
