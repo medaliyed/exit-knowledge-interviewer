@@ -31,6 +31,7 @@ from eki.graph.workflow import (
 )
 from eki.ingest.embedding import Embedder, HashingEmbedder
 from eki.ingest.redaction import RedactedText, redact
+from eki.ingest.semantic import for_run as artifact_embedder_for_run
 from eki.interview import delivery, store
 from eki.interview.interviewer import interview_topic
 from eki.interview.models import (
@@ -78,6 +79,7 @@ class InterviewService:
     agent: AgentNode = interview_topic
     limits: Limits = field(default_factory=Limits)
     tracer: Tracer = field(default_factory=NullTracer)
+    artifact_resolver: Callable[[psycopg.Connection, UUID], Embedder] | None = None
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def _connect(self) -> psycopg.Connection:
@@ -111,7 +113,11 @@ class InterviewService:
             audit=AuditRecorder(self.dsn),
             drafter=traced(self.drafter, "draft"),
             interviewer=traced(self.interviewer, "interview"),
-            embedder=self.embedder,
+            embedder=(
+                self.artifact_resolver(conn, run_id)
+                if self.artifact_resolver is not None and run_id is not None
+                else self.embedder
+            ),
             work_email_domains=self.work_email_domains,
             limits=self.limits,
         )
@@ -550,4 +556,5 @@ def build_service(settings: Settings) -> InterviewService:
         embedder=HashingEmbedder(),
         work_email_domains=domains,
         tracer=build_tracer(settings),
+        artifact_resolver=lambda conn, run_id: artifact_embedder_for_run(conn, run_id, settings),
     )

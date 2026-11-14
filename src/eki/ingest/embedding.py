@@ -21,6 +21,7 @@ TOKEN = re.compile(r"[a-z0-9]+")
 
 
 class Embedder(Protocol):
+    name: str
     dimensions: int
 
     def embed(self, texts: Sequence[RedactedText]) -> list[list[float]]: ...

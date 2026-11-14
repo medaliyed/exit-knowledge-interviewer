@@ -307,3 +307,25 @@ F16 regression results: 429 unit tests, 204 database tests and all 78
 quality/privacy checks passed. Ruff lint/format, strict mypy and JavaScript
 syntax checks passed. This evidence covers HTTP behavior and static serving;
 it does not replace the pending real-browser check.
+
+
+### 5d / F17 — implemented; real-provider quality pending
+
+Optional artifact embeddings, persisted model identity, recorded-model query
+resolution, batched/atomic explicit reindexing and run-scoped provider audit are
+implemented. Migration `0010_artifact_model.sql` labels historical vectors as
+offline hashing. Model changes during query are detected under a shared lock.
+No new dependency was added. The default remains offline and provider-free.
+
+`tests/test_artifact_semantic.py` covers plumbing with semantic doubles,
+mismatched models, invalid vectors, second-batch failure, changed configuration,
+redaction/audit scope and a query/reindex race. These checks do not establish
+real semantic quality. `tests/test_live_artifacts.py` supplies three repeated
+fixed paraphrase checks with distractors and separate hashing results. Paid
+execution stays deferred by user request; the 5d acceptance checkbox remains
+open until actual provider evidence is recorded.
+
+
+F17 regression results: 429 unit tests, 210 database tests and all 78
+quality/privacy checks passed. Ruff lint/format and strict mypy passed.
+No real provider calls were made; live quality remains deferred.

@@ -33,7 +33,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F14 | Durable interview message receipts, explicit delivery status and safe retries after crashes, without lost accepted answers or duplicate logical effects. Delivered: Phase 5a. |
 | F15 | Recorded real-model acceptance evidence for interview behavior, semantic retrieval and grounded answers, with explicit provider opt-in. Planned: Phase 5b. |
 | F16 | An authenticated browser workflow for plan review, interview chat, cited entry review and approval. Implemented: Phase 5c; visual browser QA pending. |
-| F17 | Optional semantic retrieval over source artifacts, with matching document/query model identities and an offline fallback. Planned: Phase 5d. |
+| F17 | Optional semantic retrieval over source artifacts, with matching document/query model identities and an offline fallback. Implemented: Phase 5d; real-model quality pending. |
 | F18 | Resumable plan generation that retains completed topics and retries unfinished work under a stable generation ID. Planned: Phase 5e. |
 
 ## Stack
@@ -86,7 +86,8 @@ synthesis and corrections share an abbreviation-aware procedure step splitter
 
 Phase 5 starts with F14: an accepted answer must survive a process restart
 without retyping or duplicate turns. Its PDR defines five ordered deliverables,
-acceptance criteria, compatibility requirements and completion evidence. Implementation was approved on 2026-11-14. Real-provider runs still require
+acceptance criteria, compatibility requirements and completion evidence.
+Implementation was approved on 2026-11-14. Real-provider runs still require
 explicit provider configuration and a call/token budget.
 
 How it is built and how it behaves at runtime: `docs/architecture.md` and
@@ -99,8 +100,8 @@ Still open:
 - Durable message recovery is implemented in Phase 5a; failed plan drafts still
   discard completed topics until Phase 5e is delivered.
 - The expert browser UI is implemented and HTTP-verified; visual browser QA is
-  pending because browser control is unavailable. Source-artifact retrieval still
-  uses lexical hashing until Phase 5d.
+  pending because browser control is unavailable. Semantic source-artifact
+  retrieval is implemented, with real-provider quality pending by user request.
 - The connectors read the synthetic local corpus only; there is no adapter for
   a live mailbox, Git host or issue tracker.
 - `evals/scenarios/` and `evals/golden/` are human-owned and do not exist yet;

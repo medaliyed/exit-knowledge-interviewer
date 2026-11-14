@@ -3,7 +3,7 @@
 import math
 from collections.abc import Sequence
 from typing import Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from eki.audit import AuditDetails, AuditRecorder
 from eki.config import Settings, work_domains
@@ -53,8 +53,14 @@ class LiteLLMEmbedder:
 
 
 class AuditedEmbedder:
-    def __init__(self, inner: SearchEmbedder, recorder: AuditRecorder) -> None:
+    def __init__(
+        self,
+        inner: SearchEmbedder,
+        recorder: AuditRecorder,
+        run_ids: tuple[UUID, ...] | None = None,
+    ) -> None:
         self.inner, self.recorder = inner, recorder
+        self.run_ids = run_ids
         self.name, self.dimensions = inner.name, inner.dimensions
 
     def embed(self, texts: Sequence[RedactedText]) -> list[list[float]]:
@@ -62,13 +68,13 @@ class AuditedEmbedder:
             return []
         call_id = uuid4()
         details = AuditDetails(operation="embedding", model_name=self.name, count=len(texts))
-        self.recorder.record("model", "started", details, call_id=call_id)
+        self.recorder.record("model", "started", details, call_id=call_id, run_ids=self.run_ids)
         try:
             result = self.inner.embed(texts)
         except BaseException:
-            self.recorder.record("model", "failed", details, call_id=call_id)
+            self.recorder.record("model", "failed", details, call_id=call_id, run_ids=self.run_ids)
             raise
-        self.recorder.record("model", "completed", details, call_id=call_id)
+        self.recorder.record("model", "completed", details, call_id=call_id, run_ids=self.run_ids)
         return result
 
 

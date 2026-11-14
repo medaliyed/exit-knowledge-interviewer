@@ -33,7 +33,7 @@ sequenceDiagram
     end
     Note over CLI: validate each record, redact again, build artifacts
     CLI->>DB: insert run, artifacts, activity
-    CLI->>DB: insert chunks with embeddings
+    CLI->>DB: insert chunks with embeddings and model identity
     CLI->>DB: audit "ingest completed"
     Note over CLI,DB: steps 11 to 13 are one transaction
     CLI-->>Operator: artifact count, chunk count, run ID
@@ -87,10 +87,22 @@ ID in those events refers to a run that does not exist.
 
 ## Notes
 
-- **The artifact index is not semantic.** Ingest always embeds with the local
-  `HashingEmbedder` (`src/eki/cli.py:189`), whatever `EKI_MODEL_EMBEDDING` is
-  set to. That setting applies to runbook search only. The interviewer's
-  `search_artifacts` tool therefore matches on shared words.
+- **Artifact embeddings are configurable.** Blank
+  `EKI_MODEL_ARTIFACT_EMBEDDING` uses local hashing; a configured model uses the
+  existing audited LiteLLM embedder at 256 dimensions. `EKI_MODEL_EMBEDDING`
+  remains the independent runbook setting. Provider work is bounded to batches
+  of 64 and only redacted text is sent.
+- **Queries use the saved model.** Each run records its artifact model identity.
+  The interviewer resolves that identity, even after configuration changes.
+  Queries recheck it under a shared row lock before comparing vectors, so a
+  concurrent model replacement produces a retryable error rather than mixing
+  spaces (`eki.ingest.index`, `eki.ingest.semantic`).
+- **Reindex explicitly.** `eki reindex-artifacts --run ID` uses the currently
+  configured artifact model. All vectors are validated before replacing chunks
+  and model metadata atomically. A failed batch leaves the previous pair usable.
+  Historical runs are not silently re-embedded. Migration `0010_artifact_model.sql`
+  identifies existing vectors as offline hashing. Real-provider quality remains
+  pending by user request.
 - **Each ingest is a new run.** Nothing is updated in place; ingesting again
   produces a second, independent run.
 - **Mapping is a separate command.** `eki map --run ID` loads the stored run,

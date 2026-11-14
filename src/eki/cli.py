@@ -44,6 +44,7 @@ from eki.ingest.embedding import HashingEmbedder
 from eki.ingest.index import index_run
 from eki.ingest.pipeline import IngestError, ingest_from_source, load, store
 from eki.ingest.scope import Scope, validate_mail_folders
+from eki.ingest.semantic import configured as artifact_embedder
 from eki.interview import store as interviews
 from eki.interview.models import InterviewPlan
 from eki.interview.service import (
@@ -97,6 +98,11 @@ def _parser() -> argparse.ArgumentParser:
         default=[],
         help="explicit normal-mail folder; repeat to select more",
     )
+
+    reindex = commands.add_parser(
+        "reindex-artifacts", help="rebuild an artifact index with the configured model"
+    )
+    reindex.add_argument("--run", type=UUID, required=True)
 
     mapping = commands.add_parser("map", help="build topics and gap scores for a run")
     mapping.add_argument("--run", type=UUID, required=True)
@@ -186,7 +192,7 @@ def _ingest(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
             snapshot = asyncio.run(ingest_from_source(scope, Path(source_dir).resolve()))
             with conn.transaction():
                 store(conn, snapshot, run_id=run_id)
-                chunks = index_run(conn, run_id, HashingEmbedder())
+                chunks = index_run(conn, run_id, artifact_embedder(settings, run_id=run_id))
                 append_event(
                     conn,
                     "ingest",
@@ -601,6 +607,14 @@ def _main(argv: list[str] | None = None) -> int:
                 return _migrate(conn)
             if arguments.command == "ingest":
                 return _ingest(conn, arguments)
+            if arguments.command == "reindex-artifacts":
+                if not interviews.run_exists(conn, arguments.run):
+                    raise NotFoundError("no completed run")
+                with audit_context(run_ids=(arguments.run,)):
+                    embedder = artifact_embedder(get_settings(), run_id=arguments.run)
+                    count = index_run(conn, arguments.run, embedder)
+                print(f"Indexed {count} artifact chunks with {embedder.name}.")
+                return 0
             if arguments.command == "map":
                 return _map(conn, arguments.run)
             return _gaps(conn, arguments)

@@ -93,6 +93,14 @@ uv run eki export --run RUN_ID --output runbook.md
 Only approved entries are found. `eki ask` answers with exact approved claims
 and their citations, or says the runbook does not cover the question.
 
+### Artifact retrieval
+
+Blank `EKI_MODEL_ARTIFACT_EMBEDDING` uses offline hashing. Set it to a LiteLLM
+embedding model supporting 256 dimensions for optional semantic artifact
+retrieval. Existing runs keep their saved model; use
+`uv run eki reindex-artifacts --run RUN_ID` to replace that index explicitly.
+`EKI_MODEL_EMBEDDING` controls runbook retrieval separately.
+
 ### The HTTP API
 
 ```bash

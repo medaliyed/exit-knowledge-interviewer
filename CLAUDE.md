@@ -389,3 +389,21 @@ as text nodes and the shell sets a restrictive Content Security Policy.
 `tests/test_browser.py` covers static serving, access boundaries and the complete
 synthetic workflow via HTTP. Browser visual QA is currently unavailable because
 the computer-use browser host is unavailable and native fallback timed out.
+
+
+### Semantic artifact retrieval (F17)
+
+Apply migration `0010_artifact_model.sql`. Set `EKI_MODEL_ARTIFACT_EMBEDDING` to
+an optional LiteLLM model supporting 256 dimensions; blank retains offline
+hashing. This setting is independent of the runbook embedder. New ingestion
+uses the selected model; existing runs retain their saved model identity.
+The interviewer resolves that saved identity, not the current ingest setting.
+
+`eki reindex-artifacts --run ID` explicitly replaces a run's artifact vectors
+and model identity atomically, in validated batches of at most 64. Provider
+attempts are audited under the run; redaction is applied at the provider
+boundary. Failure leaves the previous pair intact. A concurrent model change
+during query is detected before vector comparison. Real-source adapters remain
+synthetic; real-provider quality is pending by user request. Opt-in artifact
+checks are in `tests/test_live_artifacts.py` (three repetitions, fixed expected
+IDs and separately reported hashing/semantic results).

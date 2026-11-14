@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     search_min_similarity: float = Field(default=0.18, ge=0, le=1)
     model_answerer: str | None = None
     model_embedding: str | None = None
+    model_artifact_embedding: str | None = None
     model_interviewer: str | None = None
     model_drafter: str | None = None
     model_timeout_seconds: float = 60.0

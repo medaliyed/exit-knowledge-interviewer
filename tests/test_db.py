@@ -44,6 +44,7 @@ MIGRATIONS = [
     "0007_mail.sql",
     "0008_entry_edited.sql",
     "0009_delivery.sql",
+    "0010_artifact_model.sql",
 ]
 
 

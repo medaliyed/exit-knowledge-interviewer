@@ -51,7 +51,8 @@ Things the flow pages flag. Each is cited on its page.
 - **Indexing happens on the search path** and the vector comparison is exact,
   so cost grows with the number of approved sections.
   ([search-and-ask.md](search-and-ask.md))
-- **The artifact index is lexical** whatever embedding model is configured.
+- **Artifact retrieval is lexical by default.** A separately configured semantic
+  model is supported; its real-provider quality remains unverified.
   ([ingest.md](ingest.md))
 - **Nothing here has run against a real model or a real source.** All flows
   were traced by reading the code and are exercised by tests with scripted
