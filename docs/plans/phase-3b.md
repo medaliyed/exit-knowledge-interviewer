@@ -47,7 +47,7 @@ that instruction authorizes proceeding without another approval round.
 - [x] a / F11: migration and authentication/authorization, all existing API route
   protection, actor binding, operator ACL CLI, negative tests for missing/bad
   credentials, cross-user reads/writes, draft/transcript access and ACL updates.
-- [ ] b / F11: approved-only versioned search index, invalidation, provider/offline
+- [x] b / F11: approved-only versioned search index, invalidation, provider/offline
   embeddings, filtered hybrid ranking, search API/CLI, relevance and isolation
   tests including immediate edit/correction/revocation visibility changes.
 - [ ] c / F11: cited extractive Q&A, optional evidence selector, answer API/CLI,

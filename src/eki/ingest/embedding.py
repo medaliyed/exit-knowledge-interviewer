@@ -32,6 +32,7 @@ class HashingEmbedder:
     Text with no word tokens embeds to the zero vector.
     """
 
+    name = "hashing-blake2b-v1-256"
     dimensions = 256
 
     def embed(self, texts: Sequence[RedactedText]) -> list[list[float]]:

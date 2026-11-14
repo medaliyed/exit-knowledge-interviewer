@@ -27,7 +27,7 @@ from uuid import UUID
 import psycopg
 
 from eki import access
-from eki.auth import Principal
+from eki.auth import AuthenticationError, Principal, TokenAuthenticator
 from eki.config import ConfigError, get_settings, work_domains
 from eki.db import connect, migrate
 from eki.graph.workflow import setup_checkpoints
@@ -53,6 +53,7 @@ from eki.runbook.models import SECTION_NAMES, EntryStatus, InterviewTurnCitation
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
 from eki.runbook.store import StoredEntry
+from eki.search.service import build_search
 
 USAGE_ERROR = 2
 FAILURE = 1
@@ -103,6 +104,10 @@ def _parser() -> argparse.ArgumentParser:
     permissions.add_argument(
         "--readers", nargs="*", default=None, help="replace reader subjects; empty revokes all"
     )
+    search = commands.add_parser("search", help="search accessible approved runbook entries")
+    search.add_argument("query")
+    search.add_argument("--limit", type=int, default=5)
+    search.add_argument("--json", action="store_true")
     return parser
 
 
@@ -423,6 +428,31 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
+        if arguments.command == "search":
+            settings = get_settings()
+            credential = settings.api_token
+            if credential is None or not credential.get_secret_value():
+                raise AuthenticationError("set EKI_API_TOKEN to a configured client credential")
+            principal = TokenAuthenticator(settings.api_tokens.get_secret_value()).authenticate(
+                "Bearer " + credential.get_secret_value()
+            )
+            search = build_search(settings)
+            hits = search.search(principal, arguments.query, limit=arguments.limit)
+            if arguments.json:
+                print(
+                    json.dumps(
+                        {
+                            "results": [h.public() for h in hits],
+                            "embedding_model": search.embedder.name,
+                        }
+                    )
+                )
+            else:
+                for hit in hits:
+                    print(f"{hit.entry.title} [{hit.entry.id}] ({hit.section})\n  {hit.snippet}")
+                if not hits:
+                    print("No matching approved entries.")
+            return 0
         if arguments.command in ("entries", "review"):
             return _entry_commands(arguments)
         if arguments.command in ("plan", "interview"):
@@ -443,6 +473,8 @@ def main(argv: list[str] | None = None) -> int:
             if arguments.command == "map":
                 return _map(conn, arguments.run)
             return _gaps(conn, arguments)
+    except AuthenticationError:
+        return _fail("valid EKI_API_TOKEN credentials are required", USAGE_ERROR)
     except ConfigError as error:
         return _fail(str(error), USAGE_ERROR)
     except (IngestError, NotFoundError, ConflictError, ValueError) as error:

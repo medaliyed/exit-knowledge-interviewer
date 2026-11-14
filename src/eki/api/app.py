@@ -38,6 +38,7 @@ from eki.runbook.models import SECTION_NAMES, SectionName
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
 from eki.runbook.store import StoredEntry
+from eki.search.service import SearchService, build_search
 
 CONFIDENTIAL = "[confidential]"
 
@@ -142,11 +143,14 @@ def create_app(
     *,
     runbook_service: RunbookService | None = None,
     authenticator: Authenticator | None = None,
+    search_service: SearchService | None = None,
 ) -> FastAPI:
     """The application. Without ``service`` one is built from settings on first use."""
     app = FastAPI(title="Exit-Knowledge Interviewer", version=__version__)
 
     def database_dsn() -> str:
+        if search_service is not None:
+            return search_service.dsn
         if runbook_service is not None:
             return runbook_service.dsn
         if service is not None:
@@ -182,6 +186,17 @@ def create_app(
         return RunbookService(settings.database_url.get_secret_value(), work_domains(settings))
 
     Runbooks = Annotated[RunbookService, Depends(get_runbooks)]
+
+    def get_search() -> SearchService:
+        if search_service is not None:
+            return search_service
+        if service is not None:
+            return SearchService(service.dsn, service.work_email_domains)
+        if runbook_service is not None:
+            return SearchService(runbook_service.dsn, runbook_service.work_email_domains)
+        return build_search(get_settings())
+
+    Search = Annotated[SearchService, Depends(get_search)]
 
     async def operation[T](call: Callable[[], T]) -> T:
         try:
@@ -374,6 +389,13 @@ def create_app(
                 return access.readers(conn, run_id, identity(request))
 
         return await operation(work)
+
+    @app.get("/runbook/search")
+    async def search_entries(
+        q: str, request: Request, search: Search, limit: int = 5
+    ) -> dict[str, object]:
+        hits = await operation(lambda: search.search(identity(request), q, limit=limit))
+        return {"results": [h.public() for h in hits], "embedding_model": search.embedder.name}
 
     return app
 
