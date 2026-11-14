@@ -44,6 +44,7 @@ from eki.llm import ChatModel, ModelError
 from eki.llm.litellm_model import LiteLLMModel
 from eki.llm.tracing import NullTracer, TracedModel, Tracer, build_tracer
 from eki.runbook.models import SectionName
+from eki.runbook.service import correct_entries
 
 Event = dict[str, Any]
 Action = Literal["answer", "skip", "correct"]
@@ -320,6 +321,7 @@ class InterviewService:
             raise ValueError("only something the expert said can be corrected")
         clean = redact(text, work_email_domains=self.work_email_domains).text
         with conn.transaction():
+            conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (session.id,))
             turn = store.add_expert_turn(
                 conn,
                 session.id,
@@ -330,6 +332,19 @@ class InterviewService:
                 confidential=target.confidential,
             )
             changed = store.replace_notes_from_turn(conn, session.id, corrects, clean, turn)
+            expert = conn.execute(
+                "SELECT expert_name FROM ingest_runs WHERE id = %s", (session.run_id,)
+            ).fetchone()
+            assert expert is not None  # noqa: S101 - session references this run
+            correct_entries(
+                conn,
+                session.id,
+                corrects,
+                turn,
+                clean,
+                redact(expert[0], work_email_domains=self.work_email_domains).text,
+                self.clock(),
+            )
         sections = [section for _, section in changed]
         return {"type": "corrected", "turn": turn, "corrects": corrects, "sections": sections}
 

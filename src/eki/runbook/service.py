@@ -11,7 +11,15 @@ from eki.errors import ConflictError, NotFoundError
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
 from eki.runbook import review, store
-from eki.runbook.models import SECTION_NAMES, EntryStatus, InterviewTurnCitation, RunbookEntry
+from eki.runbook.models import (
+    SECTION_NAMES,
+    Claim,
+    EntryStatus,
+    InterviewTurnCitation,
+    RunbookEntry,
+    Section,
+    SectionName,
+)
 from eki.runbook.synthesis import build_entry
 
 
@@ -155,3 +163,104 @@ class RunbookService:
             lambda conn, previous, expert: review.reject(previous.entry, clean),
             reason=clean,
         )
+
+    def edit(
+        self,
+        entry_id: UUID,
+        by: str,
+        sections: dict[SectionName, review.SectionEdit],
+    ) -> store.StoredEntry:
+        # Validate and redact before any text is stored, even in the transcript.
+        if not sections or any(name not in SECTION_NAMES for name in sections):
+            raise ValueError("an edit needs named runbook sections")
+        clean = {
+            name: review.SectionEdit(
+                claims=tuple(self._clean(text) for text in section.claims),
+                open_question=None
+                if section.open_question is None
+                else self._clean(section.open_question),
+            )
+            for name, section in sections.items()
+        }
+        if any(not s.claims and s.open_question is None for s in clean.values()):
+            raise ValueError("an edit cannot leave a section empty")
+
+        def apply(
+            conn: psycopg.Connection, previous: store.StoredEntry, expert: str
+        ) -> RunbookEntry:
+            text = self._clean(
+                "\n".join(
+                    f"{name}: "
+                    + " ".join(
+                        (*s.claims, *(() if s.open_question is None else (s.open_question,)))
+                    )
+                    for name, s in clean.items()
+                )
+            )
+            ordinal = interviews.add_expert_turn(
+                conn, previous.session_id, previous.entry.topic_id, "edit", text
+            )
+            citation = InterviewTurnCitation(
+                session_id=str(previous.session_id), turn_index=ordinal
+            )
+            replacements = {
+                name: Section(
+                    claims=tuple(Claim(text=t, citations=(citation,)) for t in section.claims),
+                    open_question=section.open_question,
+                )
+                for name, section in clean.items()
+            }
+            return review.edit(previous.entry, replacements)
+
+        return self._change(entry_id, by, "edit", apply)
+
+
+def correct_entries(
+    conn: psycopg.Connection,
+    session_id: UUID,
+    corrected_turn: int,
+    correction_turn: int,
+    text: RedactedText,
+    by: RedactedText,
+    at: datetime,
+) -> None:
+    """Update cited text and reopen approval atomically with the transcript correction.
+
+    The caller holds the session row lock, so approval cannot race this operation.
+    Sections and claims with unrelated sources remain as the expert reviewed them.
+    """
+    for previous in store.list_entries(conn, session_id):
+        changed: dict[SectionName, Section] = {}
+        for name in SECTION_NAMES:
+            section = previous.entry.section(name)
+            claims: list[Claim] = []
+            replaced = False
+            for claim in section.claims:
+                cites_target = any(
+                    isinstance(c, InterviewTurnCitation)
+                    and c.session_id == str(session_id)
+                    and c.turn_index == corrected_turn
+                    for c in claim.citations
+                )
+                if cites_target:
+                    if not replaced:
+                        claims.append(
+                            Claim(
+                                text=text,
+                                citations=(
+                                    InterviewTurnCitation(
+                                        session_id=str(session_id), turn_index=correction_turn
+                                    ),
+                                ),
+                            )
+                        )
+                    replaced = True
+                else:
+                    claims.append(claim)
+            if replaced:
+                changed[name] = Section(claims=tuple(claims), open_question=section.open_question)
+        if changed:
+            entry = review.edit(previous.entry, changed)
+            validate_sources(conn, session_id, entry)
+            store.save_entry(conn, session_id, entry)
+            store.add_decision(conn, entry.id, "correction", by, at)

@@ -113,8 +113,8 @@ Tables: `runbook_entries` (ID, session, topic, title, status, content as validat
 
 An edit replaces the claims or the open question of one or more sections. It is stored as an expert turn of kind `edit`, and the new claims cite it.
 
-- [ ] Failing tests: edited claims cite the new turn and the turn is in the transcript; `test_edit_cannot_leave_a_section_empty`; an edit to an approved or rejected entry returns it to draft; `test_correction_reopens_an_approved_entry`; a correction that touches no cited turn leaves the approval; `test_edit_and_reason_are_redacted`; the version number rises with each change.
-- [ ] Implement. Commit `feat(F10): expert edits an entry; changes require re-approval`.
+- [x] Failing tests: edited claims cite the new turn and the turn is in the transcript; `test_edit_cannot_leave_a_section_empty`; an edit to an approved or rejected entry returns it to draft; `test_correction_reopens_an_approved_entry`; a correction that touches no cited turn leaves the approval; `test_edit_and_reason_are_redacted`; the version number rises with each change.
+- [x] Implement. Commit `feat(F10): expert edits an entry; changes require re-approval`.
 
 ### Task f: API
 

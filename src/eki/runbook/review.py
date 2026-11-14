@@ -2,8 +2,17 @@
 
 from datetime import datetime
 
+from pydantic import BaseModel, ConfigDict
+
 from eki.errors import ConflictError
-from eki.runbook.models import EntryStatus, RunbookEntry, validate_citations
+from eki.runbook.models import (
+    EntryStatus,
+    NonBlank,
+    RunbookEntry,
+    Section,
+    SectionName,
+    validate_citations,
+)
 
 
 def check_expert(by: str, expert: str) -> None:
@@ -32,3 +41,24 @@ def reject(entry: RunbookEntry, reason: str) -> RunbookEntry:
     if not reason.strip():
         raise ValueError("rejection needs a reason")
     return entry.model_copy(update={"status": EntryStatus.REJECTED})
+
+
+class SectionEdit(BaseModel):
+    """Replace the claims and/or open question of one section, in the expert's words."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    claims: tuple[NonBlank, ...] = ()
+    open_question: NonBlank | None = None
+
+
+def edit(entry: RunbookEntry, sections: dict[SectionName, Section]) -> RunbookEntry:
+    if not sections or any(not s.claims and s.open_question is None for s in sections.values()):
+        raise ValueError("an edit must supply complete sections")
+    return entry.model_copy(
+        update={
+            **{str(name): section for name, section in sections.items()},
+            "status": EntryStatus.DRAFT,
+            "approved_by": None,
+            "approved_at": None,
+        }
+    )
