@@ -5,8 +5,10 @@
                                       |              +--+ (one question |
                                       +---------------- per step) ------+
 
-``draft_plan``, ``await_review``, ``next_topic`` and ``check_complete`` are plain
-code. ``interview_topic`` is the only node where a model chooses tool calls.
+``draft_plan``, ``await_review``, ``next_topic``, ``check_complete`` and the final
+``synthesise`` node are plain code. Synthesis stores private drafts; expert review
+is a separate database operation. ``interview_topic`` is the only node where a
+model chooses tool calls.
 The workflow stops at two kinds of interrupt: once for the expert to review the
 plan, then once per question. State is checkpointed in Postgres after every
 step, so a stopped process continues from the last question.

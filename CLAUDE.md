@@ -33,6 +33,8 @@ uv run python -m tests.fixtures.generator # regenerate the synthetic corpus
 uv run pytest -m live -s                  # ONE real-model check; needs model names and a provider key, costs money
 uv run eki migrate                        # then: eki ingest --since D --until D | eki map --run ID | eki gaps --run ID
 uv run eki plan --run ID                  # draft the interview plan, then: eki interview --plan ID
+uv run eki entries --plan ID              # list generated runbook entries and their status
+uv run eki review --plan ID               # approve, reject, edit or skip drafts; quit and resume
 ```
 
 Models are named in `EKI_MODEL_INTERVIEWER` and `EKI_MODEL_DRAFTER` (LiteLLM names);
@@ -43,13 +45,13 @@ real model: they use `ScriptedModel` from `tests/fakes.py`.
 
 ```
 src/eki/
-  api/        FastAPI app: plan review and the interview chat (SSE)
+  api/        FastAPI app: plan review, interview chat (SSE), runbook entry review
   graph/      LangGraph workflow: fixed nodes around the one agentic node
   ingest/     connectors' client side, redaction, indexing
   interview/  plan, question drafting, the interviewer node and its six tools, storage, service
   llm/        ChatModel interface, LiteLLM implementation, tracing
   mapping/    topic clustering, gap scoring
-  runbook/    entry template, citation validation, approval
+  runbook/    entry template, deterministic synthesis, storage, citation checks, expert review
   search/     hybrid search and Q&A
 mcp_servers/  one read-only MCP server per source (git_server, tickets_server); they redact before returning
 tests/        tests; fixtures in tests/fixtures/
@@ -81,3 +83,37 @@ docs/plans/   one approved plan per phase
   trace, the workflow state or an API response.
 - The interviewer's tools read artifacts or change interview state. Never add
   one that approves, publishes, sends or writes to a source.
+
+## Phase 3 first half (F9, F10)
+
+Completed interviews automatically produce one private draft runbook entry per
+plan topic. Synthesis copies notes without a model call; each claim cites a
+non-confidential expert turn of the same topic. All seven sections contain
+claims or an open question. Confidential sections use only the fixed marker.
+
+Use `eki entries --plan ID` to list entries and `eki review --plan ID` to review
+drafts. Review defaults to the expert recorded on the run; `--review-as NAME`
+can supply that name explicitly. This name check is consistency validation,
+not authentication. Review works without model names or provider credentials.
+
+Entry API (also independent of model configuration):
+
+- `POST /sessions/{id}/synthesise`: rebuild drafts from current interview notes;
+  approved and rejected entries remain untouched. Rebuilding replaces draft edits.
+- `GET /sessions/{id}/entries`: list status, version, claim and open-question counts.
+- `GET /entries/{id}`: sections, citations and ordered decision history.
+- `PATCH /entries/{id}`: `{"edited_by":"Nadia Ferrand","sections":{"steps":{"claims":["Restart twice."]}}}`.
+  Sections replace their claims/open question together. Supply `open_question`
+  when a section has no claims. Edits are stored as redacted expert turns.
+- `POST /entries/{id}/approve`: `{"approved_by":"Nadia Ferrand"}`.
+- `POST /entries/{id}/reject`: `{"rejected_by":"Nadia Ferrand","reason":"Outdated"}`.
+
+Editing an approved or rejected entry returns it to draft. Correcting a cited
+turn updates its claims and reopens review. Each change increments the version;
+review and corrections share the session lock and commit atomically. A stopped
+synthesis can resume both before and after its database commit.
+
+Apply migration `0003_runbook.sql` with `eki migrate` before using these routes.
+Search, Q&A, authentication/access control and Markdown export are left for the
+second half. There is no publishing or web UI in this half. Acceptance evidence
+and a sample entry are in `docs/plans/phase-3.md` (Outcome).

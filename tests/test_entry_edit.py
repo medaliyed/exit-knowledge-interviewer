@@ -86,3 +86,20 @@ async def test_edit_and_reason_are_redacted(scratch: Scratch) -> None:
     with scratch.connect() as conn:
         assert tables_containing(conn, scratch.schema, FAKE_CREDENTIALS[1]) == []
     assert "[REDACTED:credential]" in service.get(entry_id).entry.model_dump_json()
+
+
+async def test_correction_of_uncited_turn_keeps_approval(scratch: Scratch) -> None:
+    from eki.ingest.redaction import RedactedText
+
+    session = await finished(scratch)
+    service = RunbookService(scratch.dsn)
+    entry_id = UUID(service.list(session)[0].entry.id)
+    approved = service.approve(entry_id, EXPERT)
+    with scratch.connect() as conn:
+        unused = interviews.add_expert_turn(
+            conn, session, approved.entry.topic_id, "answer", RedactedText("Unrecorded detail")
+        )
+    await say(
+        make_service(scratch.dsn), session, "Corrected detail.", action="correct", corrects=unused
+    )
+    assert service.get(entry_id) == approved

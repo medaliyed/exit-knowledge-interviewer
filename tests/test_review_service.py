@@ -57,3 +57,39 @@ async def test_decisions_are_serialised(scratch: Scratch) -> None:
         )
     assert sorted(results) == ["approved", "conflict"]
     assert len(service.history(entry)) == 1
+
+
+@pytest.mark.parametrize(
+    "source", ["missing", "interviewer", "other_topic", "confidential", "other_session"]
+)
+async def test_approval_checks_source_turns(scratch: Scratch, source: str) -> None:
+    from eki.ingest.redaction import RedactedText
+    from eki.interview import store as interviews
+    from eki.runbook import store
+    from eki.runbook.models import Claim, InterviewTurnCitation, Section
+
+    session = await finished(scratch)
+    service = RunbookService(scratch.dsn)
+    previous = service.list(session)[0]
+    ordinal = {"missing": 999, "interviewer": 1, "other_topic": 4}.get(source, 2)
+    with scratch.connect() as conn:
+        if source == "confidential":
+            ordinal = interviews.add_expert_turn(
+                conn,
+                session,
+                previous.entry.topic_id,
+                "answer",
+                RedactedText("private"),
+                confidential=True,
+            )
+        citation = InterviewTurnCitation(
+            session_id=str(uuid4() if source == "other_session" else session), turn_index=ordinal
+        )
+        bad = previous.entry.model_copy(
+            update={"steps": Section(claims=(Claim(text="Bad evidence", citations=(citation,)),))}
+        )
+        store.save_entry(conn, session, bad)
+    with pytest.raises(ValueError):
+        service.approve(UUID(previous.entry.id), "Nadia Ferrand")
+    assert service.get(UUID(previous.entry.id)).entry.status == "draft"
+    assert service.history(UUID(previous.entry.id)) == ()

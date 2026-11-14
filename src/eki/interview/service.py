@@ -281,6 +281,11 @@ class InterviewService:
             )
             return _Next(command=resume, events=[event], recovered=pending is None)
         if session.status == "finished":
+            # Drafts committed, but the process may have stopped before the node checkpoint.
+            async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
+                snapshot = await workflow.aget_state(thread_config(session.plan_id))
+            if snapshot.next == ("synthesise",):
+                return _Next(recovered=True)
             raise ConflictError("the interview is finished")
         if pending is None:
             # The process stopped mid-step. Continue it; the message is not used.

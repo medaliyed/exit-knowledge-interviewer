@@ -77,3 +77,36 @@ async def test_restart_during_synthesis_rolls_back_and_retries(
     monkeypatch.setattr(store, "save_entry", original)
     await say(make_service(scratch.dsn), session, "Continue.")
     assert len(RunbookService(scratch.dsn).list(session)) == 3
+
+
+async def test_restart_after_synthesis_commit_can_finish_checkpoint(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typing import Any
+
+    from eki.graph import workflow
+
+    original = workflow._synthesise
+
+    async def fail_after_commit(
+        deps: workflow.Deps, state: workflow.InterviewState
+    ) -> dict[str, Any]:
+        await original(deps, state)
+        raise RuntimeError("process stopped before checkpoint")
+
+    with scratch.connect() as conn:
+        run = seed_run(conn)
+    service = make_service(scratch.dsn)
+    plan = await service.draft_plan(run)
+    session = (await service.approve(plan.id, "Nadia Ferrand")).session.id
+    for _ in range(2):
+        await say(service, session, "Answer.")
+    monkeypatch.setattr(workflow, "_synthesise", fail_after_commit)
+    with pytest.raises(RuntimeError):
+        await say(service, session, "Last answer.")
+    before = RunbookService(scratch.dsn).list(session)
+    assert len(before) == 3
+    monkeypatch.setattr(workflow, "_synthesise", original)
+    events = await say(make_service(scratch.dsn), session, "Continue.")
+    assert [e["type"] for e in events] == ["recovered", "done"]
+    assert [e.entry for e in RunbookService(scratch.dsn).list(session)] == [e.entry for e in before]

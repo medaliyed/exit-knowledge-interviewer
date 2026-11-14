@@ -1,4 +1,4 @@
-"""The HTTP API: a liveness probe, plan review, and the interview chat.
+"""The HTTP API: liveness, plan review, interview chat and private runbook review.
 
 There is no authentication in this phase: run it on localhost only (the default
 of ``uvicorn``). Posting a message returns a Server-Sent Events stream of what

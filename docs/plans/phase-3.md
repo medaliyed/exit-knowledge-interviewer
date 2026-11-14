@@ -2,7 +2,7 @@
 
 > **For agentic workers:** implement task by task, in order a to h, test first, one commit per task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** approved by the user on 2026-11-14; implementation in progress.
+**Status:** approved by the user on 2026-11-14; first half implemented and verified.
 
 **Scope of this half:** F9 (runbook entries with citations) and F10 (approve, edit, reject). **Left for the second half:** F11 (hybrid search and Q&A with access filtering) and F12 (Markdown export). Nothing in this half is searchable or exported; it ends with approved entries stored in Postgres and readable through the API and the command line.
 
@@ -144,8 +144,8 @@ An edit replaces the claims or the open question of one or more sections. It is 
 
 **Files:** `tests/test_phase3a_acceptance.py` (`db`), `CLAUDE.md`, this file (Outcome).
 
-- [ ] On the fixture interview from phase 2 (scripted fakes and the simulated expert, with one confidential answer added): one draft per topic; the G3 entry has seven sections of cited claims and its rollback claim cites the follow-up turn; the G7 entry is all open questions in her words and has no claim; every citation points at an existing expert turn of the same topic; no entry holds a planted secret or the confidential answer; approving G3 and rejecting a filler entry leaves the rest as drafts.
-- [ ] Five verification commands and the `infra` tests. Commit `feat(P3-h): phase 3 first-half acceptance tests`.
+- [x] On the fixture interview from phase 2 (scripted fakes and the simulated expert, with one confidential answer added): one draft per topic; the G3 entry has seven sections of cited claims and its rollback claim cites the follow-up turn; the G7 entry is all open questions in her words and has no claim; every citation points at an existing expert turn of the same topic; no entry holds a planted secret or the confidential answer; approving G3 and rejecting a filler entry leaves the rest as drafts.
+- [x] Five verification commands and the `infra` tests. Commit `feat(P3-h): phase 3 first-half acceptance tests`.
 
 ---
 
@@ -156,3 +156,60 @@ List what is verified with evidence, a sample entry, and what is not verified.
 ## Out of scope for this half
 
 Search, Q&A, access control and authentication (F11). Markdown export (F12). Model-written entry text (D1 alternative). Mail, red-team suite, evals in CI, audit log (phase 4). A web UI.
+
+
+## Outcome (2026-11-14)
+
+F9 and F10 are implemented. No dependency was added, no real model was called,
+and nothing was published, indexed for runbook search or exported. The nine
+recommended decisions above were followed. Explicit synthesis rebuilds drafts
+from notes, including replacing manual draft edits; approved/rejected entries
+are preserved. The API and CLI review commands need no model configuration.
+
+### Verified evidence
+
+| Check | Evidence |
+| --- | --- |
+| Full fixture interview creates one draft per topic | `tests/test_phase3a_acceptance.py::test_fixture_interview_becomes_reviewable_runbook` |
+| G3 has seven cited sections and rollback cites the follow-up; G7 is entirely open in the expert's words | Same acceptance test checks each claim against an existing, same-topic expert turn |
+| Confidential content and planted secrets do not appear in entries or entry API responses | Acceptance test, `tests/test_api_entries.py`, `tests/test_entry_edit.py` |
+| Invalid evidence blocks approval: missing, interviewer, other-topic, confidential or other-session turns | `tests/test_review_service.py::test_approval_checks_source_turns` |
+| No implicit approval; approval/rejection history, identity and reason checks | `tests/test_review.py`, `tests/test_review_service.py` |
+| Two simultaneous approvals cannot both succeed | `tests/test_review_service.py::test_decisions_are_serialised` |
+| Edits cite a new expert turn; corrections reopen affected approvals only | `tests/test_entry_edit.py` |
+| Process failure before or after synthesis commit can resume without duplicate entries | Both restart tests in `tests/test_workflow_synthesis.py` |
+| CLI approval, rejection, section edit, quit and resume without model settings | `tests/test_cli.py::test_entries_and_review_quit_resume` |
+| Migration, uniqueness, validation boundary and cascading deletion | `tests/test_runbook_store.py`, `tests/test_db.py` |
+
+Final checks: `uv run pytest -q` (329 passed), `uv run pytest -q -m db`
+(127 passed), `uv run ruff check .` (passed), `uv run ruff format --check .`
+(passed), `uv run mypy` (passed), and `uv run pytest -q -m infra` (5 passed).
+Database tests use disposable schemas. Provider calls remain opt-in and were
+not run.
+
+### Sample entry from G3
+
+The acceptance test produces this seven-section content. The six initial
+claims cite the initial expert answer by session ID and ordinal; rollback
+cites the subsequent expert answer, exactly one turn after its follow-up question.
+The draft has no approver until the explicit approve operation.
+
+| Section | Claim |
+| --- | --- |
+| Trigger | Month-end totals differ between billing-batch and ledger-db. |
+| Diagnosis | Compare the last posting sequence number on both sides. |
+| Steps | Re-run the reconciliation job with the replay flag for the last day of the month. |
+| Rollback | Restore the reconciliation table from the pre-run export; the job is idempotent. |
+| Contacts | Finance operations, who report it and confirm the totals. |
+| Pitfalls | Run it before the period is closed, or it needs a reopen. |
+| Rationale | Postings made in the last minutes of the month land after the cut-off. |
+
+### Not verified / remaining scope
+
+Real-model note quality and prose quality remain unverified. This deterministic
+synthesis preserves the notes as written; citations prove source linkage, not
+that a model's earlier note was a faithful interpretation. Authentication,
+access filtering, search/Q&A and Markdown export remain the second half. The
+existing identity check is a name match, with no authentication. There is no
+web UI or publication path. A developer database needs `uv run eki migrate`
+before the new functionality can be used.

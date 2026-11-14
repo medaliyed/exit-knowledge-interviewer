@@ -8,7 +8,7 @@ import pytest
 
 from eki.ingest.redaction import RedactedText
 from eki.runbook import store
-from eki.runbook.models import EntryStatus, RunbookEntry
+from eki.runbook.models import Claim, EntryStatus, RunbookEntry, Section
 from tests.interview_support import seed_run
 from tests.test_interview_store import open_session
 
@@ -37,8 +37,14 @@ def test_round_trip_history_and_cascade(conn: psycopg.Connection) -> None:
 def test_store_revalidates_even_a_constructed_approved_entry(conn: psycopg.Connection) -> None:
     session = open_session(conn, seed_run(conn))
     entry = RunbookEntry.model_construct(
-        id=str(uuid4()), topic_id="a-topic", title="Bad", status=EntryStatus.APPROVED
+        id=str(uuid4()),
+        topic_id="a-topic",
+        title="Bad",
+        status=EntryStatus.APPROVED,
+        approved_by="Nadia",
+        approved_at=datetime.now(UTC),
+        steps=Section(claims=(Claim(text="Unsupported"),)),
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="uncited"):
         store.save_entry(conn, session, entry)
     assert store.list_entries(conn, session) == ()
