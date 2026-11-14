@@ -23,6 +23,14 @@ function field(label, type = "input", value = "") {
   const input = el(type); input.id = id; input.value = value;
   box.append(name, input); return {box, input};
 }
+function deliveryId() {
+  let previous = null, id = null;
+  return payload => {
+    const current = JSON.stringify(payload);
+    if (current !== previous) { id = crypto.randomUUID(); previous = current; }
+    return id;
+  };
+}
 async function response(path, options = {}) {
   const epoch = state.epoch;
   const result = await fetch(path, {...options, headers: {"Authorization": `Bearer ${state.token}`, ...(options.body ? {"Content-Type": "application/json"} : {})}});
@@ -155,11 +163,19 @@ async function showSession(id) {
     const form = el("form", null, "card"), answer = field("Your answer", "textarea"); answer.input.required = true;
     const privacy = el("label"), check = el("input"); check.type = "checkbox"; privacy.append(check, document.createTextNode("Confidential — keep this answer out of the runbook and model context"));
     const send = el("button", "Save answer & continue →", "primary"); send.type = "submit";
+    // Transport retries keep their ID; changed text is a different submission.
+    const identifyMessage = deliveryId();
     const sendMessage = async (actionName) => {
       let accepted = false;
-      send.disabled = true;
-      try { await stream(`/sessions/${id}/messages`, {message_id:crypto.randomUUID(), question_turn:view.waiting.turn, action:actionName, text:answer.input.value, confidential:actionName === "answer" && check.checked}, () => { accepted = true; answer.input.value = ""; }); }
-      finally { if (accepted) await showSession(id); else send.disabled = false; }
+      const payload = {question_turn:view.waiting.turn, action:actionName, text:answer.input.value, confidential:actionName === "answer" && check.checked};
+      const messageId = identifyMessage(payload);
+      for (const control of form.elements) control.disabled = true;
+      try { await stream(`/sessions/${id}/messages`, {message_id:messageId, ...payload}, () => { accepted = true; answer.input.value = ""; }); }
+      catch (error) {
+        // A lost HTTP response does not mean acceptance failed. Check its receipt.
+        try { await api(`/sessions/${id}/messages/${messageId}`); accepted = true; answer.input.value = ""; } catch (_) { /* Keep the unsent answer and ID for retry. */ }
+        throw error;
+      } finally { if (accepted) await showSession(id); else for (const control of form.elements) control.disabled = false; }
     };
     form.append(answer.box, privacy, el("div", null, "toolbar")); form.lastChild.append(send, button("Skip this question", () => sendMessage("skip")));
     form.addEventListener("submit", action(() => sendMessage("answer"))); box.append(form);
@@ -169,7 +185,18 @@ async function showSession(id) {
   const correction = el("details", null, "card"); correction.append(el("summary", "Correct an earlier answer"));
   const form = el("form"), target = field("Your answer’s turn number"), text = field("Corrected answer", "textarea"); target.input.type = "number"; target.input.min = "1"; target.input.required = text.input.required = true;
   const save = el("button", "Save correction"); save.type = "submit"; form.append(target.box, text.box, el("p"), save);
-  form.addEventListener("submit", action(async () => { await stream(`/sessions/${id}/messages`, {message_id:crypto.randomUUID(), action:"correct",corrects:Number(target.input.value),text:text.input.value}, () => { text.input.value = ""; }); await showSession(id); })); correction.append(form); box.append(correction); content(box);
+  const identifyCorrection = deliveryId();
+  form.addEventListener("submit", action(async () => {
+    let accepted = false;
+    const payload = {action:"correct",corrects:Number(target.input.value),text:text.input.value};
+    const correctionId = identifyCorrection(payload);
+    for (const control of form.elements) control.disabled = true;
+    try { await stream(`/sessions/${id}/messages`, {message_id:correctionId, ...payload}, () => { accepted = true; text.input.value = ""; }); }
+    catch (error) {
+      try { await api(`/sessions/${id}/messages/${correctionId}`); accepted = true; text.input.value = ""; } catch (_) { /* The same ID is retained for a transport retry. */ }
+      throw error;
+    } finally { if (accepted) await showSession(id); else for (const control of form.elements) control.disabled = false; }
+  })); correction.append(form); box.append(correction); content(box);
 }
 async function showReview(sessionId) {
   tabs("review"); heading("Your knowledge, in your words", "REVIEW & APPROVE");
