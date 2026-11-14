@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 from eki.config import Settings
 from eki.ingest.redaction import RedactedText, redact
-from eki.llm import ChatModel, Message, ModelError, Reply, ToolCall, ToolSpec
+from eki.llm import ChatModel, Message, ModelError, Reply, ToolCall, ToolSpec, safe_identifier
 
 logger = logging.getLogger("eki.tracing")
 
@@ -163,7 +163,7 @@ class TracedModel:
 
     def _calls(self, calls: Sequence[ToolCall]) -> tuple[ToolCall, ...]:
         return tuple(
-            ToolCall(self._clean(c.id), self._clean(c.name), self._clean(c.arguments))
+            ToolCall(safe_identifier(c.id), safe_identifier(c.name), self._clean(c.arguments))
             for c in calls
         )
 

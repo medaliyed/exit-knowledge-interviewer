@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from eki.ingest.redaction import redact
-from eki.llm import Message, ModelError, Reply, ToolCall, ToolSpec
+from eki.llm import Message, ModelError, Reply, ToolCall, ToolSpec, safe_identifier
 
 
 class LiteLLMModel:
@@ -70,17 +70,17 @@ class LiteLLMModel:
         if message.role == "tool":
             return {
                 "role": "tool",
-                "tool_call_id": self._clean(message.tool_call_id),
+                "tool_call_id": safe_identifier(message.tool_call_id or ""),
                 "content": content,
             }
         wire: dict[str, Any] = {"role": message.role, "content": content}
         if message.tool_calls:
             wire["tool_calls"] = [
                 {
-                    "id": self._clean(call.id),
+                    "id": safe_identifier(call.id),
                     "type": "function",
                     "function": {
-                        "name": self._clean(call.name),
+                        "name": safe_identifier(call.name),
                         "arguments": json.dumps(self._clean(call.arguments), ensure_ascii=False),
                     },
                 }

@@ -1,6 +1,7 @@
 """Task P2-a: one model interface, a LiteLLM implementation and a scripted fake."""
 
 import json
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -206,3 +207,58 @@ def test_model_names_are_required_settings() -> None:
     assert model_name(configured, "interviewer") == "provider/a"
     assert model_name(configured, "drafter") == "provider/b"
     assert configured.model_timeout_seconds == 60.0
+
+
+# Real provider IDs look like credentials to the redactor; they must survive unchanged.
+PROVIDER_IDS = (
+    "toolu_01A09q90qw90lq917835lq9",
+    "toolu_01XFDUDYJgAACzvnptvVoYEL",
+    "call_9pw1qnYScqvGrCH58HWCvFH6",
+)
+
+
+def test_safe_identifier_keeps_plain_identifiers_and_hashes_the_rest() -> None:
+    from eki.llm import safe_identifier
+
+    for value in (*PROVIDER_IDS, "call-1", "record_note"):
+        assert safe_identifier(value) == value
+    leak = f"password={FAKE_CREDENTIALS[1]}"
+    replaced = safe_identifier(leak)
+    assert FAKE_CREDENTIALS[1] not in replaced
+    assert replaced == safe_identifier(leak), "stable, so a call and its result still match"
+    assert replaced != safe_identifier(leak + "x")
+    for unsafe in (leak, "", "a" * 129, "has space", "ünïcode"):
+        assert re.fullmatch(r"[A-Za-z0-9_-]{1,128}", safe_identifier(unsafe))
+
+
+async def test_provider_tool_call_ids_survive_the_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = FakeProvider()
+    model = litellm_model(monkeypatch, provider)
+    calls = tuple(
+        ToolCall(id=i, name="record_note", arguments={"section": "steps"}) for i in PROVIDER_IDS
+    )
+    await model.complete(
+        [
+            Message("user", text("Start.")),
+            Message("assistant", text(""), tool_calls=calls),
+            *(Message("tool", text("Noted."), tool_call_id=i) for i in PROVIDER_IDS),
+        ]
+    )
+    sent = provider.requests[0]["messages"]
+    assert [c["id"] for c in sent[1]["tool_calls"]] == list(PROVIDER_IDS)
+    assert [m["tool_call_id"] for m in sent[2:]] == list(PROVIDER_IDS)
+    assert "[REDACTED" not in json.dumps(sent)
+
+
+async def test_traces_keep_provider_tool_call_ids() -> None:
+    from eki.llm.tracing import TracedModel
+    from tests.fakes import RecordingTracer
+
+    tracer = RecordingTracer()
+    call = ToolCall(PROVIDER_IDS[0], "ask_expert", {"question": "Why?"})
+    inner = ScriptedModel([Reply(text="", tool_calls=(call,))])
+    model = TracedModel(inner, tracer, step="interview", work_email_domains=WORK_DOMAINS)
+    await model.complete([Message("user", text("Start."))])
+    assert tracer.calls[0].tool_calls[0].id == PROVIDER_IDS[0]

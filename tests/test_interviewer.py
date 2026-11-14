@@ -362,3 +362,32 @@ async def test_model_failure_keeps_the_answer_and_can_be_retried(scratch: Scratc
     turns = (await service.view(session_id)).turns
     assert [t.ordinal for t in turns] == [1, 2, 3], "the retried answer did not add a turn"
     assert turns[1].text == "The batch aborts, as I said."
+
+
+async def test_real_provider_tool_call_ids_reach_the_model_unchanged(scratch: Scratch) -> None:
+    """Regression: provider IDs were redacted as credentials, so every call got the same ID."""
+    first, second = "toolu_01A09q90qw90lq917835lq9", "toolu_01XFDUDYJgAACzvnptvVoYEL"
+    from eki.llm import ToolCall
+
+    script: list[Reply | Exception] = [
+        Reply(
+            text="",
+            tool_calls=(
+                ToolCall(first, "ask_expert", {"question": "Why?", "section": "rationale"}),
+            ),
+        ),
+        Reply(
+            text="",
+            tool_calls=(
+                ToolCall(second, "record_note", {"section": "rationale", "text": "Because."}),
+            ),
+        ),
+        Reply(text=""),
+    ]
+    service, model, view = await start(scratch, script, model_calls_per_topic=3)
+    await say(service, view.session.id, "Because.")
+    messages = model.calls[2].messages
+    assistant_ids = [c.id for m in messages for c in m.tool_calls]
+    result_ids = [m.tool_call_id for m in messages if m.role == "tool"]
+    assert assistant_ids == [first, second]
+    assert result_ids == [first, second]

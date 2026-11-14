@@ -6,6 +6,8 @@ Every model call in the project goes through ``ChatModel``. Message content is
 interface, so no test needs a network or a key.
 """
 
+import hashlib
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -13,6 +15,23 @@ from typing import Any, Literal, Protocol
 from eki.ingest.redaction import RedactedText
 
 Role = Literal["system", "user", "assistant", "tool"]
+
+
+_IDENTIFIER = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def safe_identifier(value: str) -> str:
+    """A tool-call ID or tool name that is safe to send back to a provider and to trace.
+
+    Provider IDs such as ``toolu_01A09q90qw90lq917835lq9`` look like credentials to the
+    redactor, and redacting them would give every call the same ID. They are
+    identifiers, not content, and the model only ever sees redacted text, so a plain
+    identifier is kept as it is. Anything else is replaced by a stable hash, which keeps
+    a call and its result matched while dropping whatever the value contained.
+    """
+    if _IDENTIFIER.fullmatch(value):
+        return value
+    return "id_" + hashlib.blake2b(value.encode(), digest_size=12).hexdigest()
 
 
 class ModelError(Exception):

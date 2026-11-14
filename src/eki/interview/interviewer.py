@@ -22,7 +22,14 @@ from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store, tools
 from eki.interview.drafting import as_data
 from eki.interview.models import SECTIONS, PlannedTopic, Turn
-from eki.llm import Message, Reply, ToolCall, message_from_dict, message_to_dict
+from eki.llm import (
+    Message,
+    Reply,
+    ToolCall,
+    message_from_dict,
+    message_to_dict,
+    safe_identifier,
+)
 from eki.runbook.models import SectionName
 
 SYSTEM = RedactedText(
@@ -238,7 +245,7 @@ class _Step:
 
     async def handle(self, reply: Reply) -> None:
         calls = tuple(
-            ToolCall(self.clean(c.id), self.clean(c.name), self.clean(c.arguments))
+            ToolCall(safe_identifier(c.id), safe_identifier(c.name), self.clean(c.arguments))
             for c in reply.tool_calls
         )
         self.messages.append(Message("assistant", self.clean(reply.text), tool_calls=calls))
