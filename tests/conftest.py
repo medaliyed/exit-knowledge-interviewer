@@ -3,7 +3,7 @@
 import os
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import psycopg
 import pytest
@@ -54,7 +54,7 @@ class Scratch:
     """A migrated throwaway schema that any number of connections can share."""
 
     schema: str
-    dsn: str
+    dsn: str = field(repr=False)
     """A connection string whose search path is the scratch schema."""
 
     def connect(self) -> psycopg.Connection:

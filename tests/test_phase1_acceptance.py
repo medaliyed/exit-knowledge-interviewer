@@ -30,7 +30,7 @@ from mcp_servers.git_server import build_server as build_git
 from mcp_servers.tickets_server import build_server as build_tickets
 from tests.support import CORPUS, FIXTURES, FULL_SPAN
 
-pytestmark = pytest.mark.anyio
+pytestmark = [pytest.mark.anyio, pytest.mark.eval]
 
 REACHABLE_GAPS = ["G1", "G2", "G3", "G5", "G6", "G7"]
 PURE_GAPS = ["G1", "G3", "G6", "G7"]

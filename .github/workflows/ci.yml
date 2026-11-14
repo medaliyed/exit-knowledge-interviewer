@@ -62,3 +62,11 @@ jobs:
         env:
           EKI_DATABASE_URL: postgresql://eki:ci-only-not-a-secret@localhost:5432/eki
         run: uv run pytest -q -m db
+
+      # Provider-free behavioral gates; human-owned scenarios/golden remain untouched.
+      - name: Quality and adversarial evaluations
+        env:
+          EKI_DATABASE_URL: postgresql://eki:ci-only-not-a-secret@localhost:5432/eki
+          EKI_MODEL_ANSWERER: ""
+          EKI_MODEL_EMBEDDING: ""
+        run: uv run python evals/run.py --junit reports/quality.xml

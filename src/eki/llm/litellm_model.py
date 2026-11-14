@@ -52,7 +52,7 @@ class LiteLLMModel:
             response = await litellm.acompletion(**request)
         except Exception as error:
             # The provider's own message can echo the prompt, so only its type is kept here.
-            raise ModelError(f"{type(error).__name__} from model {self.name}") from error
+            raise ModelError(f"{type(error).__name__} from model {self.name}") from None
         return self._reply(response)
 
     def _clean(self, value: Any) -> Any:
@@ -60,7 +60,7 @@ class LiteLLMModel:
         if isinstance(value, str):
             return str(redact(value, work_email_domains=self._domains).text)
         if isinstance(value, dict):
-            return {key: self._clean(item) for key, item in value.items()}
+            return {self._clean(key): self._clean(item) for key, item in value.items()}
         if isinstance(value, list):
             return [self._clean(item) for item in value]
         return value
@@ -68,15 +68,19 @@ class LiteLLMModel:
     def _wire(self, message: Message) -> dict[str, Any]:
         content = self._clean(message.content)
         if message.role == "tool":
-            return {"role": "tool", "tool_call_id": message.tool_call_id, "content": content}
+            return {
+                "role": "tool",
+                "tool_call_id": self._clean(message.tool_call_id),
+                "content": content,
+            }
         wire: dict[str, Any] = {"role": message.role, "content": content}
         if message.tool_calls:
             wire["tool_calls"] = [
                 {
-                    "id": call.id,
+                    "id": self._clean(call.id),
                     "type": "function",
                     "function": {
-                        "name": call.name,
+                        "name": self._clean(call.name),
                         "arguments": json.dumps(self._clean(call.arguments), ensure_ascii=False),
                     },
                 }
@@ -87,8 +91,8 @@ class LiteLLMModel:
     def _reply(self, response: Any) -> Reply:
         try:
             message = response.choices[0].message
-        except (AttributeError, IndexError, TypeError) as error:
-            raise ModelError(f"empty response from model {self.name}") from error
+        except (AttributeError, IndexError, TypeError):
+            raise ModelError(f"empty response from model {self.name}") from None
         calls = tuple(
             ToolCall(id=str(raw.id), name=str(raw.function.name), arguments=_arguments(raw))
             for raw in (message.tool_calls or [])

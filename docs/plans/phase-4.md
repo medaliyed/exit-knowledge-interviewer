@@ -53,7 +53,7 @@ changes to human-owned `evals/scenarios/` or `evals/golden/`.
 
 - [x] a / F13: append-only audit schema/store, contextual model and tool wrappers,
   atomic review/approval/ACL events, API/CLI read access and correlation tests.
-- [ ] b / P4-b: adversarial and quality evaluation suites with explicit measurable
+- [x] b / P4-b: adversarial and quality evaluation suites with explicit measurable
   assertions; add deterministic CI gates and JUnit reports without live keys.
 - [ ] c / P4-c: opt-in live search/evidence-selection validation and an honest
   run report; skip unavailable provider configurations without inventing results.

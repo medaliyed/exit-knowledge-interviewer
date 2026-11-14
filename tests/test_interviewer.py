@@ -206,6 +206,7 @@ async def test_bad_tool_arguments_are_reported_not_stored(scratch: Scratch) -> N
     assert second[3].startswith("Noted trigger.")
 
 
+@pytest.mark.redteam
 async def test_tool_results_contain_no_secret(scratch: Scratch) -> None:
     """Search and lookup return delimited data, redacted again on the way out."""
     with scratch.connect() as conn:
@@ -277,6 +278,7 @@ async def test_secret_in_an_answer_is_redacted_everywhere(scratch: Scratch) -> N
         )
 
 
+@pytest.mark.redteam
 async def test_injection_obeying_model_cannot_act(scratch: Scratch) -> None:
     """A model that does what a planted instruction says finds no tool to do it with."""
     service, model, view = await start(

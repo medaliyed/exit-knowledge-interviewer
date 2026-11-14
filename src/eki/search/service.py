@@ -80,7 +80,7 @@ class SearchHit:
 
 @dataclass
 class SearchService:
-    dsn: str
+    dsn: str = field(repr=False)
     work_email_domains: frozenset[str] = field(default_factory=frozenset)
     embedder: SearchEmbedder = field(default_factory=HashingEmbedder)
     min_similarity: float = 0.18

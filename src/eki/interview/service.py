@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import psycopg
 from langgraph.types import Command
 
-from eki.audit import AuditedModel, AuditRecorder, Operation
+from eki.audit import AuditedModel, AuditError, AuditRecorder, Operation
 from eki.config import Settings, model_name, work_domains
 from eki.errors import ConflictError as ConflictError
 from eki.errors import NotFoundError as NotFoundError
@@ -80,7 +80,7 @@ class _Next:
 
 @dataclass
 class InterviewService:
-    dsn: str
+    dsn: str = field(repr=False)
     drafter: ChatModel
     interviewer: ChatModel
     embedder: Embedder
@@ -384,6 +384,13 @@ class InterviewService:
                     ):
                         if mode == "custom" and isinstance(chunk, dict):
                             yield chunk
+                except AuditError:
+                    yield {
+                        "type": "error",
+                        "code": "audit_unavailable",
+                        "message": "Audit storage is unavailable. The session can be retried.",
+                    }
+                    return
                 except ModelError:
                     yield {
                         "type": "error",

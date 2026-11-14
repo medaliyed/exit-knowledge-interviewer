@@ -79,7 +79,7 @@ def synthesise(conn: psycopg.Connection, session_id: UUID) -> tuple[store.Stored
 
 @dataclass
 class RunbookService:
-    dsn: str
+    dsn: str = field(repr=False)
     work_email_domains: frozenset[str] = field(default_factory=frozenset)
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 

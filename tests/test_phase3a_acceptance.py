@@ -13,7 +13,7 @@ from tests.support import FAKE_CREDENTIALS
 from tests.test_phase2_acceptance import World, reviewed_plan
 from tests.test_phase2_acceptance import world as world
 
-pytestmark = [pytest.mark.db, pytest.mark.anyio]
+pytestmark = [pytest.mark.db, pytest.mark.anyio, pytest.mark.eval]
 
 
 async def test_fixture_interview_becomes_reviewable_runbook(world: World) -> None:

@@ -52,6 +52,7 @@ async def test_streamed_calls_carry_authenticated_identity_without_content(
     )
 
 
+@pytest.mark.redteam
 async def test_failed_audit_prevents_provider_call(
     scratch: Scratch, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -68,6 +69,7 @@ async def test_failed_audit_prevents_provider_call(
     assert model.calls == []
 
 
+@pytest.mark.redteam
 async def test_failed_audit_rolls_back_entry_approval(
     scratch: Scratch, monkeypatch: pytest.MonkeyPatch
 ) -> None:

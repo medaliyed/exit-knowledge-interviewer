@@ -48,8 +48,8 @@ class LiteLLMEmbedder:
                 raise ValueError
             vectors = [[float(x) for x in item["embedding"]] for item in data]
             return checked_vectors(vectors, len(texts))
-        except Exception as error:
-            raise ModelError("embedding provider failed or returned invalid vectors") from error
+        except Exception:
+            raise ModelError("embedding provider failed or returned invalid vectors") from None
 
 
 class AuditedEmbedder:

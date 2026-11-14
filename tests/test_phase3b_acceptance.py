@@ -16,7 +16,7 @@ from tests.test_api_access import authenticator, headers
 from tests.test_phase2_acceptance import World, reviewed_plan
 from tests.test_phase2_acceptance import world as world
 
-pytestmark = [pytest.mark.db, pytest.mark.anyio]
+pytestmark = [pytest.mark.db, pytest.mark.anyio, pytest.mark.eval]
 
 
 async def test_real_fixture_search_answers_and_exports(world: World) -> None:

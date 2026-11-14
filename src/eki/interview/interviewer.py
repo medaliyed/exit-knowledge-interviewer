@@ -106,7 +106,7 @@ class _Step:
         if isinstance(value, str):
             return redact(value, work_email_domains=self.domains).text
         if isinstance(value, dict):
-            return {key: self.clean(item) for key, item in value.items()}
+            return {self.clean(key): self.clean(item) for key, item in value.items()}
         if isinstance(value, list):
             return [self.clean(item) for item in value]
         return value

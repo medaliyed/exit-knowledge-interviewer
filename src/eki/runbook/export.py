@@ -76,7 +76,7 @@ def render_markdown(
 
 @dataclass
 class ExportService:
-    dsn: str
+    dsn: str = field(repr=False)
     work_email_domains: frozenset[str] = field(default_factory=frozenset)
 
     def entry(self, principal: Principal, entry_id: UUID) -> str:

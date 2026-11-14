@@ -69,3 +69,10 @@ def test_database_port_is_bound_to_localhost(workflow: str) -> None:
 
 def test_ci_database_url_points_at_the_service(workflow: str) -> None:
     assert re.search(r"EKI_DATABASE_URL: postgresql://\S+@localhost:5432/eki", workflow)
+
+
+def test_quality_gate_is_explicit_and_provider_free(workflow: str) -> None:
+    assert "run: uv run python evals/run.py --junit reports/quality.xml" in workflow
+    assert 'EKI_MODEL_ANSWERER: ""' in workflow
+    assert 'EKI_MODEL_EMBEDDING: ""' in workflow
+    assert "pytest -m live" not in workflow

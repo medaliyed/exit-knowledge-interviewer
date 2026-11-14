@@ -27,12 +27,29 @@ def parse_time(text: str) -> datetime:
 class SourceReader:
     def __init__(self, source_dir: Path, allowed: tuple[str, ...]) -> None:
         self._root = source_dir.resolve()
-        self._allowed = tuple((self._root / name).resolve() for name in allowed)
+        self._allowed = tuple(self._root / name for name in allowed)
+        for directory in self._allowed:
+            if not directory.resolve().is_relative_to(self._root) or any(
+                part.is_symlink()
+                for part in (directory, *directory.parents)
+                if part != self._root and part.is_relative_to(self._root)
+            ):
+                raise SourceAccessError("source directory escapes its configured scope")
 
     def resolve(self, relative: str) -> Path:
-        path = (self._root / relative).resolve()
+        relative_path = Path(relative)
+        if relative_path.is_absolute() or ".." in relative_path.parts or "\\" in relative:
+            raise SourceAccessError("source path is outside its configured scope")
+        requested = self._root / relative_path
+        if any(
+            part.is_symlink()
+            for part in (requested, *requested.parents)
+            if part != self._root and part.is_relative_to(self._root)
+        ):
+            raise SourceAccessError("source symlinks are not allowed")
+        path = requested.resolve()
         if not any(path.is_relative_to(directory) for directory in self._allowed):
-            raise SourceAccessError(f"{relative!r} is outside the directories this server may read")
+            raise SourceAccessError("source path is outside the directories this server may read")
         return path
 
     def read_text(self, relative: str) -> str:

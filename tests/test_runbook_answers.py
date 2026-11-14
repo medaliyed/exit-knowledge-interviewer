@@ -61,6 +61,7 @@ async def test_only_open_questions_produce_no_procedural_answer(scratch: Scratch
         ),
     ],
 )
+@pytest.mark.redteam
 async def test_selector_cannot_forge_citations_or_write_answer_prose(
     scratch: Scratch, reply: Reply
 ) -> None:
@@ -71,6 +72,7 @@ async def test_selector_cannot_forge_citations_or_write_answer_prose(
         await service.ask(READER, "reconciliation rollback")
 
 
+@pytest.mark.redteam
 async def test_query_redaction_and_revocation_during_model_call(scratch: Scratch) -> None:
     world = await search_world(scratch)
 
@@ -160,6 +162,7 @@ async def test_answer_api_returns_sources_and_handles_provider_failure(scratch: 
     )
 
 
+@pytest.mark.redteam
 async def test_weak_retrieval_does_not_force_an_unrelated_answer(
     scratch: Scratch, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -189,6 +192,7 @@ async def test_edit_during_model_call_suppresses_old_answer(scratch: Scratch) ->
     assert answer.status == "insufficient_evidence" and not answer.evidence
 
 
+@pytest.mark.redteam
 async def test_denied_run_never_enters_answer_model_context(scratch: Scratch) -> None:
     await search_world(scratch)
     hidden = await search_world(scratch)

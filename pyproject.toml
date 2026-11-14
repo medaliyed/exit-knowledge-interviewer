@@ -55,12 +55,14 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF"]
 strict = true
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
-files = ["src", "tests", "mcp_servers"]
+files = ["src", "tests", "mcp_servers", "evals/run.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
+    "eval: deterministic quality checks, safe for CI",
+    "redteam: adversarial security/privacy regression checks",
     "infra: needs the whole docker compose stack running",
     "db: needs Postgres with pgvector (docker compose up -d postgres)",
     "live: calls the configured real model; needs a provider key and costs money",

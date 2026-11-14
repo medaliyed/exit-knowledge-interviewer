@@ -111,6 +111,14 @@ def build_tracer(settings: Settings) -> Tracer:
     )
 
 
+def flush_tracer(tracer: Tracer) -> None:
+    """Tracing remains best-effort even at CLI shutdown; never log raw SDK failures."""
+    try:
+        tracer.flush()
+    except Exception:
+        logger.warning("could not flush model traces")
+
+
 class TracedModel:
     """A ``ChatModel`` that reports every call, bound to the run and session it works for."""
 
@@ -148,7 +156,7 @@ class TracedModel:
         if isinstance(value, str):
             return redact(value, work_email_domains=self._domains).text
         if isinstance(value, dict):
-            return {key: self._clean(item) for key, item in value.items()}
+            return {self._clean(key): self._clean(item) for key, item in value.items()}
         if isinstance(value, list):
             return [self._clean(item) for item in value]
         return value

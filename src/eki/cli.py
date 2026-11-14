@@ -54,6 +54,7 @@ from eki.interview.service import (
     build_service,
 )
 from eki.llm import ModelError
+from eki.llm.tracing import flush_tracer
 from eki.mapping.scoring import score_topics
 from eki.mapping.store import load_mapping, save_mapping
 from eki.mapping.topics import build_topics
@@ -363,7 +364,7 @@ def _interview_commands(arguments: argparse.Namespace) -> int:
         approver = arguments.approve_as or settings.expert_name
         return asyncio.run(_interview(service, arguments.plan, approver))
     finally:
-        service.tracer.flush()
+        flush_tracer(service.tracer)
 
 
 def _show_entry(stored: StoredEntry) -> None:

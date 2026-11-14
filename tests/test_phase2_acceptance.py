@@ -33,7 +33,7 @@ from tests.interview_support import make_service, quoting_drafter
 from tests.support import tables_containing
 from tests.test_phase1_acceptance import INJECTION, Result, run_pipeline
 
-pytestmark = [pytest.mark.db, pytest.mark.anyio]
+pytestmark = [pytest.mark.db, pytest.mark.anyio, pytest.mark.eval]
 GAPS = ("G1", "G2", "G3", "G7")
 
 
