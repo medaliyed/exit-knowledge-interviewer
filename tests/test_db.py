@@ -31,6 +31,8 @@ TABLES = {
     "run_readers",
     "runbook_index",
     "audit_events",
+    "message_receipts",
+    "interview_replies",
 }
 MIGRATIONS = [
     "0001_init.sql",
@@ -41,6 +43,7 @@ MIGRATIONS = [
     "0006_audit.sql",
     "0007_mail.sql",
     "0008_entry_edited.sql",
+    "0009_delivery.sql",
 ]
 
 
@@ -142,7 +145,7 @@ def test_existing_edited_drafts_are_marked_when_the_flag_is_added(
 
     before = tmp_path / "before"
     before.mkdir()
-    for name in MIGRATIONS[:-1]:
+    for name in MIGRATIONS[:7]:
         shutil.copy(MIGRATIONS_DIR / name, before / name)
     migrate(empty_conn, before)
     run_id, plan_id, session_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
@@ -179,7 +182,7 @@ def test_existing_edited_drafts_are_marked_when_the_flag_is_added(
                 (entry_id, action),
             )
     empty_conn.commit()
-    assert migrate(empty_conn) == [MIGRATIONS[-1]]
+    assert migrate(empty_conn) == MIGRATIONS[7:]
     rows = empty_conn.execute("SELECT topic_id, edited FROM runbook_entries").fetchall()
     flags: dict[str, bool] = dict(rows)
     assert flags == {

@@ -298,6 +298,13 @@ def record_note(
 ) -> None:
     """Put a note in force for a section. An earlier note is kept but superseded."""
     with conn.transaction():
+        if conn.execute(
+            "SELECT 1 FROM notes WHERE session_id=%s AND topic_id=%s AND section=%s "
+            "AND NOT superseded AND turn_ordinal=%s AND text=%s AND confidential=%s",
+            (session_id, topic_id, section, turn, text, confidential),
+        ).fetchone():
+            return
+
         conn.execute(
             "UPDATE notes SET superseded = true WHERE session_id = %s AND topic_id = %s "
             "AND section = %s AND NOT superseded",

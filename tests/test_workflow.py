@@ -125,7 +125,7 @@ async def test_session_resumes_after_restart(scratch: Scratch, run_id: UUID) -> 
     ]
 
 
-async def test_stopped_step_is_continued_without_using_the_message(
+async def test_stopped_step_rejects_ambiguous_answer_and_has_explicit_resume(
     scratch: Scratch, run_id: UUID
 ) -> None:
     """The process died after approval was stored but before the first question was asked."""
@@ -144,7 +144,9 @@ async def test_stopped_step_is_continued_without_using_the_message(
         session_id = store.session_of_plan(conn, plan.id)
     assert session_id is not None
     failing["on"] = False
-    events = await say(service, session_id, "Hello?")
+    with pytest.raises(ConflictError, match="resume"):
+        await service.post(session_id, text="Hello?")
+    events = [e async for e in await service.resume(session_id)]
     assert [e["type"] for e in events] == ["recovered", "question"]
     assert [t.speaker for t in (await service.view(session_id)).turns] == ["interviewer"]
 

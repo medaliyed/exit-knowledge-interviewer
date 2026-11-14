@@ -5,7 +5,8 @@ the Postgres checkpointer, so nothing is kept in memory between requests: a
 restarted process continues any session from its last question.
 """
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -30,7 +31,7 @@ from eki.graph.workflow import (
 )
 from eki.ingest.embedding import Embedder, HashingEmbedder
 from eki.ingest.redaction import RedactedText, redact
-from eki.interview import store
+from eki.interview import delivery, store
 from eki.interview.interviewer import interview_topic
 from eki.interview.models import (
     InterviewPlan,
@@ -65,17 +66,6 @@ class SessionView:
     turns: tuple[Turn, ...]
     notes: tuple[Note, ...]
     open_items: tuple[OpenItem, ...]
-
-
-@dataclass(frozen=True)
-class _Next:
-    """How to go on after the expert's message was accepted."""
-
-    command: Command[Any] | None = None
-    events: list[Event] = field(default_factory=list)
-    recovered: bool = False
-    run: bool = True
-    """False when the workflow has ended and only the tables changed."""
 
 
 @dataclass
@@ -229,6 +219,63 @@ class InterviewService:
 
         return await db(work)
 
+    async def receipt(self, session_id: UUID, message_id: UUID) -> dict[str, Any]:
+        with self._connect() as conn:
+            session = await db(store.load_session, conn, session_id)
+            if session is None:
+                raise NotFoundError("session not found")
+            found = await db(delivery.load, conn, session_id, message_id)
+            if found.status == "processing" and await db(store.try_lock, conn, session.plan_id):
+                found = await db(delivery.load, conn, session_id, message_id)
+                if found.status == "processing":
+                    await db(
+                        delivery.transition,
+                        conn,
+                        session_id,
+                        session.run_id,
+                        message_id,
+                        "needs_retry",
+                    )
+                    found = await db(delivery.load, conn, session_id, message_id)
+            return found.public()
+
+    async def receipts(self, session_id: UUID) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            ids = await db(lambda: [r.id for r in delivery.pending(conn, session_id)])
+        return [await self.receipt(session_id, mid) for mid in ids]
+
+    async def resume(self, session_id: UUID, message_id: UUID | None = None) -> "MessageStream":
+        """Resume accepted work without asking for its text a second time."""
+        conn, session = await self._locked(session_id)
+        try:
+            pending = await db(delivery.pending, conn, session_id)
+            receipt = (
+                await db(delivery.load, conn, session_id, message_id)
+                if message_id is not None
+                else next(iter(pending), None)
+            )
+            return MessageStream(
+                self._stream(conn, session, receipt, modern=True),
+                conn,
+                None if receipt is None else receipt.id,
+            )
+        except BaseException:
+            conn.close()
+            raise
+
+    async def _locked(self, session_id: UUID) -> tuple[psycopg.Connection, Session]:
+        conn = self._connect()
+        try:
+            session = await db(store.load_session, conn, session_id)
+            if session is None:
+                raise NotFoundError(f"no session {session_id}")
+            if not await db(store.try_lock, conn, session.plan_id):
+                raise BusyError("another message for this session is being handled")
+            return conn, session
+        except BaseException:
+            conn.close()
+            raise
+
     async def post(
         self,
         session_id: UUID,
@@ -237,83 +284,96 @@ class InterviewService:
         *,
         confidential: bool = False,
         corrects: int | None = None,
-    ) -> AsyncIterator[Event]:
-        """Take the expert's message and return the events of the interviewer's next step.
-
-        Everything that can be refused is refused here, before the first event.
-        The returned stream always ends with ``question``, ``done`` or ``error``.
-        """
-        conn = self._connect()
+        message_id: UUID | None = None,
+        question_turn: int | None = None,
+    ) -> "MessageStream":
+        conn, session = await self._locked(session_id)
         try:
-            session = await db(store.load_session, conn, session_id)
-            if session is None:
-                raise NotFoundError(f"no session {session_id}")
-            if not await db(store.try_lock, conn, session.plan_id):
-                raise BusyError("another message for this session is being handled")
-            following = await self._accept(conn, session, action, text, confidential, corrects)
+            modern = message_id is not None
+            clean = (
+                RedactedText("(skipped)")
+                if action == "skip"
+                else redact(text, work_email_domains=self.work_email_domains).text
+            )
+            if action not in ("answer", "skip", "correct") or not clean.strip():
+                raise ValueError("an answer needs text and a valid action")
+            pending = await db(delivery.pending, conn, session_id)
+            existing = None
+            if message_id is not None:
+                with suppress(NotFoundError):
+                    existing = await db(delivery.load, conn, session_id, message_id)
+            elif pending:
+                existing = pending[0]  # legacy retries must match the saved submission
+            if existing is not None:
+                t = existing.turn
+                if (
+                    t.kind != ("correction" if action == "correct" else action)
+                    or t.text != clean
+                    or t.corrects != corrects
+                    or (question_turn is not None and t.answers != question_turn)
+                    or (action == "answer" and t.confidential != confidential)
+                ):
+                    raise ConflictError("message differs from saved submission; resume it first")
+                receipt = existing
+            else:
+                if pending:
+                    raise ConflictError("resume the saved message before sending another")
+                mid = message_id or uuid4()
+
+                def accept() -> delivery.Receipt:
+                    with conn.transaction():
+                        initial = None
+                        if action == "correct":
+                            if question_turn is not None or confidential:
+                                raise ValueError(
+                                    "corrections use corrects, not question/confidential fields"
+                                )
+                            initial = self._correct(conn, session, text, corrects)
+                            ordinal = int(initial["turn"])
+                        else:
+                            if corrects is not None:
+                                raise ValueError("only corrections may specify corrects")
+                            if session.status == "finished":
+                                raise ConflictError("the interview is finished")
+                            waiting = store.waiting_question(conn, session_id)
+                            if waiting is None or (
+                                question_turn is not None and waiting.ordinal != question_turn
+                            ):
+                                raise ConflictError(
+                                    "question is not waiting; resume the session first"
+                                )
+                            ordinal = store.add_expert_turn(
+                                conn,
+                                session_id,
+                                waiting.topic_id,
+                                action,
+                                clean,
+                                answers=waiting.ordinal,
+                                confidential=confidential and action == "answer",
+                            )
+                        return delivery.save(
+                            conn, session_id, session.run_id, mid, ordinal, initial
+                        )
+
+                receipt = await db(accept)
+            return MessageStream(
+                self._stream(conn, session, receipt, modern=modern), conn, receipt.id
+            )
         except BaseException:
             conn.close()
             raise
-        return self._stream(conn, session, following)
 
     async def _pending(self, conn: psycopg.Connection, session: Session) -> dict[str, Any] | None:
-        """The question the workflow is stopped at, from its checkpoint."""
         async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
             snapshot = await workflow.aget_state(thread_config(session.plan_id))
-        for waiting in snapshot.interrupts:
-            if isinstance(waiting.value, dict) and waiting.value.get("type") == "question":
-                return waiting.value
-        return None
-
-    async def _accept(
-        self,
-        conn: psycopg.Connection,
-        session: Session,
-        action: Action,
-        text: str,
-        confidential: bool,
-        corrects: int | None,
-    ) -> "_Next":
-        """Validate and store the expert's message, and say how the workflow continues."""
-        pending = None if session.status == "finished" else await self._pending(conn, session)
-        if action == "correct":
-            event = await db(self._correct, conn, session, text, corrects)
-            if session.status == "finished":
-                return _Next(run=False, events=[event])
-            resume: Command[Any] | None = (
-                None if pending is None else Command(resume={"turn": event["turn"]})
-            )
-            return _Next(command=resume, events=[event], recovered=pending is None)
-        if session.status == "finished":
-            # Drafts committed, but the process may have stopped before the node checkpoint.
-            async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
-                snapshot = await workflow.aget_state(thread_config(session.plan_id))
-            if snapshot.next == ("synthesise",):
-                return _Next(recovered=True)
-            raise ConflictError("the interview is finished")
-        if pending is None:
-            # The process stopped mid-step. Continue it; the message is not used.
-            return _Next(recovered=True)
-        kind: Literal["answer", "skip"]
-        if action == "skip":
-            answer, kind = RedactedText("(skipped)"), "skip"
-        elif action == "answer":
-            if not text.strip():
-                raise ValueError("an answer needs text")
-            answer, kind = redact(text, work_email_domains=self.work_email_domains).text, "answer"
-        else:
-            raise ValueError(f"unknown action: {action}")
-        turn = await db(
-            store.add_expert_turn,
-            conn,
-            session.id,
-            pending.get("topic_id"),
-            kind,
-            answer,
-            answers=int(pending["turn"]),
-            confidential=confidential and kind == "answer",
+        return next(
+            (
+                w.value
+                for w in snapshot.interrupts
+                if isinstance(w.value, dict) and w.value.get("type") == "question"
+            ),
+            None,
         )
-        return _Next(command=Command(resume={"turn": turn}))
 
     def _correct(
         self, conn: psycopg.Connection, session: Session, text: str, corrects: int | None
@@ -358,59 +418,118 @@ class InterviewService:
         return {"type": "corrected", "turn": turn, "corrects": corrects, "sections": sections}
 
     async def _stream(
-        self, conn: psycopg.Connection, session: Session, following: "_Next"
-    ) -> AsyncIterator[Event]:
-        config = thread_config(session.plan_id)
-        command = following.command
+        self,
+        conn: psycopg.Connection,
+        session: Session,
+        receipt: delivery.Receipt | None,
+        *,
+        modern: bool,
+    ) -> AsyncGenerator[Event]:
+        mid = None if receipt is None else receipt.id
+        complete = False
         try:
-            for event in following.events:
-                yield event
-            if not following.run:
-                yield {"type": "done"}
+            if receipt is not None and receipt.status == "processed":
+                complete = True
+                if modern:
+                    yield {"type": "delivery", **receipt.public()}
+                if receipt.initial is not None:
+                    yield receipt.initial
+                yield receipt.result or {"type": "done"}
+                complete = True
                 return
-            if following.recovered:
-                yield {
-                    "type": "recovered",
-                    "message": "The session had stopped mid-step. It continues now; "
-                    "an answer in this message was not used.",
-                }
-            deps = self._deps(
-                conn, run_id=session.run_id, plan_id=session.plan_id, session_id=session.id
-            )
-            async with open_workflow(self.dsn, deps, self.agent) as workflow:
-                try:
-                    async for mode, chunk in workflow.astream(
-                        command, config, stream_mode=["custom"], durability="sync"
-                    ):
-                        if mode == "custom" and isinstance(chunk, dict):
-                            yield chunk
-                except AuditError:
-                    yield {
-                        "type": "error",
-                        "code": "audit_unavailable",
-                        "message": "Audit storage is unavailable. The session can be retried.",
-                    }
-                    return
-                except ModelError:
-                    yield {
-                        "type": "error",
-                        "code": "model_unavailable",
-                        "message": "The model could not be reached. Nothing was lost: "
-                        "send the same message again.",
-                    }
-                    return
-                snapshot = await workflow.aget_state(config)
-            waiting = next(
-                (
-                    w.value
-                    for w in snapshot.interrupts
-                    if isinstance(w.value, dict) and w.value.get("type") == "question"
-                ),
-                None,
-            )
-            yield dict(waiting) if waiting is not None else {"type": "done"}
+            if receipt is not None:
+                if modern:
+                    yield {"type": "delivery", **receipt.public()}
+                await db(
+                    delivery.transition, conn, session.id, session.run_id, receipt.id, "processing"
+                )
+                if receipt.initial is not None:
+                    yield receipt.initial
+            config = thread_config(session.plan_id)
+            pending = await self._pending(conn, session)
+            correction = receipt is not None and receipt.turn.kind == "correction"
+            run = not (correction and session.status == "finished")
+            if run:
+                deps = self._deps(
+                    conn, run_id=session.run_id, plan_id=session.plan_id, session_id=session.id
+                )
+                async with open_workflow(self.dsn, deps, self.agent) as workflow:
+                    # No interrupt means a node was interrupted mid-execution. Replaying
+                    # None recovers its persisted resume value; it does not accept new text.
+                    for _ in range(2):
+                        command: Command[Any] | None = None
+                        if receipt is not None and pending is not None:
+                            if correction or pending["turn"] == receipt.turn.answers:
+                                command = Command(resume={"turn": receipt.turn.ordinal})
+                            else:
+                                break  # already reached the following question
+                        elif receipt is None and pending is not None:
+                            break
+                        if pending is None:
+                            yield {"type": "recovered", "message": "Resuming saved interview work."}
+                        async for mode, chunk in workflow.astream(
+                            command, config, stream_mode=["custom"], durability="sync"
+                        ):
+                            if mode == "custom" and isinstance(chunk, dict):
+                                yield chunk
+                        snapshot = await workflow.aget_state(config)
+                        pending = next(
+                            (
+                                w.value
+                                for w in snapshot.interrupts
+                                if isinstance(w.value, dict) and w.value.get("type") == "question"
+                            ),
+                            None,
+                        )
+                        if command is not None or pending is None or receipt is None:
+                            break
+            result = dict(pending) if run and pending is not None else {"type": "done"}
+            if mid is not None:
+                await db(
+                    delivery.transition, conn, session.id, session.run_id, mid, "processed", result
+                )
+            complete = True
+            yield result
+        except (AuditError, ModelError) as error:
+            yield {
+                "type": "error",
+                "code": "audit_unavailable"
+                if isinstance(error, AuditError)
+                else "model_unavailable",
+                "message": "Processing paused. Resume the saved message.",
+                "message_id": None if mid is None else str(mid),
+            }
         finally:
-            conn.close()
+            try:
+                if not complete and mid is not None and not conn.closed:
+                    await db(
+                        delivery.transition, conn, session.id, session.run_id, mid, "needs_retry"
+                    )
+            except (AuditError, psycopg.Error):
+                pass  # the durable processing receipt is recoverable on reconnect
+            finally:
+                conn.close()
+
+
+@dataclass
+class MessageStream(AsyncIterator[Event]):
+    """Own the lock even when a caller closes before starting iteration."""
+
+    iterator: AsyncGenerator[Event]
+    conn: psycopg.Connection
+    message_id: UUID | None = None
+
+    def __aiter__(self) -> "MessageStream":
+        return self
+
+    async def __anext__(self) -> Event:
+        return await anext(self.iterator)
+
+    async def aclose(self) -> None:
+        try:
+            await self.iterator.aclose()
+        finally:
+            self.conn.close()
 
 
 def build_service(settings: Settings) -> InterviewService:

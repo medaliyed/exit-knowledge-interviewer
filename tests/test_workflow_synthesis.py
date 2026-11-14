@@ -75,7 +75,8 @@ async def test_restart_during_synthesis_rolls_back_and_retries(
     with scratch.connect() as conn:
         assert store.list_entries(conn, session) == ()
     monkeypatch.setattr(store, "save_entry", original)
-    await say(make_service(scratch.dsn), session, "Continue.")
+    stream = await make_service(scratch.dsn).resume(session)
+    _ = [e async for e in stream]
     assert len(RunbookService(scratch.dsn).list(session)) == 3
 
 
@@ -107,6 +108,6 @@ async def test_restart_after_synthesis_commit_can_finish_checkpoint(
     before = RunbookService(scratch.dsn).list(session)
     assert len(before) == 3
     monkeypatch.setattr(workflow, "_synthesise", original)
-    events = await say(make_service(scratch.dsn), session, "Continue.")
-    assert [e["type"] for e in events] == ["recovered", "done"]
+    events = [e async for e in await make_service(scratch.dsn).resume(session)]
+    assert [e["type"] for e in events] == ["delivery", "recovered", "done"]
     assert [e.entry for e in RunbookService(scratch.dsn).list(session)] == [e.entry for e in before]

@@ -93,6 +93,10 @@ sequenceDiagram
     abbreviations stay intact. Every step cites the note's source turn
     (`src/eki/runbook/steps.py`, `src/eki/runbook/synthesis.py`).
 
+Message acceptance and reconnect behavior are described in
+[message-delivery.md](message-delivery.md). New clients use stable message IDs
+and explicit question targets. Saved answers can resume without their text.
+
 **Skip:** the section is recorded as open with the reason "skipped by expert"
 and the model is told not to ask again (`src/eki/interview/interviewer.py:174`).
 
@@ -111,9 +115,9 @@ claim (`src/eki/runbook/service.py:251`).
 | Another message for the session is in progress | 409; nothing stored | `src/eki/interview/service.py:251` |
 | An answer with no text | 422; nothing stored | `src/eki/interview/service.py:301` |
 | The interview is already finished | 409 (a correction is still accepted) | `src/eki/interview/service.py:293` |
-| The model cannot be reached | event `error` / `model_unavailable`. The answer is already stored; sending the message again continues | `src/eki/interview/service.py:394` |
+| The model cannot be reached | event `error` / `model_unavailable`. The answer is already stored; resume its receipt to continue | `src/eki/interview/service.py:394` |
 | Audit storage is down | event `error` / `audit_unavailable`; the model is not called; the session can be retried | `src/eki/interview/service.py:387` |
-| The process stopped in the middle of a step | the next message gets event `recovered` and the step is re-run. **The text of that message is not used** | `src/eki/interview/service.py:294`, `src/eki/interview/service.py:371` |
+| The process stopped in the middle of a step | Resume the saved receipt or session. A new answer without an unambiguous pending question is refused rather than discarded. | `src/eki/interview/service.py` |
 | 12 questions asked about one topic | the remaining sections are marked open and the topic ends | `src/eki/interview/interviewer.py:310` |
 | 40 model calls spent on one topic | same, with the reason "the interviewer stopped" | `src/eki/interview/interviewer.py:436` |
 | The model replies with plain text and no tool call | it is told to use a tool; this counts towards the 40 calls | `src/eki/interview/interviewer.py:252` |

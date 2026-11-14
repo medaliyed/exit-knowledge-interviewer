@@ -103,4 +103,5 @@ async def test_audit_outage_during_stream_returns_safe_resumable_error(
         events = await say(service, view.session.id, "The batch aborts.")
         assert events[-1]["code"] == "audit_unavailable"
         assert len(model.calls) == 1, "provider was not called during the audit outage"
-    assert (await say(service, view.session.id, "Retry."))[-1]["type"] == "question"
+    resumed = [e async for e in await service.resume(view.session.id)]
+    assert resumed[-1]["type"] == "question"

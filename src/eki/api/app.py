@@ -92,6 +92,8 @@ class Approval(_Body):
 
 
 class ExpertMessage(_Body):
+    message_id: UUID | None = None
+    question_turn: int | None = None
     action: Literal["answer", "skip", "correct"] = "answer"
     text: str = ""
     confidential: bool = False
@@ -415,15 +417,44 @@ def create_app(
                 message.text,
                 confidential=message.confidential,
                 corrects=message.corrects,
+                message_id=message.message_id,
+                question_turn=message.question_turn,
             )
         except ValueError as refused:
             raise HTTPException(status_code=422, detail=str(refused)) from refused
 
-        async def events() -> AsyncIterator[ServerSentEvent]:
-            async for event in stream:
-                yield ServerSentEvent(data=json.dumps(event), event=str(event["type"]))
+        return message_response(stream)
 
-        return EventSourceResponse(events())
+    def message_response(stream: Any) -> EventSourceResponse:
+        async def events() -> AsyncIterator[ServerSentEvent]:
+            try:
+                async for event in stream:
+                    yield ServerSentEvent(data=json.dumps(event), event=str(event["type"]))
+            finally:
+                await stream.aclose()
+
+        headers = {} if stream.message_id is None else {"X-EKI-Message-ID": str(stream.message_id)}
+        return EventSourceResponse(events(), headers=headers)
+
+    @app.get("/sessions/{session_id}/messages")
+    async def pending_messages(session_id: UUID, service: Service) -> list[dict[str, Any]]:
+        return await service.receipts(session_id)
+
+    @app.get("/sessions/{session_id}/messages/{message_id}")
+    async def message_status(
+        session_id: UUID, message_id: UUID, service: Service
+    ) -> dict[str, Any]:
+        return await service.receipt(session_id, message_id)
+
+    @app.post("/sessions/{session_id}/messages/{message_id}/resume")
+    async def resume_message(
+        session_id: UUID, message_id: UUID, service: Service
+    ) -> EventSourceResponse:
+        return message_response(await service.resume(session_id, message_id))
+
+    @app.post("/sessions/{session_id}/resume")
+    async def resume_session(session_id: UUID, service: Service) -> EventSourceResponse:
+        return message_response(await service.resume(session_id))
 
     @app.get("/runs/{run_id}/access")
     async def read_access(run_id: UUID, request: Request, books: Runbooks) -> dict[str, object]:

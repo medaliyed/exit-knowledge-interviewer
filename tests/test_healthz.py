@@ -33,6 +33,9 @@ def test_api_routes_are_exactly_these() -> None:
         "/plans/{plan_id}/approve",
         "/sessions/{session_id}",
         "/sessions/{session_id}/messages",
+        "/sessions/{session_id}/messages/{message_id}",
+        "/sessions/{session_id}/messages/{message_id}/resume",
+        "/sessions/{session_id}/resume",
     }
 
 

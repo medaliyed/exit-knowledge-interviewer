@@ -296,6 +296,8 @@ def _show_event(event: Event) -> None:
     elif kind == "corrected":
         sections = ", ".join(event["sections"]) or "no note"
         print(f"  turn {event['corrects']} corrected ({sections} updated)")
+    elif kind == "delivery":
+        print(f"  message {event['id']}: {event['status']}")
     elif kind in ("error", "recovered"):
         print(f"  {event['message']}")
 
@@ -309,19 +311,25 @@ HELP = (
 async def _say(service: InterviewService, session_id: UUID, line: str) -> None:
     """Send one line typed by the expert and print what the interviewer did with it."""
     command, _, rest = line.partition(" ")
+    view = await service.view(session_id)
+    options: dict[str, Any] = {"message_id": uuid4()}
+    if view.waiting is not None:
+        options["question_turn"] = view.waiting.ordinal
     try:
         if command == "/skip":
-            stream = await service.post(session_id, "skip")
+            stream = await service.post(session_id, "skip", **options)
         elif command == "/confidential":
-            stream = await service.post(session_id, "answer", rest, confidential=True)
+            stream = await service.post(session_id, "answer", rest, confidential=True, **options)
         elif command == "/correct":
             number, _, text = rest.strip().partition(" ")
             if not number.isdigit():
                 print("  usage: /correct TURN NEW-TEXT")
                 return
-            stream = await service.post(session_id, "correct", text, corrects=int(number))
+            stream = await service.post(
+                session_id, "correct", text, corrects=int(number), message_id=options["message_id"]
+            )
         else:
-            stream = await service.post(session_id, "answer", line)
+            stream = await service.post(session_id, "answer", line, **options)
     except (ValueError, NotFoundError, ConflictError) as refused:
         print(f"  not accepted: {refused}")
         return
@@ -341,6 +349,20 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
         session_id = view.session.id
     print(HELP)
     while True:
+        pending = await service.receipts(session_id)
+        if pending:
+            print(f"Saved message {pending[0]['id']}: {pending[0]['status']}.")
+            try:
+                choice = input("/retry to resume it, /quit to continue later: ").strip()
+            except EOFError:
+                choice = "/quit"
+            if choice != "/retry":
+                print(f"Stopped. Continue with: eki interview --plan {plan_id}")
+                return 0
+            stream = await service.resume(session_id, UUID(pending[0]["id"]))
+            async for event in stream:
+                _show_event(event)
+            continue
         view = await service.view(session_id)
         if view.session.status == "finished":
             print(
@@ -350,7 +372,9 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
             return 0
         if view.waiting is None:
             # The process stopped mid-step last time: let the workflow reach its question.
-            await _say(service, session_id, "(continue)")
+            stream = await service.resume(session_id)
+            async for event in stream:
+                _show_event(event)
             continue
         print(f"\n[turn {view.waiting.ordinal}, {view.waiting.section}] {view.waiting.text}")
         try:

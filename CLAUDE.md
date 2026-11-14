@@ -7,7 +7,7 @@ design is a fixed LangGraph workflow with ONE agentic node (the interviewer):
 Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable
 runbook. The expert prunes the plan and approves every entry.
 
-Full requirements (F1-F13), stack and phases: `docs/PDR.md`.
+Full requirements (F1-F18), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
 Architecture and diagrams: `docs/architecture.md`. Runtime flows, one page
 each with a sequence diagram: `docs/flows/`. How to run it: `README.md`;
@@ -348,3 +348,26 @@ selection and abstention. On this implementation run they skipped because neithe
 model was configured; real-provider semantic/selection quality remains unverified.
 
 See `docs/plans/phase-4.md` for the implementation record and final verification.
+
+
+## Phase 5: durable interview delivery (F14)
+
+Apply migration `0009_delivery.sql`. New message clients send `message_id` (UUID)
+and `question_turn` for answers/skips, or `corrects` for corrections. Acceptance
+commits a receipt and redacted protected turn atomically; only then does the API
+return `X-EKI-Message-ID`. Explicit-ID clients receive a `delivery` SSE event.
+Legacy clients receive the existing event sequence and a server-assigned ID.
+Reuse an ID only for the same logical message; different payloads conflict.
+
+- `GET /sessions/{id}/messages`: outstanding receipts, without answer text.
+- `GET /sessions/{id}/messages/{message_id}`: status and terminal result reference.
+- `POST /sessions/{id}/messages/{message_id}/resume`: resume without resending text.
+- `POST /sessions/{id}/resume`: recover outstanding work or an interrupted step.
+
+All receipt routes use session owner/admin access. States are `saved`,
+`processing`, `needs_retry`, `processed`. CLI prints receipt IDs and offers
+`/retry` on reconnect. Ambiguous answers after a crash are refused; explicit
+resume recovers first. Replayed redacted model replies and idempotent note and
+synthesis writes preserve database effects. Provider work that never produced
+a persisted reply may still run and be billed again. See
+`docs/flows/message-delivery.md` and the Phase 5 PDR for the remaining scope.

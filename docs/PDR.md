@@ -30,7 +30,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F11 | Hybrid search (keyword + vector) and Q&A over approved entries only, with citations and ACL filtering. |
 | F12 | Export approved entries as Markdown. |
 | F13 | Audit log of every model call, tool call and approval with run ID and user. |
-| F14 | Durable interview message receipts, explicit delivery status and safe retries after crashes, without lost accepted answers or duplicate logical effects. Planned: Phase 5a. |
+| F14 | Durable interview message receipts, explicit delivery status and safe retries after crashes, without lost accepted answers or duplicate logical effects. Delivered: Phase 5a. |
 | F15 | Recorded real-model acceptance evidence for interview behavior, semantic retrieval and grounded answers, with explicit provider opt-in. Planned: Phase 5b. |
 | F16 | An authenticated browser workflow for plan review, interview chat, cited entry review and approval. Planned: Phase 5c. |
 | F17 | Optional semantic retrieval over source artifacts, with matching document/query model identities and an offline fallback. Planned: Phase 5d. |
@@ -66,7 +66,7 @@ phase are in `CLAUDE.md`. The synthetic test corpus is specified in
 
 ## Status
 
-Phases 0–4 are implemented. Phase 5 is proposed; implementation has not started.
+Phases 0–4 are implemented. Phase 5 is approved and in progress.
 The plan files record scope, approval and verification status in their Status
 line and, where there is one, their Outcome section.
 
@@ -77,7 +77,7 @@ line and, where there is one, their Outcome section.
 | 2 Interview | `docs/plans/phase-2.md` | F6, F7, F8 |
 | 3 Runbook | `docs/plans/phase-3.md`, `docs/plans/phase-3b.md` | F9, F10, F11, F12 |
 | 4 Harden | `docs/plans/phase-4.md` | F3, F13, red-team and quality gate |
-| 5 Recovery and expert workflow | [docs/plans/phase-5.md](plans/phase-5.md) | F14–F18; proposed, not implemented |
+| 5 Recovery and expert workflow | [docs/plans/phase-5.md](plans/phase-5.md) | F14–F18; approved, in progress |
 
 Added after the phases: synthesis keeps drafts the expert edited by hand
 (F10), review lists claims that say more than the answer they cite (F9), and
@@ -86,9 +86,8 @@ synthesis and corrections share an abbreviation-aware procedure step splitter
 
 Phase 5 starts with F14: an accepted answer must survive a process restart
 without retyping or duplicate turns. Its PDR defines five ordered deliverables,
-acceptance criteria, compatibility requirements and completion evidence. This
-documentation records the proposed next phase; it does not record implementation
-approval or authorize paid provider calls.
+acceptance criteria, compatibility requirements and completion evidence. Implementation was approved on 2026-11-14. Real-provider runs still require
+explicit provider configuration and a call/token budget.
 
 How it is built and how it behaves at runtime: `docs/architecture.md` and
 `docs/flows/`. How to run it: `README.md` and, for a first run, `docs/tutorial.md`.
@@ -97,8 +96,8 @@ Still open:
 
 - No run against a real model yet. Interview quality, semantic search and
   model-selected answers are unverified; Phase 5b will record actual evidence.
-- Crash recovery can discard a newly submitted message, and failed plan drafts
-  discard completed topics. Phase 5a and 5e address these separately.
+- Durable message recovery is implemented in Phase 5a; failed plan drafts still
+  discard completed topics until Phase 5e is delivered.
 - No expert-facing browser UI exists, and source-artifact retrieval uses lexical
   hashing even when runbook semantic embeddings are configured. Phase 5c and 5d
   address these gaps.

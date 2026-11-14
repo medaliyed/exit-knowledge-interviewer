@@ -357,11 +357,11 @@ async def test_model_failure_keeps_the_answer_and_can_be_retried(scratch: Scratc
     assert failed[0]["code"] == "model_unavailable"
     stuck = await service.view(session_id)
     assert [t.kind for t in stuck.turns] == ["question", "answer"]
-    retried = await say(service, session_id, "The batch aborts, as I said.")
-    assert [e["type"] for e in retried] == ["note", "question"]
+    retried = [e async for e in await service.resume(session_id)]
+    assert [e["type"] for e in retried] == ["delivery", "note", "question"]
     turns = (await service.view(session_id)).turns
     assert [t.ordinal for t in turns] == [1, 2, 3], "the retried answer did not add a turn"
-    assert turns[1].text == "The batch aborts, as I said."
+    assert turns[1].text == "The batch aborts."
 
 
 async def test_real_provider_tool_call_ids_reach_the_model_unchanged(scratch: Scratch) -> None:

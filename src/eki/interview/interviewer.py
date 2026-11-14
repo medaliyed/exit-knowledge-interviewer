@@ -15,6 +15,7 @@ from typing import Any, cast
 from uuid import UUID, uuid4
 
 from langgraph.types import interrupt
+from psycopg.types.json import Jsonb
 
 from eki.audit import AuditDetails, Operation, Phase
 from eki.graph.workflow import Deps, InterviewState, WorkflowError, db, emit
@@ -243,6 +244,39 @@ class _Step:
 
     # --- the model's side ---
 
+    async def complete(self) -> Reply:
+        """Persist a redacted reply before applying any of its tool effects."""
+
+        def loaded() -> Any:
+            row = self.conn.execute(
+                "SELECT reply FROM interview_replies WHERE session_id=%s AND step=%s "
+                "AND call_index=%s",
+                (self.session_id, self.step, self.model_calls),
+            ).fetchone()
+            return None if row is None else row[0]
+
+        data = await db(loaded)
+        if data is None:
+            reply = await self.deps.interviewer.complete(self.messages, tools.TOOLS)
+            data = {
+                "text": self.clean(reply.text),
+                "tool_calls": [
+                    {
+                        "id": safe_identifier(c.id),
+                        "name": safe_identifier(c.name),
+                        "arguments": self.clean(c.arguments),
+                    }
+                    for c in reply.tool_calls
+                ],
+            }
+            await db(
+                self.conn.execute,
+                "INSERT INTO interview_replies (session_id,step,call_index,reply) "
+                "VALUES (%s,%s,%s,%s)",
+                (self.session_id, self.step, self.model_calls, Jsonb(data)),
+            )
+        return Reply(data["text"], tuple(ToolCall(**c) for c in data["tool_calls"]))
+
     async def handle(self, reply: Reply) -> None:
         calls = tuple(
             ToolCall(safe_identifier(c.id), safe_identifier(c.name), self.clean(c.arguments))
@@ -437,7 +471,7 @@ class _Step:
                 await self.close(STOPPED)
             else:
                 self.model_calls += 1
-                await self.handle(await self.deps.interviewer.complete(self.messages, tools.TOOLS))
+                await self.handle(await self.complete())
         return self.result()
 
 

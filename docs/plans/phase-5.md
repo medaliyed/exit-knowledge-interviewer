@@ -1,8 +1,8 @@
 # Phase 5 PDR: recovery and expert workflow
 
-**Status:** proposed on 2026-11-14. Documentation requested by the user;
-implementation has not started and this phase has not been approved for
-implementation. All deliverables below remain open.
+**Status:** implementation approved on 2026-11-14 by the user's instruction
+to continue implementation. Deliverables are tracked below; real-provider
+validation requires explicit provider configuration and a call/token budget.
 
 **Parent:** [Project PDR](../PDR.md), requirements F14–F18. This extends F6–F11
 and retains the existing redaction, confidentiality, approval and audit rules.
@@ -244,7 +244,7 @@ For each deliverable, write the regression/acceptance checks first and commit
 verified work with its requirement ID. Update the affected runtime flow pages
 when behavior changes; this PDR describes planned behavior only.
 
-- [ ] 5a / F14: receipt storage, target binding, recovery, API/CLI status and crash tests.
+- [x] 5a / F14: receipt storage, target binding, recovery, API/CLI status and crash tests.
 - [ ] 5b / F15: existing live checks executed, failures addressed, repeated-run evidence recorded.
 - [ ] 5c / F16: plan/chat/review/search/export UI and browser/access acceptance checks.
 - [ ] 5d / F17: artifact model identity, semantic indexing/querying, reindexing and live retrieval evidence.
@@ -261,3 +261,19 @@ Phase 5 is complete only when its deliverables meet their acceptance criteria
 and the outcome report identifies the tested configurations and remaining
 limits. A completed UI or a passing scripted suite does not substitute for
 the real-provider evidence required by F15 and F17.
+
+
+## Delivery evidence
+
+### 5a / F14 — implemented 2026-11-14
+
+Receipts, protected transcript references, API/CLI status/resume, stored redacted
+model replies and idempotent note/synthesis replay are implemented. Migration
+`0009_delivery.sql` is additive. Existing no-ID callers retain their SSE progress
+shape; unsafe ambiguous submissions now conflict instead of being discarded.
+
+Verification: 428 unit checks, 200 database checks and the 78-check quality gate
+passed, followed by all 11 focused delivery checks after adding two actual
+process-death cases. Those terminate a separate process before acknowledgement
+or after its first note commit, then resume the saved answer once. Ruff lint,
+format and strict mypy passed. Provider calls remained disabled.

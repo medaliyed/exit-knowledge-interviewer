@@ -11,6 +11,7 @@ For the static picture (pipeline, components, workflow graph, data model) see
 | --- | --- | --- |
 | [Ingest one expert's work](ingest.md) | `eki ingest` | Read sources through read-only MCP servers, redact twice, store and index a run atomically. |
 | [Draft an interview plan](draft-plan.md) | `eki plan`, `POST /runs/{id}/plan` | Pick the highest-gap topics and have a model draft questions that must quote an artifact. |
+| [Message delivery and recovery](message-delivery.md) | Message POST or receipt resume | Save a question-bound message before processing and resume without repeating logical effects. |
 | [One interview turn](interview-turn.md) | `eki interview`, `POST /sessions/{id}/messages` | Store the answer, let the interviewer model note it and ask again, checkpoint at every question. |
 | [Review and approve an entry](review-entry.md) | `eki review`, `POST /entries/{id}/approve` | Show the draft with its unsupported claims, then approve it under lock with a decision and an audit event. |
 | [Search and ask](search-and-ask.md) | `eki search`, `eki ask`, `/runbook/search`, `/runbook/ask` | Index approved entries lazily, rank with keyword and vector search under access rules, answer with exact claims or abstain. |
@@ -44,8 +45,9 @@ Things the flow pages flag. Each is cited on its page.
   ([review-entry.md](review-entry.md))
 - **A failed plan draft discards all drafted questions**; a retry pays for
   them again. ([draft-plan.md](draft-plan.md))
-- **A message sent after a crash mid-step is not used** as an answer; the
-  expert must send it again. ([interview-turn.md](interview-turn.md))
+- **Real-provider calls interrupted before their result is persisted may repeat**
+  on recovery. Accepted messages and stored replies survive.
+  ([message-delivery.md](message-delivery.md))
 - **Indexing happens on the search path** and the vector comparison is exact,
   so cost grows with the number of approved sections.
   ([search-and-ask.md](search-and-ask.md))

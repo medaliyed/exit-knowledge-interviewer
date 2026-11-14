@@ -84,6 +84,8 @@ def synthesise(
             validate_sources(conn, session_id, entry)
             if previous is not None:
                 entry = entry.model_copy(update={"id": previous.entry.id})
+            if previous is not None and previous.entry == entry and not previous.edited:
+                continue
             store.save_entry(conn, session_id, entry, edited=False)
         return store.list_entries(conn, session_id)
 
