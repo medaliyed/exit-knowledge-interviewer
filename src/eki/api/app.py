@@ -46,6 +46,7 @@ from eki.runbook.service import RunbookService
 from eki.runbook.store import StoredEntry
 from eki.search.answers import AnswerService, build_answers
 from eki.search.service import SearchService, build_search
+from eki.web.routes import install_browser
 
 CONFIDENTIAL = "[confidential]"
 
@@ -203,6 +204,7 @@ def create_app(
         return authenticator or TokenAuthenticator(get_settings().api_tokens.get_secret_value())
 
     install_security(app, get_authenticator, database_dsn)
+    install_browser(app, database_dsn)
 
     def actor(request: Request, name: str) -> None:
         if name.strip() != identity(request).name:

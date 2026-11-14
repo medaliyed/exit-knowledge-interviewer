@@ -32,7 +32,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F13 | Audit log of every model call, tool call and approval with run ID and user. |
 | F14 | Durable interview message receipts, explicit delivery status and safe retries after crashes, without lost accepted answers or duplicate logical effects. Delivered: Phase 5a. |
 | F15 | Recorded real-model acceptance evidence for interview behavior, semantic retrieval and grounded answers, with explicit provider opt-in. Planned: Phase 5b. |
-| F16 | An authenticated browser workflow for plan review, interview chat, cited entry review and approval. Planned: Phase 5c. |
+| F16 | An authenticated browser workflow for plan review, interview chat, cited entry review and approval. Implemented: Phase 5c; visual browser QA pending. |
 | F17 | Optional semantic retrieval over source artifacts, with matching document/query model identities and an offline fallback. Planned: Phase 5d. |
 | F18 | Resumable plan generation that retains completed topics and retries unfinished work under a stable generation ID. Planned: Phase 5e. |
 
@@ -98,9 +98,9 @@ Still open:
   model-selected answers are unverified; Phase 5b will record actual evidence.
 - Durable message recovery is implemented in Phase 5a; failed plan drafts still
   discard completed topics until Phase 5e is delivered.
-- No expert-facing browser UI exists, and source-artifact retrieval uses lexical
-  hashing even when runbook semantic embeddings are configured. Phase 5c and 5d
-  address these gaps.
+- The expert browser UI is implemented and HTTP-verified; visual browser QA is
+  pending because browser control is unavailable. Source-artifact retrieval still
+  uses lexical hashing until Phase 5d.
 - The connectors read the synthetic local corpus only; there is no adapter for
   a live mailbox, Git host or issue tracker.
 - `evals/scenarios/` and `evals/golden/` are human-owned and do not exist yet;

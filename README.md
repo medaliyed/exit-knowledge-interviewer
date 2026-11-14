@@ -99,6 +99,12 @@ and their citations, or says the runbook does not cover the question.
 uv run uvicorn eki.api.app:app --reload     # http://localhost:8000/docs
 ```
 
+Open `http://localhost:8000/` for the expert workspace. Sign in with an existing
+API token to review plans, answer questions, review and approve cited entries,
+search and export. Tokens stay in tab memory; after a refresh, sign in again
+and reopen the saved conversation. Ingest and map the synthetic sources with
+the CLI before drafting the first plan.
+
 Every data route needs `Authorization: Bearer <token>`. The routes are listed
 in [CLAUDE.md](CLAUDE.md) and their behaviour in [docs/flows/](docs/flows/index.md).
 

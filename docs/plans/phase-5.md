@@ -285,3 +285,25 @@ The user chose to leave live validation pending on 2026-11-14. The guarded
 availability check produced three skips and no provider calls. The detailed
 [validation record](phase-5-live.md) captures the results and resume criteria.
 Implementation of the remaining deliverables continues independently.
+
+
+### 5c / F16 — implemented; visual browser QA pending
+
+The FastAPI-served expert workspace includes plan editing/approval, interview
+chat with receipts and resume, confidentiality/skip/correction controls, cited
+entry review/edit/reject/approve, approved search/Q&A and Markdown downloads.
+Navigation metadata is ACL-filtered. No dependency or hosting service was added.
+
+Static-shell and API tests verify owner/reader isolation and a complete synthetic
+plan-to-export flow, including a confidential answer, skip, correction after
+approval, reapproval, search and cited answers. JavaScript syntax checks pass.
+The browser-control host was unavailable; native Chrome access also timed out.
+Actual browser interaction and visual/accessibility QA remain unverified, so
+5c's acceptance checkbox remains open. The temporary synthetic preview server
+was stopped and its disposable schema cleaned up.
+
+
+F16 regression results: 429 unit tests, 204 database tests and all 78
+quality/privacy checks passed. Ruff lint/format, strict mypy and JavaScript
+syntax checks passed. This evidence covers HTTP behavior and static serving;
+it does not replace the pending real-browser check.

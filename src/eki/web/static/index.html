@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eki — Knowledge handover</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#workspace">Skip to workspace</a>
+<header><a class="brand" href="/" aria-label="eki home">eki<span> / </span></a><span class="brand-sub">KNOWLEDGE HANDOVER</span><div class="identity" id="identity"></div><button id="logout" class="quiet" hidden>Sign out</button></header>
+<div id="notice" role="status" aria-live="polite"></div>
+<section id="welcome" class="welcome">
+  <div><p class="eyebrow">GOOD KNOWLEDGE DESERVES TO STAY</p><h1>A thoughtful handover.<br>A lasting reference.</h1><p class="intro">Turn the things only you know into a runbook your team can trust. One conversation at a time.</p><ol class="steps"><li><b>Make a plan</b><span>Start with the gaps in your team’s knowledge.</span></li><li><b>Have the conversation</b><span>Capture the details, decisions and exceptions.</span></li><li><b>Make it yours</b><span>Review every entry before it reaches your team.</span></li></ol></div>
+  <form id="login" class="login card"><p class="eyebrow">YOUR WORKSPACE</p><h2>Pick up the conversation.</h2><p>Use your workspace access token to open the runs shared with you.</p><label for="token">Access token</label><input id="token" type="password" autocomplete="off" required spellcheck="false"><button type="submit" class="primary">Open workspace <span aria-hidden="true">→</span></button><p class="fine">Your token stays in this tab’s memory. After a refresh, sign in again to resume your saved work.</p></form>
+</section>
+<div id="app" class="shell" hidden>
+  <aside><p class="eyebrow">YOUR HANDOVERS</p><div id="runs"></div><button id="refresh-runs" class="quiet">Refresh handovers</button><div class="aside-note">Every published entry has your approval and a source behind it.</div></aside>
+  <main id="workspace" tabindex="-1"><div class="page-head"><div><p class="eyebrow" id="context">WORKSPACE</p><h1 id="title">Choose a handover</h1></div></div><nav id="tabs" aria-label="Handover views"></nav><section id="content"><p class="muted">Select a handover to see its interview plans and approved knowledge.</p></section></main>
+</div>
+<footer>eki <span>·</span> Keep the knowledge. Honour the source.</footer>
+</body></html>

@@ -371,3 +371,21 @@ resume recovers first. Replayed redacted model replies and idempotent note and
 synthesis writes preserve database effects. Provider work that never produced
 a persisted reply may still run and be billed again. See
 `docs/flows/message-delivery.md` and the Phase 5 PDR for the remaining scope.
+
+
+### Expert browser workspace (F16)
+
+Open `/` on the FastAPI server. Static HTML/CSS/JavaScript under `eki.web.static`
+uses the same-origin authenticated API; bearer credentials stay in memory.
+Navigation endpoints are `GET /runs`, `GET /runs/{id}/plans`,
+`GET /runbook/identity` and `GET /runbook/entries?run_id=...`. Run listings apply
+live ACLs; plan/session/review access stays owner/admin-only. Readers browse
+approved entries only. Listings are bounded to the latest 200 records.
+
+The UI supports plan pruning/reordering/additions, explicit approval, interview
+chat, confidential/skip/correct controls, saved-message resume, cited review and
+editing, rejection, approval, search, Q&A and Markdown downloads. Text is rendered
+as text nodes and the shell sets a restrictive Content Security Policy.
+`tests/test_browser.py` covers static serving, access boundaries and the complete
+synthetic workflow via HTTP. Browser visual QA is currently unavailable because
+the computer-use browser host is unavailable and native fallback timed out.
