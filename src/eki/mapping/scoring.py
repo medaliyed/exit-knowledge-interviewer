@@ -153,6 +153,13 @@ def _exclusivity(topic: Topic, members: list[Artifact], context: _Context) -> tu
                 f"She made {mine} of {total} commits to {', '.join(sorted(paths))} "
                 f"({_share(mine, total):.0%}).",
             )
+    messages = [a for a in members if a.kind == "email"]
+    if messages:
+        authored = sum(a.expert_role == "author" for a in messages)
+        return _share(authored, len(messages)), (
+            f"The expert authored {authored} of {len(messages)} selected thread messages; "
+            "this share covers the explicitly selected folders only."
+        )
     if not members:
         return 0.0, "None of this topic's artifacts are in the snapshot, so no share can be shown."
     return 1.0, (

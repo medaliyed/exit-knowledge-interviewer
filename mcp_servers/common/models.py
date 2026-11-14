@@ -1,5 +1,7 @@
 """What the MCP servers return. Every text field has already been redacted."""
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -128,3 +130,24 @@ class TicketGroupActivity(BaseModel):
     expert_tickets: int
     other_assignees: int
     last_created_at: str | None
+
+
+class MailItem(BaseModel):
+    id: str
+    thread_id: str
+    folder: str
+    sensitivity: Literal["normal"] = "normal"
+    sender: str
+    to: list[str]
+    cc: list[str]
+    sent_at: str
+    subject: str
+    body: str
+    expert_role: Literal["author", "recipient"]
+    redaction_counts: dict[str, int]
+
+
+class MailPage(BaseModel):
+    items: list[MailItem]
+    total: int
+    next_offset: int | None

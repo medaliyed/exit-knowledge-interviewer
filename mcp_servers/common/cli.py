@@ -14,6 +14,7 @@ def _day(text: str) -> datetime:
 def parse_arguments(description: str, argv: list[str] | None = None) -> tuple[Scope, Path]:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--source-dir", type=Path, required=True)
+    parser.add_argument("--mail-folder", action="append", default=[])
     parser.add_argument("--expert-name", required=True)
     parser.add_argument("--expert-email", required=True)
     parser.add_argument("--since", required=True, help="first day, YYYY-MM-DD")
@@ -27,5 +28,6 @@ def parse_arguments(description: str, argv: list[str] | None = None) -> tuple[Sc
         since=_day(arguments.since),
         until=end_of_day,
         work_email_domains=frozenset(arguments.domains),
+        mail_folders=tuple(arguments.mail_folder),
     )
     return scope, arguments.source_dir

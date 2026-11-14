@@ -25,7 +25,7 @@ from eki.ingest import wire
 from eki.ingest.documents import paths_mentioned
 from eki.ingest.models import ActivitySummary, Artifact, Snapshot
 from eki.ingest.redaction import KINDS, RedactedText, redact
-from eki.ingest.scope import Scope
+from eki.ingest.scope import Scope, validate_mail_folders
 
 log = logging.getLogger("eki.ingest")
 
@@ -93,7 +93,7 @@ async def _call(client: Client, tool: str, arguments: dict[str, Any] | None = No
     except Exception as error:
         if recorder:
             recorder.record("tool", "failed", details, call_id=call_id)
-        raise IngestError(f"{tool} failed: {type(error).__name__}") from error
+        raise IngestError(f"{tool} failed: {type(error).__name__}") from None
     if result.is_error or result.structured_content is None:
         if recorder:
             recorder.record("tool", "failed", details, call_id=call_id)
@@ -109,7 +109,7 @@ def _validate[T: BaseModel](tool: str, model: type[T], data: Any) -> T:
     except ValidationError as error:
         raise IngestError(
             f"{tool} returned an unexpected shape ({error.error_count()} errors)"
-        ) from error
+        ) from None
 
 
 async def _all_pages[T: BaseModel](client: Client, tool: str, page_model: type[T]) -> list[Any]:
@@ -118,8 +118,29 @@ async def _all_pages[T: BaseModel](client: Client, tool: str, page_model: type[T
     while offset is not None:
         data = await _call(client, tool, {"offset": offset, "limit": PAGE_SIZE})
         page = _validate(tool, page_model, data)
-        items.extend(page.items)  # type: ignore[attr-defined]
-        offset = page.next_offset  # type: ignore[attr-defined]
+        page_items = getattr(page, "items", None)
+        total = getattr(page, "total", None)
+        following = getattr(page, "next_offset", None)
+        if not isinstance(page_items, list) or not isinstance(total, int) or total < 0:
+            raise IngestError(f"{tool} returned invalid pagination")
+        end = offset + len(page_items)
+        if (
+            len(page_items) > PAGE_SIZE
+            or end > total
+            or (following is None and end != total)
+            or (
+                following is not None
+                and (
+                    not isinstance(following, int)
+                    or following <= offset
+                    or following != end
+                    or following >= total
+                )
+            )
+        ):
+            raise IngestError(f"{tool} returned non-progressing or inconsistent pagination")
+        items.extend(page_items)
+        offset = following
     return items
 
 
@@ -235,13 +256,56 @@ def _document_artifact(raw: wire.WireDocument, domains: frozenset[str]) -> Artif
     )
 
 
+def _mail_artifact(raw: wire.WireMail, scope: Scope) -> Artifact:
+    """Revalidate consent independently of the server, then redact every published field."""
+    try:
+        moment = _time(raw.sent_at)
+    except ValueError:
+        raise IngestError("mail server returned an invalid timestamp") from None
+    expected_role = (
+        "author" if raw.sender.strip().casefold() == scope.expert_email.casefold() else "recipient"
+    )
+    participants = {a.strip().casefold() for a in (raw.sender, *raw.to, *raw.cc)}
+    if (
+        raw.folder not in scope.mail_folders
+        or not scope.contains(moment)
+        or scope.expert_email.casefold() not in participants
+        or raw.expert_role != expected_role
+    ):
+        raise IngestError("mail server returned a message outside the consented scope")
+    clean = _Cleaner(scope.work_email_domains)
+    sender, to, cc = clean(raw.sender), [clean(a) for a in raw.to], [clean(a) for a in raw.cc]
+    return Artifact(
+        id=raw.id,
+        source="mail",
+        kind="email",
+        system=None,
+        occurred_at=moment,
+        title=clean(raw.subject),
+        body=clean(raw.body),
+        expert_role=raw.expert_role,
+        metadata={
+            "thread_id": raw.thread_id,
+            "folder": clean(raw.folder),
+            "sender": sender,
+            "to": to,
+            "cc": cc,
+            "sensitivity": "normal",
+        },
+        redaction_counts=clean.counts,
+    )
+
+
 def mentioned_paths(documents: list[wire.WireDocument]) -> set[str]:
     """File paths any wiki page mentions in backticks, such as `deploy/cron.yaml`."""
     return {path for document in documents for path in paths_mentioned(document.body)}
 
 
-async def pull(git: Client, tickets: Client, scope: Scope) -> Snapshot:
+async def pull(git: Client, tickets: Client, scope: Scope, mail: Client | None = None) -> Snapshot:
     """Read everything in scope through the two MCP clients. Touches no database."""
+    folders = validate_mail_folders(scope.mail_folders)
+    if bool(folders) != (mail is not None):
+        raise IngestError("mail requires both explicit folder consent and a scoped client")
     domains = scope.work_email_domains
     commits = await _all_pages(git, "list_commits", wire.WireCommitPage)
     pull_requests = await _all_pages(git, "list_pull_requests", wire.WirePullRequestPage)
@@ -260,11 +324,15 @@ async def pull(git: Client, tickets: Client, scope: Scope) -> Snapshot:
                 git, "get_path_activity", wire.WirePathActivity, {"repo": repo, "paths": asked}
             )
 
+    messages = [] if mail is None else await _all_pages(mail, "list_messages", wire.WireMailPage)
+    if len({m.id for m in messages}) != len(messages):
+        raise IngestError("mail server returned duplicate message identifiers")
     artifacts = [
         *(_commit_artifact(c, domains) for c in commits),
         *(_pull_request_artifact(p, domains) for p in pull_requests),
         *(_ticket_artifact(t, domains) for t in ticket_items),
         *(_document_artifact(d, domains) for d in documents),
+        *(_mail_artifact(m, scope) for m in messages),
     ]
     artifacts.sort(key=lambda a: (a.occurred_at, a.id))
 
@@ -324,6 +392,7 @@ async def pull(git: Client, tickets: Client, scope: Scope) -> Snapshot:
         until=scope.until,
         artifacts=tuple(artifacts),
         activity=tuple(activity),
+        mail_folders=folders,
     )
 
 
@@ -345,6 +414,9 @@ def server_parameters(module: str, scope: Scope, source_dir: Path) -> StdioServe
     ]
     for domain in sorted(scope.work_email_domains):
         arguments += ["--work-domain", domain]
+    if module == "mcp_servers.mail_server":
+        for folder in validate_mail_folders(scope.mail_folders, required=True):
+            arguments += ["--mail-folder", folder]
     return StdioServerParameters(command=sys.executable, args=arguments, cwd=str(REPO_ROOT))
 
 
@@ -355,6 +427,11 @@ async def ingest_from_source(scope: Scope, source_dir: Path) -> Snapshot:
             Client(server_parameters("mcp_servers.git_server", scope, source_dir)) as git,
             Client(server_parameters("mcp_servers.tickets_server", scope, source_dir)) as tickets,
         ):
+            if scope.mail_folders:
+                async with Client(
+                    server_parameters("mcp_servers.mail_server", scope, source_dir)
+                ) as mail:
+                    return await pull(git, tickets, scope, mail)
             return await pull(git, tickets, scope)
 
 
@@ -364,14 +441,16 @@ def store(conn: psycopg.Connection, snapshot: Snapshot, *, run_id: UUID | None =
     try:
         with conn.transaction():
             conn.execute(
-                "INSERT INTO ingest_runs (id, expert_name, expert_email, since, until, status) "
-                "VALUES (%s, %s, %s, %s, %s, 'running')",
+                "INSERT INTO ingest_runs "
+                "(id, expert_name, expert_email, since, until, mail_folders, status) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'running')",
                 (
                     run_id,
                     snapshot.expert_name,
                     snapshot.expert_email,
                     snapshot.since,
                     snapshot.until,
+                    Jsonb(list(snapshot.mail_folders)),
                 ),
             )
             with conn.cursor() as cursor:
@@ -418,7 +497,7 @@ def store(conn: psycopg.Connection, snapshot: Snapshot, *, run_id: UUID | None =
                 (run_id,),
             )
     except psycopg.Error as error:
-        raise IngestError(f"could not store the snapshot: {type(error).__name__}") from error
+        raise IngestError(f"could not store the snapshot: {type(error).__name__}") from None
     log.info("stored run %s with %d artifacts", run_id, len(snapshot.artifacts))
     return run_id
 
@@ -426,7 +505,7 @@ def store(conn: psycopg.Connection, snapshot: Snapshot, *, run_id: UUID | None =
 def load(conn: psycopg.Connection, run_id: UUID) -> Snapshot:
     """Read a stored run back. Raises ``IngestError`` for an unknown run."""
     run = conn.execute(
-        "SELECT expert_name, expert_email, since, until FROM ingest_runs "
+        "SELECT expert_name, expert_email, since, until, mail_folders FROM ingest_runs "
         "WHERE id = %s AND status = 'completed'",
         (run_id,),
     ).fetchone()
@@ -447,6 +526,7 @@ def load(conn: psycopg.Connection, run_id: UUID) -> Snapshot:
         expert_email=run[1],
         since=run[2],
         until=run[3],
+        mail_folders=tuple(run[4]),
         artifacts=tuple(
             Artifact(
                 id=r[0],

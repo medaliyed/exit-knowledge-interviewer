@@ -390,3 +390,42 @@ def test_search_ask_export_cli_authentication_and_file_safety(
         assert TOKENS["reader"] not in capsys.readouterr().err
     finally:
         get_settings.cache_clear()
+
+
+def test_cli_selected_mail_and_audit(
+    scratch_database: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["migrate"]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "ingest",
+                *RANGE,
+                "--mail-folder",
+                "Inbox",
+                "--mail-folder",
+                "Sent",
+                "--mail-folder",
+                "Vendors",
+            ]
+        )
+        == 0
+    )
+    run_id = capsys.readouterr().out.strip().splitlines()[-1]
+    with connect(get_settings()) as conn:
+        assert conn.execute(
+            "SELECT mail_folders FROM ingest_runs WHERE id = %s", (run_id,)
+        ).fetchone() == (["Inbox", "Sent", "Vendors"],)
+        count = conn.execute(
+            "SELECT count(*) FROM artifacts WHERE run_id = %s AND kind = 'email'", (run_id,)
+        ).fetchone()
+        assert count is not None and count[0] > 0
+    assert main(["map", "--run", run_id]) == 0
+    capsys.readouterr()
+    assert main(["audit", "--run", run_id]) == 0
+    events = json.loads(capsys.readouterr().out)
+    assert all(e["user_id"] == "local-operator" and e["run_id"] == run_id for e in events)
+    assert any(e["kind"] == "tool" and e["details"]["operation"] == "list_messages" for e in events)
+    assert any(e["kind"] == "ingest" and e["phase"] == "completed" for e in events)
+    assert main(["ingest", *RANGE, "--mail-folder", "Personal"]) == 1

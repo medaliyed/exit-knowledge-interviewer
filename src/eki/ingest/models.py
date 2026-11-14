@@ -3,9 +3,10 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from eki.ingest.redaction import RedactedText
+from eki.ingest.scope import validate_mail_folders
 
 
 class _Model(BaseModel):
@@ -14,8 +15,8 @@ class _Model(BaseModel):
 
 class Artifact(_Model):
     id: str
-    source: Literal["git", "tickets"]
-    kind: Literal["commit", "pull_request", "ticket", "document"]
+    source: Literal["git", "tickets", "mail"]
+    kind: Literal["commit", "pull_request", "ticket", "document", "email"]
     system: str | None
     occurred_at: datetime
     title: RedactedText
@@ -45,3 +46,10 @@ class Snapshot(_Model):
     until: datetime
     artifacts: tuple[Artifact, ...]
     activity: tuple[ActivitySummary, ...]
+
+    mail_folders: tuple[str, ...] = ()
+
+    @field_validator("mail_folders")
+    @classmethod
+    def check_folders(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return validate_mail_folders(value)

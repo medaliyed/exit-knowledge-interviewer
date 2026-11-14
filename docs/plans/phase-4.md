@@ -57,7 +57,7 @@ changes to human-owned `evals/scenarios/` or `evals/golden/`.
   assertions; add deterministic CI gates and JUnit reports without live keys.
 - [x] c / P4-c: opt-in live search/evidence-selection validation and an honest
   run report; skip unavailable provider configurations without inventing results.
-- [ ] d / F3: selected-folder read-only mail MCP adapter, client revalidation,
+- [x] d / F3: selected-folder read-only mail MCP adapter, client revalidation,
   ingestion/CLI integration, thread topics, privacy and corpus acceptance tests.
 - [ ] e / P4-e: full end-to-end acceptance, documentation, results and limits.
 

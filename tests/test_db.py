@@ -39,6 +39,7 @@ MIGRATIONS = [
     "0004_access.sql",
     "0005_runbook_search.sql",
     "0006_audit.sql",
+    "0007_mail.sql",
 ]
 
 

@@ -4,7 +4,9 @@ These are deliberately separate from the servers' own models. The client must no
 import server code, and must reject anything that does not match what it expects.
 """
 
-from pydantic import BaseModel, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Wire(BaseModel):
@@ -126,3 +128,23 @@ class WireTicketGroup(_Wire):
     expert_tickets: int
     other_assignees: int
     last_created_at: str | None
+
+
+class WireMail(_Wire):
+    id: str = Field(pattern=r"^EML-[0-9]{4,}$")
+    thread_id: str = Field(pattern=r"^THR-[0-9]{4,}$")
+    folder: str
+    sensitivity: Literal["normal"]
+    sender: str
+    to: list[str]
+    cc: list[str]
+    sent_at: str
+    subject: str
+    body: str
+    expert_role: Literal["author", "recipient"]
+
+
+class WireMailPage(_Wire):
+    items: list[WireMail]
+    total: int
+    next_offset: int | None

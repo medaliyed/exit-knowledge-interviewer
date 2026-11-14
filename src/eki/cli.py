@@ -42,7 +42,7 @@ from eki.graph.workflow import setup_checkpoints
 from eki.ingest.embedding import HashingEmbedder
 from eki.ingest.index import index_run
 from eki.ingest.pipeline import IngestError, ingest_from_source, load, store
-from eki.ingest.scope import Scope
+from eki.ingest.scope import Scope, validate_mail_folders
 from eki.interview import store as interviews
 from eki.interview.models import InterviewPlan
 from eki.interview.service import (
@@ -89,6 +89,12 @@ def _parser() -> argparse.ArgumentParser:
     ingest.add_argument("--expert-name")
     ingest.add_argument("--expert-email")
     ingest.add_argument("--source-dir", type=Path)
+    ingest.add_argument(
+        "--mail-folder",
+        action="append",
+        default=[],
+        help="explicit normal-mail folder; repeat to select more",
+    )
 
     mapping = commands.add_parser("map", help="build topics and gap scores for a run")
     mapping.add_argument("--run", type=UUID, required=True)
@@ -168,6 +174,7 @@ def _ingest(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
         since=arguments.since,
         until=until,
         work_email_domains=work_domains(settings),
+        mail_folders=validate_mail_folders(tuple(arguments.mail_folder)),
     )
     run_id, call_id = uuid4(), uuid4()
     recorder = AuditRecorder(settings.database_url.get_secret_value())

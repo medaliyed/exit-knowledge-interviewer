@@ -15,7 +15,7 @@ class TopicKind(StrEnum):
     INCIDENT = "incident"
     DECISION = "decision"
     CONTACT = "contact"
-    """Not produced until mail arrives in phase 4, where the vendor contact lives."""
+    """Recurring correspondents in explicitly selected normal mail."""
 
 
 class Topic(_Model):

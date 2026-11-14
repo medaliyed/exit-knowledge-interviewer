@@ -21,6 +21,7 @@ from collections import Counter, defaultdict
 from eki.ingest.embedding import Embedder
 from eki.ingest.models import Artifact, Snapshot
 from eki.ingest.redaction import RedactedText
+from eki.mapping.mail import mail_drafts
 from eki.mapping.models import Topic, TopicKind
 
 TICKET_SIMILARITY = 0.75
@@ -130,6 +131,13 @@ def build_topics(snapshot: Snapshot, embedder: Embedder) -> tuple[Topic, ...]:
         if any(r["state"] in BLOCKING_REVIEW_STATES for r in mine):
             drafts.append((TopicKind.DECISION, artifact.system, artifact.title, [artifact.id]))
 
+    additional = mail_drafts(snapshot, artifacts)
+    by_id = {a.id: a for a in artifacts}
+    for _, mail_system, _, ids in additional:
+        for kind, existing_system, _, system_ids in drafts:
+            if kind == TopicKind.SYSTEM and existing_system == mail_system:
+                system_ids.extend(i for i in ids if by_id[i].kind == "email")
+    drafts.extend(additional)
     taken: set[str] = set()
     topics = [
         Topic(
@@ -137,7 +145,7 @@ def build_topics(snapshot: Snapshot, embedder: Embedder) -> tuple[Topic, ...]:
             kind=kind,
             system=system,
             label=label,
-            artifact_ids=tuple(sorted(ids, key=lambda i: i.encode())),
+            artifact_ids=tuple(sorted(set(ids), key=lambda i: i.encode())),
         )
         for kind, system, label, ids in drafts
     ]
