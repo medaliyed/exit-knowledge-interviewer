@@ -101,3 +101,25 @@ async def test_api_redacts_edits_reasons_and_invalid_request_echoes(scratch: Scr
     assert invalid.status_code == 422
     bodies.append(invalid.text)
     assert all(FAKE_CREDENTIALS[1] not in body for body in bodies)
+
+
+async def test_synthesise_keeps_edits_unless_asked_to_overwrite(scratch: Scratch) -> None:
+    session = await finished(scratch)
+    client = TestClient(create_app(runbook_service=RunbookService(scratch.dsn)))
+    first = client.get(f"/sessions/{session}/entries").json()[0]
+    assert first["edited"] is False
+    url = f"/entries/{first['id']}"
+    patch = {"edited_by": EXPERT, "sections": {"steps": {"claims": ["Restart twice."]}}}
+    assert client.patch(url, json=patch).status_code == 200
+
+    kept = client.post(f"/sessions/{session}/synthesise")
+    assert kept.status_code == 200
+    assert kept.json()[0]["edited"] is True
+    assert client.get(url).json()["steps"]["claims"][0]["text"] == "Restart twice."
+
+    replaced = client.post(f"/sessions/{session}/synthesise", params={"overwrite_edits": "true"})
+    assert replaced.status_code == 200
+    assert replaced.json()[0]["edited"] is False
+    assert client.get(url).json()["steps"]["claims"][0]["text"] != "Restart twice."
+    bad = client.post(f"/sessions/{session}/synthesise", params={"overwrite_edits": "maybe"})
+    assert bad.status_code == 422

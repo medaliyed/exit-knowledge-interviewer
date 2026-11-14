@@ -468,7 +468,8 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
         entries = books.list(session)
         for stored in entries:
             entry = stored.entry
-            print(f"{entry.id}  {entry.status.value:8}  {entry.title}")
+            marker = "  (edited by hand)" if stored.edited else ""
+            print(f"{entry.id}  {entry.status.value:8}  {entry.title}{marker}")
         if not entries:
             print("No entries yet. Finish the interview first.")
         return 0

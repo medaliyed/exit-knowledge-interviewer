@@ -103,3 +103,56 @@ async def test_correction_of_uncited_turn_keeps_approval(scratch: Scratch) -> No
         make_service(scratch.dsn), session, "Corrected detail.", action="correct", corrects=unused
     )
     assert service.get(entry_id) == approved
+
+
+async def test_synthesis_keeps_an_edited_draft(scratch: Scratch) -> None:
+    """Regression: re-running synthesis used to replace the expert's unapproved edits."""
+    session = await finished(scratch)
+    service = RunbookService(scratch.dsn)
+    first, second, _ = service.list(session)
+    assert (first.edited, second.edited) == (False, False)
+    entry_id = UUID(first.entry.id)
+    service.approve(entry_id, EXPERT)
+    edited = service.edit(entry_id, EXPERT, {"steps": SectionEdit(claims=("Restart twice.",))})
+    assert edited.edited is True
+    also_edited = service.edit(
+        UUID(second.entry.id), EXPERT, {"rollback": SectionEdit(open_question="Ask finance.")}
+    )
+
+    rebuilt = service.synthesise(session)
+    assert rebuilt[0] == edited, "content, version and status are untouched"
+    assert rebuilt[0].entry.steps.claims[0].text == "Restart twice."
+    assert rebuilt[1] == also_edited, "an edit with only an open question is kept too"
+    assert rebuilt[2].edited is False
+    assert service.get(entry_id).edited is True
+
+
+async def test_synthesis_overwrites_edits_only_when_asked(scratch: Scratch) -> None:
+    session = await finished(scratch)
+    service = RunbookService(scratch.dsn)
+    original = service.list(session)[0]
+    entry_id = UUID(original.entry.id)
+    edited = service.edit(entry_id, EXPERT, {"steps": SectionEdit(claims=("Restart twice.",))})
+
+    rebuilt = service.synthesise(session, overwrite_edits=True)[0]
+    assert rebuilt.entry == original.entry, "back to what the notes say"
+    assert rebuilt.edited is False
+    assert rebuilt.version == edited.version + 1
+    with scratch.connect() as conn:
+        kinds = [t.kind for t in interviews.load_turns(conn, session)]
+    assert kinds.count("edit") == 1, "the edit stays in the transcript"
+    assert [d.action for d in service.history(entry_id)] == ["edit"]
+    again = service.synthesise(session)[0]
+    assert (again.entry, again.edited) == (rebuilt.entry, False), (
+        "unedited drafts rebuild as before"
+    )
+
+
+async def test_approval_keeps_the_edit_and_a_later_synthesis_leaves_it(scratch: Scratch) -> None:
+    session = await finished(scratch)
+    service = RunbookService(scratch.dsn)
+    entry_id = UUID(service.list(session)[0].entry.id)
+    service.edit(entry_id, EXPERT, {"steps": SectionEdit(claims=("Restart twice.",))})
+    approved = service.approve(entry_id, EXPERT)
+    assert service.synthesise(session, overwrite_edits=True)[0] == approved
+    assert approved.entry.steps.claims[0].text == "Restart twice."

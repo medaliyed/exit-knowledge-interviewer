@@ -127,6 +127,7 @@ def _entry_summary(stored: StoredEntry) -> dict[str, Any]:
         "title": entry.title,
         "status": entry.status.value,
         "version": stored.version,
+        "edited": stored.edited,
         "claim_count": sum(len(entry.section(n).claims) for n in SECTION_NAMES),
         "open_question_count": sum(
             entry.section(n).open_question is not None for n in SECTION_NAMES
@@ -266,8 +267,13 @@ def create_app(
         return JSONResponse(status_code=422, content={"detail": "Invalid request value"})
 
     @app.post("/sessions/{session_id}/synthesise")
-    async def synthesise_entries(session_id: UUID, books: Runbooks) -> list[dict[str, Any]]:
-        entries = await operation(lambda: books.synthesise(session_id))
+    async def synthesise_entries(
+        session_id: UUID, books: Runbooks, overwrite_edits: bool = False
+    ) -> list[dict[str, Any]]:
+        """Rebuild drafts from the notes. Hand-edited drafts are kept unless told otherwise."""
+        entries = await operation(
+            lambda: books.synthesise(session_id, overwrite_edits=overwrite_edits)
+        )
         return [_entry_summary(e) for e in entries]
 
     @app.get("/sessions/{session_id}/entries")

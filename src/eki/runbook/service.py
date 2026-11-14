@@ -50,8 +50,14 @@ def validate_sources(conn: psycopg.Connection, session_id: UUID, entry: RunbookE
                     raise ValueError("citation refers to a corrected turn")
 
 
-def synthesise(conn: psycopg.Connection, session_id: UUID) -> tuple[store.StoredEntry, ...]:
-    """Atomically replace drafts only. The session lock also serialises reviews/corrections."""
+def synthesise(
+    conn: psycopg.Connection, session_id: UUID, *, overwrite_edits: bool = False
+) -> tuple[store.StoredEntry, ...]:
+    """Atomically rebuild drafts from the notes. The session lock also serialises reviews.
+
+    Approved and rejected entries are never touched. A draft the expert edited by hand is
+    kept as it is, unless ``overwrite_edits`` asks for it to be rebuilt as well.
+    """
     with conn.transaction():
         conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (session_id,))
         session = interviews.load_session(conn, session_id)
@@ -67,13 +73,16 @@ def synthesise(conn: psycopg.Connection, session_id: UUID) -> tuple[store.Stored
         existing = {s.entry.topic_id: s for s in store.list_entries(conn, session_id)}
         for topic in plan.topics:
             previous = existing.get(topic.topic_id)
-            if previous is not None and previous.entry.status != EntryStatus.DRAFT:
+            if previous is not None and (
+                previous.entry.status != EntryStatus.DRAFT
+                or (previous.edited and not overwrite_edits)
+            ):
                 continue
             entry = build_entry(session_id, topic, notes, opened)
             validate_sources(conn, session_id, entry)
             if previous is not None:
                 entry = entry.model_copy(update={"id": previous.entry.id})
-            store.save_entry(conn, session_id, entry)
+            store.save_entry(conn, session_id, entry, edited=False)
         return store.list_entries(conn, session_id)
 
 
@@ -86,9 +95,11 @@ class RunbookService:
     def _connect(self) -> psycopg.Connection:
         return psycopg.connect(self.dsn, autocommit=True)
 
-    def synthesise(self, session_id: UUID) -> tuple[store.StoredEntry, ...]:
+    def synthesise(
+        self, session_id: UUID, *, overwrite_edits: bool = False
+    ) -> tuple[store.StoredEntry, ...]:
         with self._connect() as conn:
-            return synthesise(conn, session_id)
+            return synthesise(conn, session_id, overwrite_edits=overwrite_edits)
 
     def list(self, session_id: UUID) -> tuple[store.StoredEntry, ...]:
         with self._connect() as conn:
@@ -140,7 +151,13 @@ class RunbookService:
             review.check_expert(by, row[0])
             changed = apply(conn, previous, row[0])
             validate_sources(conn, previous.session_id, changed)
-            result = store.save_entry(conn, previous.session_id, changed, rejection_reason=reason)
+            result = store.save_entry(
+                conn,
+                previous.session_id,
+                changed,
+                rejection_reason=reason,
+                edited=True if action == "edit" else None,
+            )
             store.add_decision(conn, changed.id, action, self._clean(by), self.clock(), reason)
             return result
 

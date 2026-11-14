@@ -342,6 +342,9 @@ def test_entries_and_review_quit_resume(
         assert "Restart twice." in capsys.readouterr().out
         entries = RunbookService(scratch.dsn).list(session)
         assert [e.entry.status for e in entries] == ["approved", "rejected", "approved"]
+        assert main(["entries", *args]) == 0
+        lines = capsys.readouterr().out.strip().splitlines()
+        assert [line.endswith("(edited by hand)") for line in lines] == [False, False, True]
         typed(monkeypatch)
         assert main(["review", *args]) == 0
         assert "No draft entries" in capsys.readouterr().out

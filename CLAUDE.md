@@ -109,7 +109,9 @@ not authentication. Review works without model names or provider credentials.
 Entry API (also independent of model configuration):
 
 - `POST /sessions/{id}/synthesise`: rebuild drafts from current interview notes;
-  approved and rejected entries remain untouched. Rebuilding replaces draft edits.
+  approved and rejected entries remain untouched. A draft the expert edited by
+  hand is kept too (`edited` is true in the listing); add `?overwrite_edits=true`
+  to rebuild those as well. Needs migration `0008_entry_edited.sql`.
 - `GET /sessions/{id}/entries`: list status, version, claim and open-question counts.
 - `GET /entries/{id}`: sections, citations and ordered decision history.
 - `PATCH /entries/{id}`: `{"edited_by":"Nadia Ferrand","sections":{"steps":{"claims":["Restart twice."]}}}`.

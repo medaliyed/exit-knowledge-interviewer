@@ -21,6 +21,8 @@ class StoredEntry:
     session_id: UUID
     version: int
     rejection_reason: str | None
+    edited: bool = False
+    """The expert changed it by hand; synthesis must not replace it unless told to."""
 
 
 @dataclass(frozen=True)
@@ -37,16 +39,22 @@ def save_entry(
     entry: RunbookEntry,
     *,
     rejection_reason: RedactedText | None = None,
+    edited: bool | None = None,
 ) -> StoredEntry:
-    """Revalidate at the storage boundary. Callers lock the session before changing entries."""
+    """Revalidate at the storage boundary. Callers lock the session before changing entries.
+
+    ``edited`` sets the hand-edited flag; ``None`` keeps whatever the entry already has.
+    """
     entry = RunbookEntry.model_validate(entry.model_dump())
     row = conn.execute(
         "INSERT INTO runbook_entries (id, session_id, topic_id, title, status, content, "
-        "approved_by, approved_at, rejection_reason) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "approved_by, approved_at, rejection_reason, edited) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,coalesce(%s, false)) "
         "ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status, "
         "content = EXCLUDED.content, approved_by = EXCLUDED.approved_by, "
         "approved_at = EXCLUDED.approved_at, rejection_reason = EXCLUDED.rejection_reason, "
-        "version = runbook_entries.version + 1 RETURNING version",
+        "edited = coalesce(%s, runbook_entries.edited), "
+        "version = runbook_entries.version + 1 RETURNING version, edited",
         (
             entry.id,
             session_id,
@@ -57,18 +65,20 @@ def save_entry(
             entry.approved_by,
             entry.approved_at,
             rejection_reason,
+            edited,
+            edited,
         ),
     ).fetchone()
     assert row is not None  # noqa: S101 - INSERT RETURNING
-    return StoredEntry(entry, session_id, row[0], rejection_reason)
+    return StoredEntry(entry, session_id, row[0], rejection_reason, row[1])
 
 
 def load_entry(
     conn: psycopg.Connection, entry_id: str, *, lock: bool = False
 ) -> StoredEntry | None:
     row = conn.execute(
-        "SELECT content, session_id, version, rejection_reason FROM runbook_entries WHERE id = %s"  # noqa: S608 - fixed suffix; ID is bound
-        + (" FOR UPDATE" if lock else ""),
+        "SELECT content, session_id, version, rejection_reason, edited "
+        "FROM runbook_entries WHERE id = %s" + (" FOR UPDATE" if lock else ""),
         (entry_id,),
     ).fetchone()
     return None if row is None else StoredEntry(RunbookEntry.model_validate(row[0]), *row[1:])
@@ -76,7 +86,8 @@ def load_entry(
 
 def list_entries(conn: psycopg.Connection, session_id: UUID) -> tuple[StoredEntry, ...]:
     rows = conn.execute(
-        "SELECT e.content, e.session_id, e.version, e.rejection_reason FROM runbook_entries e "
+        "SELECT e.content, e.session_id, e.version, e.rejection_reason, e.edited "
+        "FROM runbook_entries e "
         "JOIN sessions s ON s.id = e.session_id JOIN plan_topics t "
         "ON t.plan_id = s.plan_id AND t.topic_id = e.topic_id "
         "WHERE e.session_id = %s ORDER BY t.position",

@@ -40,6 +40,7 @@ MIGRATIONS = [
     "0005_runbook_search.sql",
     "0006_audit.sql",
     "0007_mail.sql",
+    "0008_entry_edited.sql",
 ]
 
 
@@ -129,3 +130,60 @@ def test_failed_migration_rolls_back(empty_conn: psycopg.Connection, tmp_path: P
         row[0] for row in empty_conn.execute("SELECT name FROM schema_migrations").fetchall()
     }
     assert recorded == {"0001_ok.sql"}
+
+
+def test_existing_edited_drafts_are_marked_when_the_flag_is_added(
+    empty_conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    """Migration 0008 must protect edits made before the flag existed."""
+    import shutil
+
+    from eki.db import MIGRATIONS_DIR
+
+    before = tmp_path / "before"
+    before.mkdir()
+    for name in MIGRATIONS[:-1]:
+        shutil.copy(MIGRATIONS_DIR / name, before / name)
+    migrate(empty_conn, before)
+    run_id, plan_id, session_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    empty_conn.execute(
+        "INSERT INTO ingest_runs (id, expert_name, expert_email, since, until, status) "
+        "VALUES (%s, 'N', 'n@example.com', now(), now(), 'completed')",
+        (run_id,),
+    )
+    empty_conn.execute(
+        "INSERT INTO interview_plans (id, run_id, status) VALUES (%s, %s, 'draft')",
+        (plan_id, run_id),
+    )
+    empty_conn.execute(
+        "INSERT INTO sessions (id, plan_id, status) VALUES (%s, %s, 'finished')",
+        (session_id, plan_id),
+    )
+    entries = {}
+    for topic, status, action in (
+        ("edited-draft", "draft", "edit"),
+        ("plain-draft", "draft", None),
+        ("rejected-then-untouched", "rejected", "reject"),
+    ):
+        entry_id = uuid.uuid4()
+        entries[topic] = entry_id
+        empty_conn.execute(
+            "INSERT INTO runbook_entries (id, session_id, topic_id, title, status, content, "
+            "rejection_reason) VALUES (%s, %s, %s, 't', %s, '{}', %s)",
+            (entry_id, session_id, topic, status, "no" if status == "rejected" else None),
+        )
+        if action:
+            empty_conn.execute(
+                "INSERT INTO entry_decisions (entry_id, action, who, at) "
+                "VALUES (%s, %s, 'N', now())",
+                (entry_id, action),
+            )
+    empty_conn.commit()
+    assert migrate(empty_conn) == [MIGRATIONS[-1]]
+    rows = empty_conn.execute("SELECT topic_id, edited FROM runbook_entries").fetchall()
+    flags: dict[str, bool] = dict(rows)
+    assert flags == {
+        "edited-draft": True,
+        "plain-draft": False,
+        "rejected-then-untouched": False,
+    }
