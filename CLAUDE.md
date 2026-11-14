@@ -9,6 +9,8 @@ runbook. The expert prunes the plan and approves every entry.
 
 Full requirements (F1-F13), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
+Architecture and diagrams: `docs/architecture.md`. Runtime flows, one page
+each with a sequence diagram: `docs/flows/`. How to run it: `README.md`.
 
 ## Stack
 
@@ -67,6 +69,7 @@ mcp_servers/  read-only git_server, tickets_server and mail_server; redact befor
 tests/        tests; fixtures in tests/fixtures/
 evals/        scenarios/ and golden/ are human-owned
 docs/plans/   one approved plan per phase
+docs/flows/   one page per runtime flow; update the page when its flow changes
 ```
 
 ## Hard rules
