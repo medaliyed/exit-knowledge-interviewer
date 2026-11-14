@@ -55,7 +55,7 @@ changes to human-owned `evals/scenarios/` or `evals/golden/`.
   atomic review/approval/ACL events, API/CLI read access and correlation tests.
 - [x] b / P4-b: adversarial and quality evaluation suites with explicit measurable
   assertions; add deterministic CI gates and JUnit reports without live keys.
-- [ ] c / P4-c: opt-in live search/evidence-selection validation and an honest
+- [x] c / P4-c: opt-in live search/evidence-selection validation and an honest
   run report; skip unavailable provider configurations without inventing results.
 - [ ] d / F3: selected-folder read-only mail MCP adapter, client revalidation,
   ingestion/CLI integration, thread topics, privacy and corpus acceptance tests.
@@ -66,3 +66,12 @@ After each deliverable run and report `uv run pytest -q`,
 `uv run ruff format --check .`, `uv run mypy`; commit only verified work.
 Finish with the infra checks and explicit evaluation suites. Never put real
 credentials, private sources or confidential text in tests/reports/logs.
+
+
+## Live validation run
+
+`uv run pytest -q -m live -rs tests/test_live_retrieval.py`: two skips,
+`EKI_MODEL_EMBEDDING` and `EKI_MODEL_ANSWERER` not configured. No provider call
+was made. Adapter/guard implementation is verified; actual semantic/provider
+quality is explicitly not claimed. Export provider credentials to the test
+process and configure the desired models before rerunning these checks.
