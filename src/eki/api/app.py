@@ -14,6 +14,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
@@ -43,6 +44,24 @@ from eki.search.answers import AnswerService, build_answers
 from eki.search.service import SearchService, build_search
 
 CONFIDENTIAL = "[confidential]"
+
+
+class AuthenticatedAPI(FastAPI):
+    """Document the bearer authentication enforced by the data-route middleware."""
+
+    def openapi(self) -> dict[str, Any]:
+        if self.openapi_schema is None:
+            schema = get_openapi(title=self.title, version=self.version, routes=self.routes)
+            schema.setdefault("components", {}).setdefault("securitySchemes", {})["BearerAuth"] = {
+                "type": "http",
+                "scheme": "bearer",
+            }
+            for path, operations in schema["paths"].items():
+                if path != "/healthz":
+                    for operation in operations.values():
+                        operation["security"] = [{"BearerAuth": []}]
+            self.openapi_schema = schema
+        return self.openapi_schema
 
 
 class _Body(BaseModel):
@@ -153,7 +172,7 @@ def create_app(
     answer_service: AnswerService | None = None,
 ) -> FastAPI:
     """The application. Without ``service`` one is built from settings on first use."""
-    app = FastAPI(title="Exit-Knowledge Interviewer", version=__version__)
+    app = AuthenticatedAPI(title="Exit-Knowledge Interviewer", version=__version__)
 
     def database_dsn() -> str:
         if answer_service is not None:

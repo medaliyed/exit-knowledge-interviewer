@@ -2,7 +2,8 @@
 
 ``Embedder`` is the interface everything else uses. Phase 1 ships one local,
 deterministic implementation so that pgvector is exercised fully with no network
-and no key. A real model arrives in phase 2 behind the same interface.
+and no key. Runbook search can use the optional provider implementation in
+``eki.search.embedding`` behind the same interface.
 
 Both ``embed`` and the search function accept only ``RedactedText``, so mypy rejects
 a call that passes raw text.

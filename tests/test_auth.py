@@ -42,3 +42,23 @@ def test_bad_configuration_never_echoes_credentials(config: str) -> None:
 def test_empty_configuration_authenticates_nobody() -> None:
     with pytest.raises(AuthenticationError):
         TokenAuthenticator("[]").authenticate("Bearer " + TOKEN)
+
+
+def test_every_data_endpoint_requires_credentials_and_documents_bearer_auth() -> None:
+    from fastapi.testclient import TestClient
+
+    from eki.api.app import create_app
+
+    app = create_app(authenticator=TokenAuthenticator("[]"))
+    schema = app.openapi()
+    assert schema["components"]["securitySchemes"]["BearerAuth"]["scheme"] == "bearer"
+    client = TestClient(app)
+    for path, operations in schema["paths"].items():
+        if path == "/healthz":
+            continue
+        url = path
+        for parameter in ("run_id", "plan_id", "session_id", "entry_id"):
+            url = url.replace("{" + parameter + "}", "00000000-0000-0000-0000-000000000000")
+        for method, operation in operations.items():
+            assert operation["security"] == [{"BearerAuth": []}]
+            assert client.request(method, url).status_code == 401, (method, url)

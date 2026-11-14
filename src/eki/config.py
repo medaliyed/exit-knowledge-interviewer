@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # Models, reached through LiteLLM. No default on purpose: the choice is the operator's.
     # The provider key is read by LiteLLM from the provider's own variable, never from here.
+    search_min_similarity: float = Field(default=0.18, ge=0, le=1)
     model_answerer: str | None = None
     model_embedding: str | None = None
     model_interviewer: str | None = None

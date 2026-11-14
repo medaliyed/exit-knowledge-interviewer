@@ -158,3 +158,51 @@ async def test_answer_api_returns_sources_and_handles_provider_failure(scratch: 
         ).status_code
         == 502
     )
+
+
+async def test_weak_retrieval_does_not_force_an_unrelated_answer(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await search_world(scratch)
+    search = SearchService(scratch.dsn)
+    irrelevant = search.search(READER, "gateway certificate")
+    # Simulate a vector false positive. Retrieval alone is not proof of answer relevance.
+    monkeypatch.setattr(search, "search", lambda *args, **kwargs: irrelevant)
+    answer = await AnswerService(search).ask(READER, "How do I repair a volcano rocket?")
+    assert answer.status == "insufficient_evidence" and not answer.evidence
+
+
+async def test_edit_during_model_call_suppresses_old_answer(scratch: Scratch) -> None:
+    world = await search_world(scratch)
+    books = RunbookService(scratch.dsn)
+
+    def select(messages: object, tools: object) -> Reply:
+        books.edit(
+            world.billing, OWNER.name, {"rollback": SectionEdit(claims=("Changed rollback",))}
+        )
+        books.approve(world.billing, OWNER.name)
+        return Reply(text='{"evidence_ids":["E1"],"abstain":false}')
+
+    answer = await AnswerService(SearchService(scratch.dsn), ScriptedModel(select)).ask(
+        READER, "reconciliation rollback"
+    )
+    assert answer.status == "insufficient_evidence" and not answer.evidence
+
+
+async def test_denied_run_never_enters_answer_model_context(scratch: Scratch) -> None:
+    await search_world(scratch)
+    hidden = await search_world(scratch)
+    books = RunbookService(scratch.dsn)
+    marker = "Denied run information must not reach the model"
+    books.edit(hidden.billing, OWNER.name, {"rollback": SectionEdit(claims=(marker,))})
+    books.approve(hidden.billing, OWNER.name)
+    with scratch.connect() as conn:
+        access.set_readers(conn, hidden.run_id, [], OWNER)
+    model = ScriptedModel([Reply(text='{"evidence_ids":["E1"],"abstain":false}')])
+    answer = await AnswerService(SearchService(scratch.dsn), model).ask(
+        READER, "reconciliation rollback"
+    )
+    assert answer.status == "answered"
+    assert marker not in str(model.calls)
+    assert str(hidden.billing) not in str(model.calls)
+    assert marker not in answer.model_dump_json()

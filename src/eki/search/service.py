@@ -108,34 +108,41 @@ class SearchService:
                     WHERE e.status = 'approved' AND i.model = %s AND """)
                 + sql.SQL(VISIBLE_RUN)
                 + sql.SQL("""
-                ), q AS (SELECT websearch_to_tsquery('english', %s) AS terms),
-                lexical AS (
-                    SELECT entry_id, section, ordinal,
-                    row_number() OVER (ORDER BY ts_rank_cd(document, q.terms) DESC,
-                        entry_id, section, ordinal) AS rank
+                ), q AS (SELECT websearch_to_tsquery('english', %s) AS terms,
+                                %s::vector AS query_vector),
+                lexical_best AS (
+                    SELECT DISTINCT ON (entry_id) entry_id, section, ordinal,
+                           ts_rank_cd(document, q.terms) AS relevance
                     FROM eligible, q WHERE document @@ q.terms
+                    ORDER BY entry_id, relevance DESC, section, ordinal
+                ), semantic_best AS (
+                    SELECT DISTINCT ON (entry_id) entry_id, section, ordinal,
+                           embedding <=> q.query_vector AS distance
+                    FROM eligible, q WHERE (embedding <=> q.query_vector) <= 1 - %s
+                    ORDER BY entry_id, distance, section, ordinal
+                ), lexical AS (
+                    SELECT entry_id, section, ordinal, 0 AS kind,
+                           row_number() OVER (ORDER BY relevance DESC, entry_id) AS rank
+                    FROM lexical_best
                 ), semantic AS (
-                    SELECT entry_id, section, ordinal,
-                    row_number() OVER (ORDER BY embedding <=> %s::vector,
-                        entry_id, section, ordinal) AS rank
-                    FROM eligible WHERE (embedding <=> %s::vector) <= 1 - %s
-                ), fused AS (
-                    SELECT entry_id, section, ordinal, sum(1.0 / (60 + rank)) AS score
-                    FROM (SELECT * FROM lexical WHERE rank <= 200 UNION ALL
-                          SELECT * FROM semantic WHERE rank <= 200) channels
-                    GROUP BY entry_id, section, ordinal
-                ), best AS (
-                    SELECT DISTINCT ON (f.entry_id) e.content, e.version, e.section, e.body,
-                        f.score, f.entry_id
-                    FROM fused f JOIN eligible e USING (entry_id, section, ordinal)
-                    ORDER BY f.entry_id, f.score DESC, e.section, e.ordinal
-                ) SELECT content, version, section, body, score FROM best
-                  ORDER BY score DESC, entry_id LIMIT %s"""),
+                    SELECT entry_id, section, ordinal, 1 AS kind,
+                           row_number() OVER (ORDER BY distance, entry_id) AS rank
+                    FROM semantic_best
+                ), channels AS (SELECT * FROM lexical UNION ALL SELECT * FROM semantic),
+                fused AS (
+                    SELECT entry_id, sum(1.0 / (60 + rank)) AS score
+                    FROM channels GROUP BY entry_id
+                ), representative AS (
+                    SELECT DISTINCT ON (c.entry_id) c.entry_id, c.section, c.ordinal, f.score
+                    FROM channels c JOIN fused f USING (entry_id)
+                    ORDER BY c.entry_id, c.rank, c.kind, c.section, c.ordinal
+                ) SELECT e.content, e.version, e.section, e.body, r.score
+                  FROM representative r JOIN eligible e USING (entry_id, section, ordinal)
+                  ORDER BY r.score DESC, r.entry_id LIMIT %s"""),
                 (
                     self.embedder.name,
                     *visible_params(principal),
                     clean,
-                    literal,
                     literal,
                     self.min_similarity,
                     limit,
@@ -149,5 +156,8 @@ class SearchService:
 
 def build_search(settings: Settings) -> SearchService:
     return SearchService(
-        settings.database_url.get_secret_value(), work_domains(settings), build_embedder(settings)
+        settings.database_url.get_secret_value(),
+        work_domains(settings),
+        build_embedder(settings),
+        settings.search_min_similarity,
     )

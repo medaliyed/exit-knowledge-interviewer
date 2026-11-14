@@ -182,14 +182,53 @@ class AnswerService:
             return abstain()
         if self.model is None:
             top = ranked[0][0]
+            best_entry = ranked[0][1].entry_id
+            hit = next(h for h in hits if h.entry.id == best_entry)
+            context = _terms(
+                hit.entry.title
+                + " "
+                + " ".join(
+                    c.text for section in SECTION_NAMES for c in hit.entry.section(section).claims
+                )
+            )
+            generic = {
+                "why",
+                "who",
+                "whom",
+                "how",
+                "step",
+                "procedure",
+                "rollback",
+                "roll",
+                "back",
+                "undo",
+                "revert",
+                "restore",
+                "restart",
+                "run",
+                "needed",
+                "need",
+                "does",
+            }
+            topical = _terms(clean) - generic
+            if topical and len(topical & context) / len(topical) < 0.6:
+                return abstain()
             chosen = [
                 e
                 for score, e in ranked
-                if score >= top * 0.8 and (intent is None or e.section == intent)
+                if e.entry_id == best_entry
+                and score >= top * 0.8
+                and (intent is None or e.section == intent)
             ][:3]
         else:
             payload = json.dumps(
-                {"question": clean, "evidence": [e.model_dump(mode="json") for _, e in ranked]}
+                {
+                    "question": clean,
+                    "evidence": [
+                        {"id": e.id, "title": e.title[:300], "section": e.section, "text": e.text}
+                        for _, e in ranked
+                    ],
+                }
             )
             messages = (
                 Message(

@@ -115,3 +115,90 @@ async def test_search_api_and_cross_run_filtering(scratch: Scratch) -> None:
         ).status_code
         == 422
     )
+
+
+async def test_provider_failure_cannot_leave_a_partially_indexed_entry(scratch: Scratch) -> None:
+    from collections.abc import Sequence
+
+    from eki.ingest.embedding import HashingEmbedder
+    from eki.ingest.redaction import RedactedText
+    from eki.llm import ModelError
+
+    world = await search_world(scratch)
+    books = RunbookService(scratch.dsn)
+    books.edit(world.gateway, OWNER.name, {"steps": SectionEdit(claims=("Now a draft",))})
+    books.edit(
+        world.billing,
+        OWNER.name,
+        {
+            "steps": SectionEdit(
+                claims=tuple("Reconcile entry " + "the totals " * 60 + str(n) for n in range(130))
+            )
+        },
+    )
+    books.approve(world.billing, OWNER.name)
+
+    class FlakyEmbedder(HashingEmbedder):
+        name = "test-failing-batches"
+        calls = 0
+        fail = True
+
+        def embed(self, texts: Sequence[RedactedText]) -> list[list[float]]:
+            self.calls += 1
+            if self.fail and self.calls == 2:
+                raise ModelError("simulated provider failure")
+            return super().embed(texts)
+
+    embedder = FlakyEmbedder()
+    service = SearchService(scratch.dsn, embedder=embedder)
+    with pytest.raises(ModelError):
+        service.search(READER, "reconcile")
+    with scratch.connect() as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM runbook_index WHERE entry_id = %s", (world.billing,)
+        ).fetchone() == (0,)
+    embedder.fail = False
+    assert service.search(READER, "reconcile")
+    with scratch.connect() as conn:
+        count = conn.execute(
+            "SELECT count(*) FROM runbook_index WHERE entry_id = %s AND section = 'steps'",
+            (world.billing,),
+        ).fetchone()
+        assert count is not None and count[0] == 130
+
+
+async def test_long_entry_cannot_starve_other_matching_entries(scratch: Scratch) -> None:
+    from collections.abc import Sequence
+
+    from eki.ingest.redaction import RedactedText
+    from eki.runbook import store
+    from eki.runbook.models import SECTION_NAMES
+
+    world = await search_world(scratch)
+    books = RunbookService(scratch.dsn)
+    long_id, short_id = sorted((world.billing, world.gateway))
+    phrase = "gateway certificate renewal " * 20
+    for entry_id, size in ((long_id, 500), (short_id, 1)):
+        edited = books.edit(
+            entry_id, OWNER.name, {s: SectionEdit(open_question="Not known") for s in SECTION_NAMES}
+        )
+        edited = books.edit(entry_id, OWNER.name, {"steps": SectionEdit(claims=(phrase,) * size)})
+        with scratch.connect() as conn:
+            store.save_entry(
+                conn,
+                world.session_id,
+                edited.entry.model_copy(update={"title": "Gateway certificate renewal"}),
+            )
+        books.approve(entry_id, OWNER.name)
+
+    class SameVectors:
+        name = "test-equal-vectors"
+        dimensions = 256
+
+        def embed(self, texts: Sequence[RedactedText]) -> list[list[float]]:
+            return [[1.0] + [0.0] * 255 for _ in texts]
+
+    hits = SearchService(scratch.dsn, embedder=SameVectors()).search(
+        READER, "gateway certificate renewal", limit=2
+    )
+    assert {UUID(hit.entry.id) for hit in hits} == {long_id, short_id}

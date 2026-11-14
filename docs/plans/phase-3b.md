@@ -1,6 +1,7 @@
 # Phase 3, second half: approved runbook retrieval (F11, F12)
 
-Status: authorized by the user's 2026-11-14 instruction to implement the second
+Status: implemented and verified on 2026-11-14. Authorized by the user's
+2026-11-14 instruction to implement the second
 half with good quality. This plan makes the implementation choices concrete;
 that instruction authorizes proceeding without another approval round.
 
@@ -54,7 +55,7 @@ that instruction authorizes proceeding without another approval round.
   abstention, injection/forged citations/redaction and in-flight revocation tests.
 - [x] d / F12: safe Markdown renderer and gated API/CLI exports; citations,
   complete template, open questions, approval/access and file safety tests.
-- [ ] e / P3b: fixture end-to-end acceptance (ranking and useful answers), all
+- [x] e / P3b: fixture end-to-end acceptance (ranking and useful answers), all
   static/unit/database/infra checks, documentation and honest quality report.
 
 After each task: `uv run pytest -q`, `uv run pytest -q -m db`,
@@ -62,3 +63,78 @@ After each task: `uv run pytest -q`, `uv run pytest -q -m db`,
 Finish with `uv run pytest -q -m infra`. Use disposable DB schemas. Report what
 is verified and what remains unverified; no claim that offline hashing proves
 semantic retrieval or that scripted selectors prove a real model's quality.
+
+
+## Outcome
+
+Implemented F11 and F12, including protection of all earlier data routes. No new
+dependency or additional agentic workflow node was added. Credential registries
+fail closed; unassigned runs are admin-only. Local operator CLI access remains
+separate from HTTP reader access and is documented explicitly.
+
+### Quality and isolation evidence
+
+- `tests/test_phase3b_acceptance.py`: the real synthetic fixture interview with
+  process restarts, explicit approvals, a confidential filler answer and a
+  planted secret. Three fixed queries rank the expected topic first (3/3), and
+  three operator questions return claims from the expected topic and section
+  (3/3). Export includes public open questions and citations; confidential
+  answers/secrets never appear in the index or exported content. Revocation
+  immediately removes search and export visibility.
+- `tests/test_auth.py`, `tests/test_api_access.py`: every data endpoint requires
+  authentication; OpenAPI documents bearer auth. Invalid/duplicate/conflicting
+  credentials fail closed. Cross-run, draft, transcript, review-history, actor
+  impersonation, ownership transfer and ACL-update cases are covered.
+- `tests/test_runbook_search.py`, `tests/test_search_embedding.py`: stable keyword
+  ranking, vector-only matches with an injected semantic test embedder, separate
+  model spaces, valid dimensions/finite values, redacted provider inputs,
+  live edit/correction invalidation and cross-run ACL filtering. A provider
+  failure after the first 64 chunks leaves no partial entry index and retries
+  successfully to all 130 procedure chunks. A 500-claim entry cannot starve
+  another matching entry: candidates are deduplicated per entry before ranking.
+- `tests/test_runbook_answers.py`: useful exact claims and abstention; full step
+  ordering/prerequisites; forged IDs, prose and tool calls rejected; irrelevant
+  vector candidates do not force an answer; denied content never reaches the
+  selector; in-flight permission changes and edit/re-approval suppress stale
+  evidence. All-open entries produce open questions, never invented procedures.
+- `tests/test_runbook_export.py`, `tests/test_cli.py`: safe complete Markdown,
+  deduplicated citations, live approval/access gates, authenticated CLI search,
+  answer and export, bulk filtering, and refusal to overwrite existing files.
+
+Quality checks exposed three issues fixed with regression tests: blending
+unrelated procedures sharing a system name, committing partial indexes after
+interrupted provider batches, and a long entry crowding another matching entry
+out of chunk-level candidate limits. Extraction now uses the best-supported
+entry and conservative overlap; indexing is atomic; fusion ranks entries after
+selecting each channel's best chunk.
+
+### Limits
+
+These are small fixed synthetic relevance checks, not a broad relevance
+benchmark. Offline hashing is not semantic understanding. Provider adapters and
+model evidence selection were tested with doubles; no paid/live provider call
+was made. Exact filtered vector search favors correctness at this corpus size;
+large-corpus latency and production load are not measured. A real-model note's
+faithfulness remains a phase-2 quality concern. Identity is configured bearer
+tokens rather than SSO; rotation requires a service restart. No changes were
+made to `evals/scenarios/` or `evals/golden/`.
+
+### Implementation references checked
+
+- [PostgreSQL 16 text search controls](https://www.postgresql.org/docs/16/textsearch-controls.html)
+- [pgvector exact search and filtering](https://github.com/pgvector/pgvector)
+- [LiteLLM embeddings, dimensions and response format](https://docs.litellm.ai/docs/embedding/supported_embedding)
+
+
+### Final verification
+
+- `uv run pytest -q`: **343 passed** (157 deselected).
+- `uv run pytest -q -m db`: **151 passed** (349 deselected), disposable schemas.
+- `uv run ruff check .`: passed.
+- `uv run ruff format --check .`: 208 files formatted.
+- `uv run mypy`: passed, 127 source/test files checked.
+- `uv run pytest -q -m infra`: **5 passed** (495 deselected).
+
+All five tasks are complete. Apply `uv run eki migrate`, configure bearer
+identities and assign run ownership before using the protected API. See
+`CLAUDE.md` and `.env.example` for operation and configuration.
