@@ -115,8 +115,8 @@ async def test_selected_mail_to_approved_runbook_and_audited_access(scratch: Scr
         f"/entries/{entry.id}/approve", headers=headers("owner"), json={"approved_by": OWNER.name}
     )
     assert approved.status_code == 200
-    search = client.get(
-        "/runbook/search", headers=headers("reader"), params={"q": "ledger-db backup"}
+    search = client.post(
+        "/runbook/search", headers=headers("reader"), json={"query": "ledger-db backup"}
     )
     assert search.status_code == 200 and search.json()["results"][0]["id"] == entry.id
     answer = client.post(
@@ -150,8 +150,8 @@ async def test_selected_mail_to_approved_runbook_and_audited_access(scratch: Scr
     assert edited.status_code == 200 and edited.json()["status"] == "draft"
     assert client.get(f"/entries/{entry.id}/markdown", headers=headers("reader")).status_code == 404
     assert (
-        client.get(
-            "/runbook/search", headers=headers("reader"), params={"q": "ledger-db backup"}
+        client.post(
+            "/runbook/search", headers=headers("reader"), json={"query": "ledger-db backup"}
         ).json()["results"]
         == []
     )

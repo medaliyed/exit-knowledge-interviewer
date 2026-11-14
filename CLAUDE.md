@@ -187,9 +187,12 @@ Local ingest, interview, review and ACL administration retain operator access.
 
 ### Search and answer
 
-- `GET /runbook/search?q=...&limit=5`: accessible approved entries with matched
-  section, snippet, citations, score, version and embedding model identifier.
-  Query length is 1–2000 characters; limit is 1–50.
+- `POST /runbook/search` with `{"query":"month-end reconciliation","limit":5}`:
+  accessible approved entries with matched section, snippet, citations, score,
+  version and embedding model identifier. Query length is 1–2000 characters;
+  limit is 1–50. The query is in the body, never in the URL: web servers log
+  URLs before anything is redacted. `GET` is refused with 405, and the access
+  log keeps only the path of any URL (`eki.api.access_log`).
 - `POST /runbook/ask` with `{"question":"How do I roll back reconciliation?"}`:
   returns `answered` or `insufficient_evidence`, exact claim text and structured
   evidence with entry version, section, claim index and interview citations.

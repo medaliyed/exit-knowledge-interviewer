@@ -1,7 +1,7 @@
 # Search the runbook and ask a question
 
-**Trigger:** `POST /runbook/ask` (`src/eki/api/app.py:459`) or `eki ask "..."`.
-Search alone is `GET /runbook/search?q=...` (`src/eki/api/app.py:452`) or
+**Trigger:** `POST /runbook/ask` (`src/eki/api/app.py:469`) or `eki ask "..."`.
+Search alone is `POST /runbook/search` (`src/eki/api/app.py:459`) or
 `eki search "..."`; it is steps 1 to 9 of this flow.
 **Outcome:** an answer made of exact approved claims with their citations, or
 `insufficient_evidence`. Nothing is written except the search index and audit
@@ -112,8 +112,9 @@ sequenceDiagram
 - **Search and answers never read the interview transcript.** Citations are
   returned as references (session and turn number), not expanded.
 
-> **Known issue:** `GET /runbook/search` carries the query in the URL. The
-> query is redacted inside the service, but a web server's access log records
-> request URLs, and no access-log configuration was found in this repository.
-> A secret typed into a search can therefore reach the server log unredacted.
-> `POST /runbook/ask` sends its question in the body and is not affected.
+- **Nothing typed reaches the server log.** Search and ask both take their
+  text in the request body. The web server logs each request's URL before the
+  application runs, so the access log is filtered to keep only the path; a
+  query string anyone sends is replaced by `[query not logged]`
+  (`src/eki/api/access_log.py:15`). Until 2026-11-14 search took `?q=` in the
+  URL and a secret in a search reached the log unredacted.

@@ -1,7 +1,7 @@
 # Review and approve a runbook entry
 
 **Trigger:** `GET /entries/{id}` then `POST /entries/{id}/approve`
-(`src/eki/api/app.py:294`, `src/eki/api/app.py:314`), or `eki review --plan ID`
+(`src/eki/api/app.py:301`, `src/eki/api/app.py:321`), or `eki review --plan ID`
 (`src/eki/cli.py:400`)
 **Outcome:** the entry's status becomes `approved` with a new version, a row
 in `entry_decisions` and an audit event. From then on the entry is visible to
@@ -62,7 +62,7 @@ sequenceDiagram
    `src/eki/runbook/faithfulness.py:106`). It is a word comparison with no
    model. It is advisory: it never blocks approval.
 4. **Reviewer name** (after step 6) - the name in the request body must equal the
-   name bound to the token (`src/eki/api/app.py:198`).
+   name bound to the token (`src/eki/api/app.py:205`).
 5. **Locks** (step 8) - session first, then entry, the same order as edits,
    corrections and synthesis, so they cannot interleave
    (`src/eki/runbook/service.py:155`).
@@ -95,7 +95,7 @@ the run, or as `--review-as NAME`, and the same approval rules apply
 | --- | --- | --- |
 | No or unknown token | 401 | `src/eki/api/security.py:66` |
 | Caller is not the owner or an admin | 404, the same as a missing entry | `src/eki/api/security.py:75` |
-| `approved_by` differs from the token's name | 422; nothing written | `src/eki/api/app.py:198` |
+| `approved_by` differs from the token's name | 422; nothing written | `src/eki/api/app.py:205` |
 | Reviewer is not the run's expert | 422; nothing written | `src/eki/runbook/review.py:18` |
 | Entry is already approved or rejected | 409 "edit it first" | `src/eki/runbook/review.py:23` |
 | A section is empty, or a claim has no citation | 422; nothing written | `src/eki/runbook/review.py:32`, `src/eki/runbook/models.py:161` |
@@ -110,7 +110,7 @@ the run, or as `--review-as NAME`, and the same approval rules apply
   does record the token's stable subject.
 - **The faithfulness result is not stored.** It is recomputed on every read
   from the current transcript. Readers never receive it
-  (`src/eki/api/app.py:295`).
+  (`src/eki/api/app.py:302`).
 - **A correction to a cited answer reopens approval.** It replaces the claim
   text and returns the entry to draft (`src/eki/runbook/service.py:250`).
 - **Approved entries are indexed lazily**, on the next search; see

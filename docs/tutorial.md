@@ -647,7 +647,8 @@ uv run uvicorn eki.api.app:app --reload
 ```
 
 Open <http://localhost:8000/docs>, press **Authorize** and paste the token
-from step 9b. Then try `GET /runbook/search` with `q` set to `rounding`.
+from step 9b. Then try `POST /runbook/search` with the body
+`{"query": "rounding"}`.
 
 ## No provider key?
 

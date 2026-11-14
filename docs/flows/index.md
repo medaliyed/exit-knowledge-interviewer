@@ -40,9 +40,6 @@ These are single-component operations. A sentence is enough.
 
 Things the flow pages flag. Each is cited on its page.
 
-- **Search query in the URL** can reach the web server's access log before
-  redaction. No access-log configuration exists in the repository.
-  ([search-and-ask.md](search-and-ask.md))
 - **Approval is bound to a display name**, not to an account.
   ([review-entry.md](review-entry.md))
 - **A failed plan draft discards all drafted questions**; a retry pays for

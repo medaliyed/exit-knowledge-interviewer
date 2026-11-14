@@ -12,6 +12,7 @@ from eki.search.service import SearchService
 from tests.conftest import Scratch
 from tests.interview_support import make_service, say
 from tests.search_support import OWNER, READER, STRANGER, search_world
+from tests.support import FAKE_CREDENTIALS
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
 
@@ -103,18 +104,30 @@ async def test_search_api_and_cross_run_filtering(scratch: Scratch) -> None:
         access.set_readers(conn, hidden.run_id, [], OWNER)
     service = SearchService(scratch.dsn)
     client = TestClient(create_app(search_service=service, authenticator=authenticator()))
-    response = client.get(
-        "/runbook/search", params={"q": "reconciliation"}, headers=headers("reader")
+    response = client.post(
+        "/runbook/search", json={"query": "reconciliation"}, headers=headers("reader")
     )
     assert response.status_code == 200, response.text
     assert [UUID(h["id"]) for h in response.json()["results"]] == [first.billing]
-    assert client.get("/runbook/search", params={"q": "reconciliation"}).status_code == 401
+    assert client.post("/runbook/search", json={"query": "reconciliation"}).status_code == 401
     assert (
-        client.get(
-            "/runbook/search", params={"q": "reconciliation", "limit": 0}, headers=headers("reader")
+        client.post(
+            "/runbook/search",
+            json={"query": "reconciliation", "limit": 0},
+            headers=headers("reader"),
         ).status_code
         == 422
     )
+    # The query never travels in a URL: the old form is refused before any search.
+    refused = client.get(
+        "/runbook/search", params={"q": "reconciliation"}, headers=headers("reader")
+    )
+    assert refused.status_code == 405
+    leak = "password=" + FAKE_CREDENTIALS[1]
+    invalid = client.post(
+        "/runbook/search", json={"query": leak, "extra": leak}, headers=headers("reader")
+    )
+    assert invalid.status_code == 422 and FAKE_CREDENTIALS[1] not in invalid.text
 
 
 async def test_provider_failure_cannot_leave_a_partially_indexed_entry(scratch: Scratch) -> None:

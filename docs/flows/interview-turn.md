@@ -1,6 +1,6 @@
 # One interview turn
 
-**Trigger:** `POST /sessions/{id}/messages` (`src/eki/api/app.py:399`), or a
+**Trigger:** `POST /sessions/{id}/messages` (`src/eki/api/app.py:406`), or a
 line typed in `eki interview --plan ID` (`src/eki/cli.py:332`)
 **Outcome:** the expert's answer stored as a turn, notes or open items for the
 sections it covered, and either the next question or, after the last topic, a

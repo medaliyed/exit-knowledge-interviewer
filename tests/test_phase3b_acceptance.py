@@ -89,7 +89,7 @@ async def test_real_fixture_search_answers_and_exports(world: World) -> None:
         ),
     )
     for query, gap, question, section, phrase in cases:
-        response = client.get("/runbook/search", params={"q": query}, headers=headers("reader"))
+        response = client.post("/runbook/search", json={"query": query}, headers=headers("reader"))
         assert response.status_code == 200
         hits = response.json()["results"]
         expected = entries[world.topic_of(gap)].id
@@ -115,8 +115,10 @@ async def test_real_fixture_search_answers_and_exports(world: World) -> None:
         assert private_text not in str(indexed)
         assert all(secret not in str(indexed) for secret in FAKE_CREDENTIALS)
     assert (
-        client.get(
-            "/runbook/search", params={"q": "month-end reconciliation"}, headers=headers("stranger")
+        client.post(
+            "/runbook/search",
+            json={"query": "month-end reconciliation"},
+            headers=headers("stranger"),
         ).json()["results"]
         == []
     )
@@ -129,8 +131,8 @@ async def test_real_fixture_search_answers_and_exports(world: World) -> None:
     with world.scratch.connect() as conn:
         access.set_readers(conn, world.run_id, [], OWNER)
     assert (
-        client.get(
-            "/runbook/search", params={"q": "month-end reconciliation"}, headers=headers("reader")
+        client.post(
+            "/runbook/search", json={"query": "month-end reconciliation"}, headers=headers("reader")
         ).json()["results"]
         == []
     )

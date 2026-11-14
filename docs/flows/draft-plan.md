@@ -1,7 +1,7 @@
 # Draft an interview plan
 
 **Trigger:** `eki plan --run ID` (`src/eki/cli.py:280`) or `POST /runs/{id}/plan`
-(`src/eki/api/app.py:359`)
+(`src/eki/api/app.py:366`)
 **Outcome:** a draft `interview_plans` row holding the 10 highest-scoring
 topics, plus any other topic whose sources contradict each other, with up to
 5 drafted questions each; and a workflow stopped at the plan review.
@@ -69,7 +69,7 @@ sequenceDiagram
     approval (`src/eki/graph/workflow.py:173`).
 
 After this the expert can remove, add and reorder topics with
-`PATCH /plans/{id}` (`src/eki/api/app.py:368`) until the plan is approved.
+`PATCH /plans/{id}` (`src/eki/api/app.py:375`) until the plan is approved.
 Approval freezes the plan, opens the session and asks the first question
 (`src/eki/interview/service.py:184`); from there see
 [interview-turn.md](interview-turn.md).

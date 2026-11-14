@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from eki import __version__, access
+from eki.api import access_log
 from eki.api.security import identity, install_security
 from eki.audit import AuditError, list_events
 from eki.auth import Authenticator, ForbiddenError, TokenAuthenticator
@@ -102,6 +103,11 @@ class RunbookQuestion(_Body):
     question: str
 
 
+class RunbookSearch(_Body):
+    query: str
+    limit: int = 5
+
+
 class Readers(_Body):
     readers: list[str]
 
@@ -178,6 +184,7 @@ def create_app(
 ) -> FastAPI:
     """The application. Without ``service`` one is built from settings on first use."""
     app = AuthenticatedAPI(title="Exit-Knowledge Interviewer", version=__version__)
+    access_log.install()
 
     def database_dsn() -> str:
         if answer_service is not None:
@@ -448,11 +455,14 @@ def create_app(
 
         return await operation(work)
 
-    @app.get("/runbook/search")
+    @app.post("/runbook/search")
     async def search_entries(
-        q: str, request: Request, search: Search, limit: int = 5
+        body: RunbookSearch, request: Request, search: Search
     ) -> dict[str, object]:
-        hits = await operation(lambda: search.search(identity(request), q, limit=limit))
+        """Search approved entries. The query is in the body so it never appears in a URL."""
+        hits = await operation(
+            lambda: search.search(identity(request), body.query, limit=body.limit)
+        )
         return {"results": [h.public() for h in hits], "embedding_model": search.embedder.name}
 
     @app.post("/runbook/ask")
