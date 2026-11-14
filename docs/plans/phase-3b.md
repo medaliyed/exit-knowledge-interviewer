@@ -52,7 +52,7 @@ that instruction authorizes proceeding without another approval round.
   tests including immediate edit/correction/revocation visibility changes.
 - [x] c / F11: cited extractive Q&A, optional evidence selector, answer API/CLI,
   abstention, injection/forged citations/redaction and in-flight revocation tests.
-- [ ] d / F12: safe Markdown renderer and gated API/CLI exports; citations,
+- [x] d / F12: safe Markdown renderer and gated API/CLI exports; citations,
   complete template, open questions, approval/access and file safety tests.
 - [ ] e / P3b: fixture end-to-end acceptance (ranking and useful answers), all
   static/unit/database/infra checks, documentation and honest quality report.

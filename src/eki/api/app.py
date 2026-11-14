@@ -14,7 +14,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
@@ -34,6 +34,7 @@ from eki.interview.service import (
     build_service,
 )
 from eki.llm import ModelError
+from eki.runbook.export import ExportService
 from eki.runbook.models import SECTION_NAMES, SectionName
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
@@ -425,6 +426,29 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="invalid question") from exc
         return answer.model_dump(mode="json")
+
+    def markdown_response(content: str, filename: str) -> Response:
+        return Response(
+            content,
+            media_type="text/markdown",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @app.get("/entries/{entry_id}/markdown")
+    async def export_entry(entry_id: UUID, request: Request, search: Search) -> Response:
+        exports = ExportService(search.dsn, search.work_email_domains)
+        content = await operation(lambda: exports.entry(identity(request), entry_id))
+        return markdown_response(content, f"runbook-{entry_id}.md")
+
+    @app.get("/runbook/export")
+    async def export_run(run_id: UUID, request: Request, search: Search) -> Response:
+        exports = ExportService(search.dsn, search.work_email_domains)
+        content = await operation(lambda: exports.run(identity(request), run_id))
+        return markdown_response(content, f"runbook-{run_id}.md")
 
     return app
 

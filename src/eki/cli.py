@@ -49,6 +49,7 @@ from eki.llm import ModelError
 from eki.mapping.scoring import score_topics
 from eki.mapping.store import load_mapping, save_mapping
 from eki.mapping.topics import build_topics
+from eki.runbook.export import ExportService
 from eki.runbook.models import SECTION_NAMES, EntryStatus, InterviewTurnCitation
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
@@ -112,6 +113,13 @@ def _parser() -> argparse.ArgumentParser:
     ask = commands.add_parser("ask", help="answer from cited approved runbook claims")
     ask.add_argument("question")
     ask.add_argument("--json", action="store_true")
+    export = commands.add_parser("export", help="export accessible approved entries as Markdown")
+    selection = export.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--entry", type=UUID)
+    selection.add_argument("--run", type=UUID)
+    export.add_argument(
+        "--output", type=Path, help="new file; existing files are never overwritten"
+    )
     return parser
 
 
@@ -432,7 +440,7 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
-        if arguments.command in ("search", "ask"):
+        if arguments.command in ("search", "ask", "export"):
             settings = get_settings()
             credential = settings.api_token
             if credential is None or not credential.get_secret_value():
@@ -440,6 +448,28 @@ def main(argv: list[str] | None = None) -> int:
             principal = TokenAuthenticator(settings.api_tokens.get_secret_value()).authenticate(
                 "Bearer " + credential.get_secret_value()
             )
+            if arguments.command == "export":
+                exports = ExportService(
+                    settings.database_url.get_secret_value(), work_domains(settings)
+                )
+                content = (
+                    exports.entry(principal, arguments.entry)
+                    if arguments.entry
+                    else exports.run(principal, arguments.run)
+                )
+                if arguments.output is None:
+                    print(content, end="")
+                else:
+                    try:
+                        with arguments.output.open("x", encoding="utf-8") as output:
+                            output.write(content)
+                    except OSError:
+                        return _fail(
+                            "cannot create output file; check permissions "
+                            "and that it does not exist"
+                        )
+                    print(f"Exported to {arguments.output}")
+                return 0
             search = build_search(settings)
             if arguments.command == "ask":
                 answer = asyncio.run(

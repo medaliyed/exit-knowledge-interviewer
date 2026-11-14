@@ -3,6 +3,7 @@
 import json
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from urllib.parse import quote
 
 import pytest
@@ -344,5 +345,48 @@ def test_entries_and_review_quit_resume(
         typed(monkeypatch)
         assert main(["review", *args]) == 0
         assert "No draft entries" in capsys.readouterr().out
+    finally:
+        get_settings.cache_clear()
+
+
+def test_search_ask_export_cli_authentication_and_file_safety(
+    scratch: Scratch,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from tests.search_support import search_world
+    from tests.test_api_access import TOKENS
+
+    world = asyncio.run(search_world(scratch))
+    monkeypatch.setenv("EKI_DATABASE_URL", scratch.dsn)
+    monkeypatch.setenv("EKI_MODEL_EMBEDDING", "")
+    monkeypatch.setenv("EKI_MODEL_ANSWERER", "")
+    monkeypatch.setenv(
+        "EKI_API_TOKENS",
+        json.dumps([{"token": TOKENS["reader"], "subject": "reader", "name": "Reader"}]),
+    )
+    monkeypatch.setenv("EKI_API_TOKEN", TOKENS["reader"])
+    get_settings.cache_clear()
+    try:
+        assert main(["search", "reconciliation", "--json"]) == 0
+        assert json.loads(capsys.readouterr().out)["results"][0]["id"] == str(world.billing)
+        assert main(["ask", "How do I roll back reconciliation?", "--json"]) == 0
+        answer = json.loads(capsys.readouterr().out)
+        assert answer["status"] == "answered" and answer["evidence"]
+        assert main(["export", "--entry", str(world.billing)]) == 0
+        assert "[^source-" in capsys.readouterr().out
+        path = tmp_path / "runbook.md"
+        assert main(["export", "--run", str(world.run_id), "--output", str(path)]) == 0
+        original = path.read_text()
+        assert "Unapproved payroll" not in original and "Gateway certificate" in original
+        assert main(["export", "--run", str(world.run_id), "--output", str(path)]) == 1
+        assert path.read_text() == original
+        monkeypatch.setenv("EKI_API_TOKEN", "invalid")
+        get_settings.cache_clear()
+        assert main(["search", "reconciliation"]) == 2
+        assert TOKENS["reader"] not in capsys.readouterr().err
     finally:
         get_settings.cache_clear()

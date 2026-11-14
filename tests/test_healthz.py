@@ -18,6 +18,8 @@ def test_api_routes_are_exactly_these() -> None:
         "/healthz",
         "/runbook/search",
         "/runbook/ask",
+        "/runbook/export",
+        "/entries/{entry_id}/markdown",
         "/runs/{run_id}/access",
         "/runs/{run_id}/owner",
         "/sessions/{session_id}/synthesise",

@@ -72,4 +72,7 @@ def install_security(
             )
         except NotFoundError:
             return JSONResponse(status_code=404, content={"detail": "resource not found"})
-        return await following(request)
+        response = await following(request)
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Vary"] = "Authorization"
+        return response
