@@ -1,7 +1,7 @@
 """The HTTP API: liveness, plan review, interview chat and private runbook review.
 
-There is no authentication in this phase: run it on localhost only (the default
-of ``uvicorn``). Posting a message returns a Server-Sent Events stream of what
+All data routes require a configured bearer identity; run ownership and reader
+ACLs determine which data is visible. Posting a message returns a Server-Sent Events stream of what
 the interviewer did, ending with its next question, ``done`` or ``error``.
 """
 
@@ -18,7 +18,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from eki import __version__
+from eki import __version__, access
+from eki.api.security import identity, install_security
+from eki.auth import Authenticator, ForbiddenError, TokenAuthenticator
 from eki.config import ConfigError, get_settings, work_domains
 from eki.graph.workflow import db
 from eki.ingest.redaction import redact
@@ -69,6 +71,14 @@ class ExpertMessage(_Body):
     confidential: bool = False
     corrects: int | None = None
     """For ``correct``: the ordinal of the turn being corrected."""
+
+
+class Readers(_Body):
+    readers: list[str]
+
+
+class Owner(_Body):
+    subject: str
 
 
 class EntryEdit(_Body):
@@ -128,10 +138,31 @@ def _session(view: SessionView) -> dict[str, Any]:
 
 
 def create_app(
-    service: InterviewService | None = None, *, runbook_service: RunbookService | None = None
+    service: InterviewService | None = None,
+    *,
+    runbook_service: RunbookService | None = None,
+    authenticator: Authenticator | None = None,
 ) -> FastAPI:
     """The application. Without ``service`` one is built from settings on first use."""
     app = FastAPI(title="Exit-Knowledge Interviewer", version=__version__)
+
+    def database_dsn() -> str:
+        if runbook_service is not None:
+            return runbook_service.dsn
+        if service is not None:
+            return service.dsn
+        return get_settings().database_url.get_secret_value()
+
+    def get_authenticator() -> Authenticator:
+        return authenticator or TokenAuthenticator(get_settings().api_tokens.get_secret_value())
+
+    install_security(app, get_authenticator, database_dsn)
+
+    def actor(request: Request, name: str) -> None:
+        if name.strip() != identity(request).name:
+            raise HTTPException(
+                status_code=422, detail="reviewer must match the authenticated identity"
+            )
 
     @lru_cache
     def configured() -> InterviewService:
@@ -152,7 +183,7 @@ def create_app(
 
     Runbooks = Annotated[RunbookService, Depends(get_runbooks)]
 
-    async def operation(call: Callable[[], Any]) -> Any:
+    async def operation[T](call: Callable[[], T]) -> T:
         try:
             return await db(call)
         except ValidationError as exc:
@@ -188,21 +219,38 @@ def create_app(
         return [_entry_summary(e) for e in await db(books.list, session_id)]
 
     @app.get("/entries/{entry_id}")
-    async def read_entry(entry_id: UUID, books: Runbooks) -> dict[str, Any]:
+    async def read_entry(entry_id: UUID, books: Runbooks, request: Request) -> dict[str, Any]:
+        if request.state.runbook_reader:
+
+            def read() -> dict[str, Any]:
+                with books._connect() as conn:
+                    stored = access.approved_entry(conn, entry_id, identity(request))
+                return {**stored.entry.model_dump(mode="json"), "version": stored.version}
+
+            return await db(read)
         return await detail(books, entry_id)
 
     @app.patch("/entries/{entry_id}")
-    async def edit_entry(entry_id: UUID, edit: EntryEdit, books: Runbooks) -> dict[str, Any]:
+    async def edit_entry(
+        entry_id: UUID, edit: EntryEdit, books: Runbooks, request: Request
+    ) -> dict[str, Any]:
+        actor(request, edit.edited_by)
         await operation(lambda: books.edit(entry_id, edit.edited_by, edit.sections))
         return await detail(books, entry_id)
 
     @app.post("/entries/{entry_id}/approve")
-    async def approve_entry(entry_id: UUID, approval: Approval, books: Runbooks) -> dict[str, Any]:
+    async def approve_entry(
+        entry_id: UUID, approval: Approval, books: Runbooks, request: Request
+    ) -> dict[str, Any]:
+        actor(request, approval.approved_by)
         await operation(lambda: books.approve(entry_id, approval.approved_by))
         return await detail(books, entry_id)
 
     @app.post("/entries/{entry_id}/reject")
-    async def reject_entry(entry_id: UUID, rejection: Rejection, books: Runbooks) -> dict[str, Any]:
+    async def reject_entry(
+        entry_id: UUID, rejection: Rejection, books: Runbooks, request: Request
+    ) -> dict[str, Any]:
+        actor(request, rejection.rejected_by)
         await operation(lambda: books.reject(entry_id, rejection.rejected_by, rejection.reason))
         return await detail(books, entry_id)
 
@@ -222,6 +270,7 @@ def create_app(
         )
         return JSONResponse(status_code=503, content={"detail": detail})
 
+    app.add_exception_handler(ForbiddenError, error(403))
     app.add_exception_handler(NotFoundError, error(404))
     app.add_exception_handler(ConflictError, error(409))
     app.add_exception_handler(PlanFrozenError, error(409))
@@ -263,8 +312,11 @@ def create_app(
         return _plan(await service.edit_plan(plan_id, apply))
 
     @app.post("/plans/{plan_id}/approve")
-    async def approve_plan(plan_id: UUID, approval: Approval, service: Service) -> dict[str, Any]:
+    async def approve_plan(
+        plan_id: UUID, approval: Approval, service: Service, request: Request
+    ) -> dict[str, Any]:
         """Freeze the plan and open its session. Returns the session with the first question."""
+        actor(request, approval.approved_by)
         return _session(await service.approve(plan_id, approval.approved_by))
 
     @app.get("/sessions/{session_id}")
@@ -292,6 +344,36 @@ def create_app(
                 yield ServerSentEvent(data=json.dumps(event), event=str(event["type"]))
 
         return EventSourceResponse(events())
+
+    @app.get("/runs/{run_id}/access")
+    async def read_access(run_id: UUID, request: Request, books: Runbooks) -> dict[str, object]:
+        def work() -> dict[str, object]:
+            with books._connect() as conn:
+                return access.readers(conn, run_id, identity(request))
+
+        return await db(work)
+
+    @app.put("/runs/{run_id}/access")
+    async def update_access(
+        run_id: UUID, body: Readers, request: Request, books: Runbooks
+    ) -> dict[str, object]:
+        def work() -> dict[str, object]:
+            with books._connect() as conn:
+                access.set_readers(conn, run_id, body.readers, identity(request))
+                return access.readers(conn, run_id, identity(request))
+
+        return await operation(work)
+
+    @app.put("/runs/{run_id}/owner")
+    async def update_owner(
+        run_id: UUID, body: Owner, request: Request, books: Runbooks
+    ) -> dict[str, object]:
+        def work() -> dict[str, object]:
+            with books._connect() as conn:
+                access.set_owner(conn, run_id, body.subject, identity(request))
+                return access.readers(conn, run_id, identity(request))
+
+        return await operation(work)
 
     return app
 

@@ -28,8 +28,9 @@ TABLES = {
     "open_items",
     "runbook_entries",
     "entry_decisions",
+    "run_readers",
 }
-MIGRATIONS = ["0001_init.sql", "0002_interview.sql", "0003_runbook.sql"]
+MIGRATIONS = ["0001_init.sql", "0002_interview.sql", "0003_runbook.sql", "0004_access.sql"]
 
 
 def table_names(empty_conn: psycopg.Connection) -> set[str]:

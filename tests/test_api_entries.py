@@ -6,8 +6,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from eki.api.app import create_app
 from eki.runbook.service import RunbookService
+from tests.api_support import create_app
 from tests.conftest import Scratch
 from tests.interview_support import make_service, seed_run
 from tests.support import FAKE_CREDENTIALS

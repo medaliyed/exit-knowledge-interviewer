@@ -11,6 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DATABASE_URL = "postgresql://someuser:s3cr3t-pw@dbhost:5432/eki"
 EKI_VARIABLES = (
     "EKI_ENV",
+    "EKI_API_TOKENS",
+    "EKI_API_TOKEN",
     "EKI_DATABASE_URL",
     "EKI_LANGFUSE_HOST",
     "EKI_LANGFUSE_PUBLIC_KEY",

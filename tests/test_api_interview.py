@@ -8,10 +8,10 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from eki.api.app import create_app
 from eki.graph.workflow import Limits
 from eki.interview import store
 from eki.llm import ModelError, Reply
+from tests.api_support import create_app
 from tests.conftest import Scratch
 from tests.fakes import ScriptedModel, tool_reply
 from tests.interview_support import TOPIC_IDS, make_service, seed_run
@@ -130,7 +130,10 @@ def test_unknown_ids_give_404(api: Api) -> None:
     assert client.post(f"/runs/{missing}/plan").status_code == 404
     assert client.get(f"/plans/{missing}").status_code == 404
     assert client.patch(f"/plans/{missing}", json={}).status_code == 404
-    assert client.post(f"/plans/{missing}/approve", json={"approved_by": "N"}).status_code == 404
+    assert (
+        client.post(f"/plans/{missing}/approve", json={"approved_by": "Nadia Ferrand"}).status_code
+        == 404
+    )
     assert client.get(f"/sessions/{missing}").status_code == 404
     message = {"action": "answer", "text": "hi"}
     assert client.post(f"/sessions/{missing}/messages", json=message).status_code == 404

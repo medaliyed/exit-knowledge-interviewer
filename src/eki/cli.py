@@ -26,6 +26,8 @@ from uuid import UUID
 
 import psycopg
 
+from eki import access
+from eki.auth import Principal
 from eki.config import ConfigError, get_settings, work_domains
 from eki.db import connect, migrate
 from eki.graph.workflow import setup_checkpoints
@@ -95,6 +97,12 @@ def _parser() -> argparse.ArgumentParser:
     review = commands.add_parser("review", help="review draft runbook entries; quit and resume")
     review.add_argument("--plan", type=UUID, required=True)
     review.add_argument("--review-as", help="reviewer's name (default: the run's expert)")
+    permissions = commands.add_parser("access", help="set run ownership/readers (local operator)")
+    permissions.add_argument("--run", type=UUID, required=True)
+    permissions.add_argument("--owner")
+    permissions.add_argument(
+        "--readers", nargs="*", default=None, help="replace reader subjects; empty revokes all"
+    )
     return parser
 
 
@@ -420,6 +428,14 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.command in ("plan", "interview"):
             return _interview_commands(arguments)
         with connect(get_settings()) as conn:
+            if arguments.command == "access":
+                operator = Principal("local-operator", "Local operator", True)
+                if arguments.owner is not None:
+                    access.set_owner(conn, arguments.run, arguments.owner, operator)
+                if arguments.readers is not None:
+                    access.set_readers(conn, arguments.run, arguments.readers, operator)
+                print(json.dumps(access.readers(conn, arguments.run, operator)))
+                return 0
             if arguments.command == "migrate":
                 return _migrate(conn)
             if arguments.command == "ingest":
@@ -429,7 +445,7 @@ def main(argv: list[str] | None = None) -> int:
             return _gaps(conn, arguments)
     except ConfigError as error:
         return _fail(str(error), USAGE_ERROR)
-    except (IngestError, NotFoundError, ConflictError) as error:
+    except (IngestError, NotFoundError, ConflictError, ValueError) as error:
         return _fail(str(error))
     except ModelError:
         return _fail("the model could not be reached; nothing was lost, run the command again")

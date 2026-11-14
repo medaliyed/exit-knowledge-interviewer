@@ -5,9 +5,9 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from eki.api.app import create_app
 from eki.runbook.models import SECTION_NAMES, InterviewTurnCitation
 from eki.runbook.service import RunbookService
+from tests.api_support import create_app
 from tests.fakes import SimulatedExpert, expert_answers
 from tests.support import FAKE_CREDENTIALS
 from tests.test_phase2_acceptance import World, reviewed_plan

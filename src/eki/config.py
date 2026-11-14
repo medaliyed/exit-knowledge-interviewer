@@ -22,6 +22,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    api_tokens: SecretStr = SecretStr("[]")
+    api_token: SecretStr | None = None
+
     env: Literal["dev", "test", "prod"] = "dev"
     database_url: SecretStr
     langfuse_host: str = "http://localhost:3000"
