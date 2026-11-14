@@ -129,8 +129,8 @@ An edit replaces the claims or the open question of one or more sections. It is 
 | `POST /entries/{entry_id}/approve` | Approve |
 | `POST /entries/{entry_id}/reject` | Reject with a reason |
 
-- [ ] Failing tests: the full flow from a finished interview to an approved entry; 404 for unknown IDs; 409 for a decision that no longer applies and for an unfinished session; 422 for a bad edit, a missing reason and a wrong approver; no response contains a planted secret or a confidential answer; the route list test is updated.
-- [ ] Implement. Commit `feat(P3-f): runbook entry review API`.
+- [x] Failing tests: the full flow from a finished interview to an approved entry; 404 for unknown IDs; 409 for a decision that no longer applies and for an unfinished session; 422 for a bad edit, a missing reason and a wrong approver; no response contains a planted secret or a confidential answer; the route list test is updated.
+- [x] Implement. Commit `feat(P3-f): runbook entry review API`.
 
 ### Task g: Command line
 

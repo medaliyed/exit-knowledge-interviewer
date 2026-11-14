@@ -6,18 +6,21 @@ the interviewer did, ending with its next question, ``done`` or ``error``.
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from dataclasses import asdict
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from eki import __version__
-from eki.config import ConfigError, get_settings
+from eki.config import ConfigError, get_settings, work_domains
+from eki.graph.workflow import db
 from eki.ingest.redaction import redact
 from eki.interview.models import InterviewPlan
 from eki.interview.plan import PlanError, PlanFrozenError, add_topic, remove_topic, reorder
@@ -29,6 +32,10 @@ from eki.interview.service import (
     build_service,
 )
 from eki.llm import ModelError
+from eki.runbook.models import SECTION_NAMES, SectionName
+from eki.runbook.review import SectionEdit
+from eki.runbook.service import RunbookService
+from eki.runbook.store import StoredEntry
 
 CONFIDENTIAL = "[confidential]"
 
@@ -64,6 +71,31 @@ class ExpertMessage(_Body):
     """For ``correct``: the ordinal of the turn being corrected."""
 
 
+class EntryEdit(_Body):
+    edited_by: str
+    sections: dict[SectionName, SectionEdit]
+
+
+class Rejection(_Body):
+    rejected_by: str
+    reason: str
+
+
+def _entry_summary(stored: StoredEntry) -> dict[str, Any]:
+    entry = stored.entry
+    return {
+        "id": entry.id,
+        "topic_id": entry.topic_id,
+        "title": entry.title,
+        "status": entry.status.value,
+        "version": stored.version,
+        "claim_count": sum(len(entry.section(n).claims) for n in SECTION_NAMES),
+        "open_question_count": sum(
+            entry.section(n).open_question is not None for n in SECTION_NAMES
+        ),
+    }
+
+
 def _plan(plan: InterviewPlan) -> dict[str, Any]:
     return plan.model_dump(mode="json")
 
@@ -95,7 +127,9 @@ def _session(view: SessionView) -> dict[str, Any]:
     }
 
 
-def create_app(service: InterviewService | None = None) -> FastAPI:
+def create_app(
+    service: InterviewService | None = None, *, runbook_service: RunbookService | None = None
+) -> FastAPI:
     """The application. Without ``service`` one is built from settings on first use."""
     app = FastAPI(title="Exit-Knowledge Interviewer", version=__version__)
 
@@ -107,6 +141,70 @@ def create_app(service: InterviewService | None = None) -> FastAPI:
         return service if service is not None else configured()
 
     Service = Annotated[InterviewService, Depends(get_service)]
+
+    def get_runbooks() -> RunbookService:
+        if runbook_service is not None:
+            return runbook_service
+        if service is not None:
+            return RunbookService(service.dsn, service.work_email_domains)
+        settings = get_settings()
+        return RunbookService(settings.database_url.get_secret_value(), work_domains(settings))
+
+    Runbooks = Annotated[RunbookService, Depends(get_runbooks)]
+
+    async def operation(call: Callable[[], Any]) -> Any:
+        try:
+            return await db(call)
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail="invalid runbook change") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    async def detail(books: RunbookService, entry_id: UUID) -> dict[str, Any]:
+        def work() -> dict[str, Any]:
+            stored = books.get(entry_id)
+            return {
+                **stored.entry.model_dump(mode="json"),
+                "session_id": str(stored.session_id),
+                "version": stored.version,
+                "rejection_reason": stored.rejection_reason,
+                "decisions": [asdict(d) for d in books.history(entry_id)],
+            }
+
+        return await db(work)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Pydantic normally echoes rejected input, which may contain an unredacted secret.
+        return JSONResponse(status_code=422, content={"detail": "Invalid request value"})
+
+    @app.post("/sessions/{session_id}/synthesise")
+    async def synthesise_entries(session_id: UUID, books: Runbooks) -> list[dict[str, Any]]:
+        entries = await operation(lambda: books.synthesise(session_id))
+        return [_entry_summary(e) for e in entries]
+
+    @app.get("/sessions/{session_id}/entries")
+    async def list_entries(session_id: UUID, books: Runbooks) -> list[dict[str, Any]]:
+        return [_entry_summary(e) for e in await db(books.list, session_id)]
+
+    @app.get("/entries/{entry_id}")
+    async def read_entry(entry_id: UUID, books: Runbooks) -> dict[str, Any]:
+        return await detail(books, entry_id)
+
+    @app.patch("/entries/{entry_id}")
+    async def edit_entry(entry_id: UUID, edit: EntryEdit, books: Runbooks) -> dict[str, Any]:
+        await operation(lambda: books.edit(entry_id, edit.edited_by, edit.sections))
+        return await detail(books, entry_id)
+
+    @app.post("/entries/{entry_id}/approve")
+    async def approve_entry(entry_id: UUID, approval: Approval, books: Runbooks) -> dict[str, Any]:
+        await operation(lambda: books.approve(entry_id, approval.approved_by))
+        return await detail(books, entry_id)
+
+    @app.post("/entries/{entry_id}/reject")
+    async def reject_entry(entry_id: UUID, rejection: Rejection, books: Runbooks) -> dict[str, Any]:
+        await operation(lambda: books.reject(entry_id, rejection.rejected_by, rejection.reason))
+        return await detail(books, entry_id)
 
     def error(status: int) -> Any:
         async def handler(request: Request, exc: Exception) -> JSONResponse:
