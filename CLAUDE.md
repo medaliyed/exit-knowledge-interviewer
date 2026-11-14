@@ -10,7 +10,9 @@ runbook. The expert prunes the plan and approves every entry.
 Full requirements (F1-F13), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
 Architecture and diagrams: `docs/architecture.md`. Runtime flows, one page
-each with a sequence diagram: `docs/flows/`. How to run it: `README.md`.
+each with a sequence diagram: `docs/flows/`. How to run it: `README.md`;
+first-run walkthrough for a new user: `docs/tutorial.md` (its output blocks
+were captured from a real run; re-capture them when CLI output changes).
 
 ## Stack
 

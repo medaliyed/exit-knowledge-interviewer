@@ -13,6 +13,7 @@ connector to a live mailbox, Git host or issue tracker.
 
 | Read | For |
 | --- | --- |
+| [docs/tutorial.md](docs/tutorial.md) | **Start here.** Your first run, step by step, with the output to expect |
 | [docs/PDR.md](docs/PDR.md) | Requirements F1 to F13, stack, phases, current status |
 | [docs/architecture.md](docs/architecture.md) | Pipeline, components, workflow graph, data model, with diagrams |
 | [docs/flows/](docs/flows/index.md) | What happens at runtime, one sequence diagram per flow, and known gaps |
@@ -79,7 +80,7 @@ python -c 'import secrets; print(secrets.token_urlsafe(32))'   # make a token
 Put the token in `.env`:
 
 ```bash
-EKI_API_TOKENS=[{"token":"THE_TOKEN","subject":"nadia","name":"Nadia Ferrand"}]
+EKI_API_TOKENS='[{"token":"THE_TOKEN","subject":"nadia","name":"Nadia Ferrand"}]'
 EKI_API_TOKEN=THE_TOKEN
 ```
 

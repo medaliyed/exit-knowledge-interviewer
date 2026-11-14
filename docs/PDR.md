@@ -76,7 +76,7 @@ Added after the phases: synthesis keeps drafts the expert edited by hand
 (F10), and review lists claims that say more than the answer they cite (F9).
 
 How it is built and how it behaves at runtime: `docs/architecture.md` and
-`docs/flows/`. How to run it: `README.md`.
+`docs/flows/`. How to run it: `README.md` and, for a first run, `docs/tutorial.md`.
 
 Still open:
 
