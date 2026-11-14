@@ -170,6 +170,14 @@ The interviewer's tools (`src/eki/interview/tools.py:30`):
 
 None of them approves, publishes, sends or writes to a source system.
 
+The expert browser workspace (`eki.web`) is served by FastAPI and calls the
+same authenticated API. Message receipts and stored redacted model replies
+provide durable delivery; per-topic generation records provide drafting recovery.
+See [message delivery](flows/message-delivery.md) and
+[plan generation](flows/draft-plan.md) for their replay boundaries. Artifact
+queries use the model identity saved with their run; explicit reindexing replaces
+that index/model pair atomically.
+
 ## Runbook entries
 
 One entry per plan topic, seven sections each. A section holds claims or one
@@ -231,6 +239,9 @@ erDiagram
 | `runbook_entries`, `entry_decisions` | 0003, 0008 | synthesis and review |
 | `run_readers`, `ingest_runs.owner_subject` | 0004 | `eki access`, access routes |
 | `runbook_index` | 0005 | first search after an approval |
+| `message_receipts`, `interview_replies` | 0009 | durable acceptance and replay of redacted model replies |
+| `ingest_runs.artifact_embedding_model` | 0010 | artifact index/query model identity |
+| `plan_generations`, `generation_topics` | 0011 | per-topic drafting progress and recovery |
 | `audit_events` | 0006 | every model call, tool call and decision |
 | LangGraph checkpoint tables | created by `eki migrate` | the workflow |
 

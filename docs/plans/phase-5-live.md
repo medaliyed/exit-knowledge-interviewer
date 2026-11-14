@@ -36,3 +36,9 @@ not count as real-model acceptance evidence.
 
 Default tests and CI continue to use scripted providers. Human-owned
 `evals/scenarios/` and `evals/golden/` remain untouched.
+
+
+The F17 implementation added `tests/test_live_artifacts.py`: three repetitions
+of three fixed paraphrase cases, with distractor artifacts and separate offline
+hashing/semantic results. This suite has not been run against a provider; it is
+covered by the user's instruction to keep live validation pending.

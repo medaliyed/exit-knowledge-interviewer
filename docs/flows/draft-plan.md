@@ -1,99 +1,111 @@
-# Draft an interview plan
+# Draft or resume an interview plan
 
-**Trigger:** `eki plan --run ID` (`src/eki/cli.py:280`) or `POST /runs/{id}/plan`
-(`src/eki/api/app.py:366`)
-**Outcome:** a draft `interview_plans` row holding the 10 highest-scoring
-topics, plus any other topic whose sources contradict each other, with up to
-5 drafted questions each; and a workflow stopped at the plan review.
+**Trigger:** `eki plan --run ID`, `POST /runs/{id}/plan`, or resume a saved
+generation. **Outcome:** a complete draft plan, or owner-visible per-topic
+progress that can be resumed without repeating completed topics.
 
 ## What happens
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Operator
     participant Svc as InterviewService
     participant WF as Workflow
-    participant LLM as Drafter model
     participant DB as Postgres
-
-    Operator->>Svc: draft_plan(run_id)
-    Svc->>DB: is the run completed?
-    Svc->>WF: start a thread named after the new plan ID
-    WF->>DB: load artifacts, topics, gap scores
-    Note over WF: pick the top topics, find contradictions
-    loop each planned topic
-        WF->>DB: audit "model started"
-        WF->>LLM: topic and its artifacts as data
-        LLM-->>WF: questions as JSON, each with a quote
-        Note over WF: keep a question only if its quote is in the artifact
-        opt some questions were rejected
-            WF->>LLM: list of problems, ask for replacements once
-            LLM-->>WF: replacements
+    participant LLM as Drafter
+    Operator->>Svc: draft_plan(run_id, generation_id)
+    Svc->>DB: validate run and generation ownership; acquire generation lock
+    Svc->>WF: start or recover the same workflow thread
+    WF->>DB: load snapshot, mapping and any existing plan
+    Note over WF: select ranked/contradicting topics; fingerprint inputs and configuration
+    WF->>DB: save selection; reject changed inputs on resume
+    loop each selected topic
+        alt topic result already saved
+            WF->>DB: load validated questions and dropped reasons
+        else unfinished topic
+            WF->>DB: audit model attempt
+            WF->>LLM: source-grounded question request
+            LLM-->>WF: candidate questions
+            Note over WF: validate quotes; redact repair messages; retry invalid output once
+            WF->>DB: persist completed topic result
         end
-        WF->>DB: audit "model completed"
     end
-    WF->>DB: save the plan as draft
-    WF->>DB: checkpoint, stopped at plan review
-    Svc->>DB: load the plan
-    Svc-->>Operator: plan with topics and questions
+    WF->>DB: publish plan and completed generation atomically
+    WF->>DB: checkpoint at expert plan review
+    Svc-->>Operator: complete draft plan
 ```
 
-## Walkthrough
+The implementation is in `eki.graph.workflow._draft_plan`,
+`eki.interview.generation`, `eki.interview.drafting` and
+`eki.interview.service.InterviewService.draft_plan`.
 
-1. **Entry** - a new plan ID is generated; it is also the workflow's thread ID
-   (`src/eki/interview/service.py:131`).
-2. **Guard** - an unknown or unfinished run is refused before anything runs
-   (`src/eki/interview/service.py:135`).
-3. **Workflow** - this is the `draft_plan` node of the interview workflow
-   (`src/eki/graph/workflow.py:131`).
-4. **Inputs** - everything comes from the database. No source is read again.
-5. **Topic choice is plain code** - topics are ranked by gap score and cut to
-   the plan size, 10 by default. A topic below the cut is added anyway when
-   its artifacts contradict each other (`src/eki/interview/plan.py:35`,
-   `src/eki/interview/conflicts.py:62`).
-6. **One model conversation per topic** (steps 5 to 10) - the model sees up to
-   12 artifacts of the topic, already redacted, and must answer in JSON
-   (`src/eki/interview/drafting.py:134`).
-7. **Quotes are checked** (after step 7) - a question is kept only if it names a
-   shown artifact and its quote appears in that artifact
-   (`src/eki/interview/drafting.py:110`). This is what makes each question
-   traceable to what prompted it.
-8. **One retry** (steps 8 and 9) - rejected questions are sent back once with
-   the reasons. What is still wrong after that is dropped and listed on the
-   plan as `dropped` (`src/eki/interview/drafting.py:152`).
-9. **Contradictions first** - a question about two artifacts that disagree is
-   written by code, quoting both, and placed before the model's questions
-   (`src/eki/graph/workflow.py:165`).
-10. **Stop for review** (step 12) - the next node interrupts and waits for
-    approval (`src/eki/graph/workflow.py:173`).
+## Selection and question validation
 
-After this the expert can remove, add and reorder topics with
-`PATCH /plans/{id}` (`src/eki/api/app.py:375`) until the plan is approved.
-Approval freezes the plan, opens the session and asks the first question
-(`src/eki/interview/service.py:184`); from there see
-[interview-turn.md](interview-turn.md).
+The default selection is the ten highest gap scores plus any additional topic
+whose artifacts contradict each other. Each topic supplies up to twelve redacted
+artifacts to the drafter. Questions must name a shown artifact and quote it
+verbatim; unusable candidates get one repair attempt. Rejected candidates and
+all repair messages are redacted before storage or another model call. The
+code-generated contradiction question remains first. A completed topic may have
+no model questions; the interviewer can start from its description.
+
+## Durable generation and recovery
+
+Each generation uses a stable UUID, also its future plan ID and workflow thread
+ID. The CLI prints it and the exact resume command before model work. New browser
+clients choose the UUID before submitting; HTTP callers can pass
+`?generation_id=UUID` to the plan trigger. Omitting it creates a new generation.
+
+Before drafting, the workflow saves selected topic ordering and a fingerprint
+of the stored snapshot/mapping, selected plan, model name, configured drafting
+parameters, limits, work domains, actual system prompt and drafting/selection
+code. Changed inputs or configuration refuse resume and require an explicit new
+generation. Completed topic results retain their validated questions,
+contradiction questions and dropped reasons. Each saves independently of the
+next topic's model call and graph checkpoint.
+
+Model errors retain both results and the workflow thread. Generation status is
+`running`, `needs_retry` or `completed`. A dead worker releases its advisory
+lock; inspecting its individual status recognizes abandoned work. Publishing the
+complete plan and completed status is one transaction. Partial work has no
+approvable `interview_plans` row. A crash after publication can recover the
+review checkpoint without another drafting call.
+
+## Operations and permissions
+
+- `eki plan --run RUN_ID --generation-status GENERATION_ID` inspects progress
+  without constructing a model client.
+- `eki plan --run RUN_ID --resume-generation GENERATION_ID` resumes unfinished
+  topics. Running `eki plan --run RUN_ID` without resume deliberately starts a
+  new generation.
+- `GET /runs/{id}/generations` lists recent generation records.
+- `GET /runs/{id}/generations/{generation_id}` returns status, saved/total topic
+  counts and partial questions. It includes `plan_id` only after completion.
+- `POST /runs/{id}/generations/{generation_id}/resume` resumes an existing record.
+  Unknown IDs are refused. A model-error response includes `generation_id` so
+  clients can reconnect to its progress.
+
+All generation routes are owner/admin-only through the parent run's ACL.
+Cross-run generation IDs are rejected before processing. Concurrent resumes
+share the generation/plan advisory lock and cannot draft the same topics in
+parallel. The browser displays per-topic progress and offers inspect/resume
+controls for interrupted generations. Listings are bounded to 200 records.
 
 ## Failure modes
 
-| When | Behaviour | Where |
-| --- | --- | --- |
-| The run does not exist or is not completed | 404; nothing started | `src/eki/interview/service.py:135` |
-| The run was never mapped | 409 "map it before planning"; the workflow thread is deleted | `src/eki/graph/workflow.py:138`, `src/eki/interview/service.py:145` |
-| No drafter model configured | 503 from the API, exit code 2 from the CLI | `src/eki/config.py:68` |
-| The model cannot be reached | 502; the workflow thread is deleted; **no plan is saved** | `src/eki/interview/service.py:148` |
-| The model replies with something that is not the requested JSON, twice | that topic gets no model questions; the reason is listed as dropped | `src/eki/interview/drafting.py:156` |
-| Audit storage is down | 503; the model is not called | `src/eki/audit.py:234` |
+| Failure | Behavior |
+| --- | --- |
+| Unknown or unfinished run | 404 before drafting |
+| Run has no mapping | 409; no generation or plan published |
+| Model unavailable | 502 with generation ID; completed topics and checkpoints retained |
+| Inputs, model or prompt changed | 409; saved results retained; start a new generation explicitly |
+| Another worker holds the generation lock | 409; no duplicate model work |
+| Invalid question output twice | Topic result records remaining dropped reasons and any valid questions |
+| Audit unavailable | 503 before provider calls; prior topic results remain |
+| Partial generation approval attempted | 404; no approvable plan exists |
 
-The plan is saved once, after the last topic (`src/eki/graph/workflow.py:168`).
-If the model fails on topic 9 of 10, the questions already drafted for topics
-1 to 8 are discarded and a retry pays for them again.
-
-## Notes
-
-- **A topic can end up with no questions.** The plan is still valid; the
-  interviewer starts from the topic description alone.
-- **The CLI cannot edit a plan.** `eki plan` prints the plan and
-  `eki interview` approves it as it is. Pruning needs the API.
-- **Every call to this trigger makes a new plan.** A run can have several
-  plans; each approved plan has exactly one session.
+A call interrupted before its topic result is saved may repeat and be billed
+again. Completed topics do not repeat. Real-provider quality remains pending by
+user request. Migration `0011_generation.sql` adds generation records and topic
+results; existing plans/sessions remain readable. Acceptance coverage is in
+`tests/test_generation.py`.

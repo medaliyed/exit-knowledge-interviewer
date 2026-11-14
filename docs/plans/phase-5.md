@@ -11,9 +11,9 @@ and retains the existing redaction, confidentiality, approval and audit rules.
 behavior with real models, and let an expert complete the workflow in a browser.
 Then improve source retrieval and recovery during plan generation.
 
-## Problem and current baseline
+## Problem and baseline before Phase 5
 
-Phases 0–4 provide the complete pipeline against synthetic sources. The core
+At approval, phases 0–4 provided the complete pipeline against synthetic sources. The core
 workflow, access rules and publication boundaries have automated coverage, but
 several gaps prevent a dependable expert experience:
 
@@ -248,7 +248,7 @@ when behavior changes; this PDR describes planned behavior only.
 - [ ] 5b / F15: existing live checks executed, failures addressed, repeated-run evidence recorded.
 - [ ] 5c / F16: plan/chat/review/search/export UI and browser/access acceptance checks.
 - [ ] 5d / F17: artifact model identity, semantic indexing/querying, reindexing and live retrieval evidence.
-- [ ] 5e / F18: per-topic drafting persistence, resume/status operations and failure tests.
+- [x] 5e / F18: per-topic drafting persistence, resume/status operations and failure tests.
 - [ ] P5-final: migration, end-to-end acceptance, updated documentation and honest outcome report.
 
 Run the existing unit/database suites, Ruff lint/format checks, mypy and the
@@ -329,3 +329,57 @@ open until actual provider evidence is recorded.
 F17 regression results: 429 unit tests, 210 database tests and all 78
 quality/privacy checks passed. Ruff lint/format and strict mypy passed.
 No real provider calls were made; live quality remains deferred.
+
+
+### 5e / F18 — implemented 2026-11-14
+
+Generation UUIDs, frozen selection/input/configuration fingerprints, immutable
+per-topic results, partial progress, API/CLI/browser resume and atomic publication
+are implemented. Migration `0011_generation.sql` is additive. Existing complete
+plans remain editable/approvable through their original API. Generation status
+can be inspected without a configured model client.
+
+The ten-topic acceptance case fails on topic nine, retains topics 1–8 exactly,
+then completes with eleven total calls including the failed attempt. Repeated
+completed resumes make no more calls. Additional tests cover changed model,
+prompt and mapping inputs, concurrency, cross-run/reader access, CLI/HTTP recovery
+and a crash after publication but before its graph checkpoint. A planted-secret
+regression also exposed and fixed an invalid-artifact-ID echo in drafting repair
+prompts before those prompts reach a model.
+
+
+## Final implementation verification
+
+| Check | Result |
+| --- | --- |
+| Default pytest suite | 429 passed |
+| Database pytest suite | 220 passed |
+| Deterministic quality/privacy gate | 78 passed; zero failures/errors/skips |
+| Client delivery/SSE logic (`node --test tests/browser_client.test.cjs`) | 4 passed |
+| Ruff lint and format | Passed |
+| Strict mypy | Passed; 159 Python source files |
+| JavaScript syntax | Passed |
+| Documentation links and whitespace | 39 local links validated; diff check passed |
+
+The quality gate overlaps the unit/database suites. No real-provider calls were
+made. Browser submissions retain the ID of an unchanged logical payload across
+transport retries, check the receipt after a lost response, and prevent editing
+in-flight input until delivery is resolved. Changing the payload generates a
+new ID; the server still rejects stale targets or conflicting saved work.
+
+F14 and F18 meet their synthetic acceptance criteria, including actual process
+termination for message recovery and late-topic failure/publication recovery for
+plan generation. F16's UI and F17's semantic plumbing are implemented and have
+HTTP/scripted-provider/client-logic evidence. Actual browser interaction and
+visual/accessibility QA could not run because browser control was unavailable.
+F15 and real-provider F17 evidence remain deferred by the user's instruction.
+The open acceptance boxes above intentionally retain these limits; Phase 5 is
+not claimed fully accepted.
+
+Apply `uv run eki migrate` before running the upgraded CLI/API. Start
+`uv run uvicorn eki.api.app:app --reload` and open `http://localhost:8000/` for
+the workspace. Historical plans/sessions remain readable; the new migrations
+were verified in disposable schemas rather than applied to the user's main
+application database. Runtime flows, architecture, README and tutorial recovery
+examples are updated; CLI migration/generation/receipt output was re-captured
+with scripted models.

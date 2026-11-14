@@ -56,6 +56,9 @@ uv run eki gaps --run RUN_ID --limit 10
 
 # 3. Draft the interview plan (model call). Prints a plan ID.
 uv run eki plan --run RUN_ID
+# If interrupted, use the generation ID printed before drafting:
+# uv run eki plan --run RUN_ID --generation-status GENERATION_ID
+# uv run eki plan --run RUN_ID --resume-generation GENERATION_ID
 
 # 4. Approve the plan and answer the questions (model calls).
 #    /skip, /confidential ANSWER, /correct TURN TEXT, /quit to continue later.
@@ -136,6 +139,7 @@ uv run pytest -q -m db                                  # database tests; needs 
 uv run python evals/run.py --junit reports/quality.xml  # quality and red-team gate
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
+node --test tests/browser_client.test.cjs  # client delivery/SSE logic; optional Node dev check
 ```
 
 Tests that call a real provider are opt-in and cost money. They need the model
@@ -149,7 +153,11 @@ uv run pytest -m live -s -rs
 
 ## Status
 
-All five phases are implemented and verified against the synthetic corpus with
-model doubles. Not yet done: a run against a real model, connectors to real
-sources, and a user interface. Known gaps are listed in
+Phases 0–4 and the Phase 5 code deliverables are implemented with synthetic
+acceptance coverage: durable message recovery, an expert browser workspace,
+model-aware artifact retrieval and resumable plan generation. Real-provider
+validation is deferred by user request, and visual browser QA is pending because
+browser control is unavailable. Source connectors remain synthetic. The
+[Phase 5 PDR](docs/plans/phase-5.md) records evidence and remaining acceptance
+work. Known gaps are listed in
 [docs/flows/index.md](docs/flows/index.md).

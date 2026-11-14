@@ -45,11 +45,13 @@ from eki.ingest.index import index_run
 from eki.ingest.pipeline import IngestError, ingest_from_source, load, store
 from eki.ingest.scope import Scope, validate_mail_folders
 from eki.ingest.semantic import configured as artifact_embedder
+from eki.interview import generation
 from eki.interview import store as interviews
 from eki.interview.models import InterviewPlan
 from eki.interview.service import (
     ConflictError,
     Event,
+    GenerationFailed,
     InterviewService,
     NotFoundError,
     SessionView,
@@ -114,6 +116,9 @@ def _parser() -> argparse.ArgumentParser:
 
     plan = commands.add_parser("plan", help="draft an interview plan for a mapped run")
     plan.add_argument("--run", type=UUID, required=True)
+    mode = plan.add_mutually_exclusive_group()
+    mode.add_argument("--resume-generation", type=UUID, help="resume a saved generation")
+    mode.add_argument("--generation-status", type=UUID, help="inspect progress without model calls")
 
     interview = commands.add_parser("interview", help="approve a plan and run its interview")
     interview.add_argument("--plan", type=UUID, required=True)
@@ -283,8 +288,15 @@ def _show_plan(plan: InterviewPlan) -> None:
             print(f"       dropped a drafted question: {reason}")
 
 
-async def _plan(service: InterviewService, run_id: UUID) -> int:
-    plan = await service.draft_plan(run_id)
+async def _plan(service: InterviewService, run_id: UUID, resume: UUID | None = None) -> int:
+    gid = resume or uuid4()
+    if resume is not None:
+        await service.generation_status(run_id, gid)
+    print(f"Generation {gid}. Resume with: eki plan --run {run_id} --resume-generation {gid}")
+    try:
+        plan = await service.draft_plan(run_id, generation_id=gid)
+    except GenerationFailed:
+        return _fail("Drafting paused; completed topics are saved. Use the resume command above.")
     _show_plan(plan)
     print(f"Review it, then run: eki interview --plan {plan.id}")
     return 0
@@ -396,10 +408,14 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
 
 def _interview_commands(arguments: argparse.Namespace) -> int:
     settings = get_settings()
+    if arguments.command == "plan" and arguments.generation_status is not None:
+        with connect(settings) as conn:
+            print(json.dumps(generation.read(conn, arguments.run, arguments.generation_status)))
+        return 0
     service = build_service(settings)
     try:
         if arguments.command == "plan":
-            return asyncio.run(_plan(service, arguments.run))
+            return asyncio.run(_plan(service, arguments.run, arguments.resume_generation))
         approver = arguments.approve_as or settings.expert_name
         return asyncio.run(_interview(service, arguments.plan, approver))
     finally:

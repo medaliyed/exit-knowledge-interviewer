@@ -207,13 +207,17 @@ async def test_unknown_ids_and_unmapped_runs(scratch: Scratch) -> None:
         await service.draft_plan(unmapped)
 
 
-async def test_model_failure_while_drafting_leaves_no_plan(scratch: Scratch, run_id: UUID) -> None:
+async def test_model_failure_while_drafting_retains_generation_without_publishing_plan(
+    scratch: Scratch, run_id: UUID
+) -> None:
     service = make_service(scratch.dsn, drafter=ScriptedModel([ModelError("down")]))
     with pytest.raises(ModelError):
         await service.draft_plan(run_id)
     with scratch.connect() as conn:
         assert conn.execute("SELECT count(*) FROM interview_plans").fetchone() == (0,)
-        assert conn.execute("SELECT count(*) FROM checkpoints").fetchone() == (0,)
+        count = conn.execute("SELECT count(*) FROM checkpoints").fetchone()
+        assert count is not None and count[0] > 0
+        assert conn.execute("SELECT status FROM plan_generations").fetchone() == ("needs_retry",)
     plan = await make_service(scratch.dsn).draft_plan(run_id)
     assert len(plan.topics) == 3
 

@@ -26,6 +26,11 @@ your machine. If you have no key, do steps 1 to 5 and then read
 > cut to 4 topics, to keep the examples short. A real model words its
 > questions better and your plan will have about 10 topics.
 
+Phase 5 also prints generation and message receipt lines. The migration output
+and the recovery examples below were re-captured with scripted models after
+those changes; the longer interview examples remain excerpts from the earlier
+fixture run. Real-model quality is still unverified.
+
 ## Before you start
 
 You need three things installed. Check each one:
@@ -98,7 +103,7 @@ uv run eki migrate
 **You should see:**
 
 ```text
-Applied: 0001_init.sql, 0002_interview.sql, 0003_runbook.sql, 0004_access.sql, 0005_runbook_search.sql, 0006_audit.sql, 0007_mail.sql, 0008_entry_edited.sql
+Applied: 0001_init.sql, 0002_interview.sql, 0003_runbook.sql, 0004_access.sql, 0005_runbook_search.sql, 0006_audit.sql, 0007_mail.sql, 0008_entry_edited.sql, 0009_delivery.sql, 0010_artifact_model.sql, 0011_generation.sql
 ```
 
 If you run it a second time it prints `Database is up to date.`
@@ -188,7 +193,8 @@ uv run eki plan --run RUN_ID
 
 It can take a few minutes: the model is asked once per topic.
 
-**You should see** something of this shape:
+**You should see** something of this shape (the plan excerpt starts after the
+new generation/resume line):
 
 ```text
 Plan 8c46d867-6bbd-42ff-8608-69c9b6face70 (draft), 4 topics
@@ -205,7 +211,7 @@ Plan 8c46d867-6bbd-42ff-8608-69c9b6face70 (draft), 4 topics
 Review it, then run: eki interview --plan 8c46d867-6bbd-42ff-8608-69c9b6face70
 ```
 
-The ID in the first line is the **plan ID**. Copy yours and use it wherever
+The ID on the `Plan` line is the **plan ID**. Copy yours and use it wherever
 this tutorial says `PLAN_ID`.
 
 **How to read it.**
@@ -675,12 +681,45 @@ about how well a real model asks questions.
 | `eki: no completed run ...` | Wrong or mistyped run ID | Copy the ID printed by `eki ingest` again |
 | `eki: EKI_MODEL_DRAFTER is not set (a LiteLLM model name)` | The model lines are missing from `.env` | Redo step 1 |
 | `eki: the model could not be reached; nothing was lost, run the command again` | The provider key is missing or wrong, the model name is wrong, or the network is down | Check the key and model name in `.env`, then run the same command again |
-| `The model could not be reached. Nothing was lost: send the same message again.` (during the interview) | same, in the middle of an interview | Type your answer again |
+| `The model could not be reached. Nothing was lost: send the same message again.` (during the interview) | same, in the middle of an interview | Resume the saved answer with `/retry` when offered |
 | `eki: valid EKI_API_TOKEN credentials are required` | Step 9b is not done, or the two token values differ | Fix the two lines in `.env` |
 | Search finds nothing | No entry is approved yet, or step 9a named a different owner than `subject` in 9b | Approve an entry; make the two names match |
 | `Review refused: check the name, section and content.` | A part name was mistyped in `edit`, or the edit left a part empty | Use one of the seven part names; give at least one claim or an open question |
 | `eki: cannot create output file; check permissions and that it does not exist` | The export file already exists | Choose another name |
 | `source .env` fails with `command not found: Ferrand` | Your `.env` was made from an older example | Put quotes around the name: `EKI_EXPERT_NAME="Nadia Ferrand"`. The `eki` command reads `.env` by itself, so you do not need `source` at all |
+
+## Recover saved work (Phase 5)
+
+Drafting prints a generation ID before its model calls. This line was captured
+from a fresh synthetic three-topic check:
+
+```text
+Generation b594ec48-911f-4cb7-9b07-6b90bf8c20f3. Resume with: eki plan --run b5bc2ffe-94e9-4251-a67c-b0e265b6465d --resume-generation b594ec48-911f-4cb7-9b07-6b90bf8c20f3
+```
+
+If drafting stops, inspect or resume that ID instead of creating another plan:
+
+```bash
+uv run eki plan --run RUN_ID --generation-status GENERATION_ID
+uv run eki plan --run RUN_ID --resume-generation GENERATION_ID
+```
+
+Completed topics keep their original questions. If configuration or inputs have
+changed, start a new generation explicitly. An unfinished generation can be
+inspected but cannot yet be approved.
+
+After accepting an interview answer, the CLI also prints a receipt line. This
+was captured from the same synthetic check:
+
+```text
+  message 92232bf6-80d8-4b24-88b3-a78c84fa88dc: saved
+```
+
+On reconnect, the CLI finds saved messages and offers `/retry` or `/quit`.
+Choose `/retry` to continue processing the saved answer without retyping it.
+The HTTP API and browser workspace expose the same delivery status and resume
+operations. To use the browser, start the API and open `http://localhost:8000/`;
+sign in with the token configured in step 9.
 
 ## Starting again
 

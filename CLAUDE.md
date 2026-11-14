@@ -407,3 +407,34 @@ during query is detected before vector comparison. Real-source adapters remain
 synthetic; real-provider quality is pending by user request. Opt-in artifact
 checks are in `tests/test_live_artifacts.py` (three repetitions, fixed expected
 IDs and separately reported hashing/semantic results).
+
+
+### Resumable plan generation (F18)
+
+Apply migration `0011_generation.sql`. Each generation has a stable UUID and
+saves selected topics, an input/model/prompt/configuration fingerprint and each
+completed topic's validated questions/dropped reasons. The CLI prints a resume
+command before model work. A model failure retains results and checkpoints.
+Changed inputs require a new generation; partial results cannot be approved.
+
+- `eki plan --run ID --generation-status GENERATION_ID`: inspect without models.
+- `eki plan --run ID --resume-generation GENERATION_ID`: resume unfinished topics.
+- `POST /runs/{id}/plan?generation_id=UUID`: start/reuse a client-generated ID.
+- `GET /runs/{id}/generations`: owner/admin generation listing.
+- `GET /runs/{id}/generations/{generation_id}`: progress and partial questions.
+- `POST /runs/{id}/generations/{generation_id}/resume`: resume a known generation.
+
+The browser displays live progress and saved-generation controls. Completion
+publishes plan and status atomically before review. Resuming completed work
+recovers a missing review checkpoint without re-drafting. Concurrency and
+cross-run IDs are guarded. A call without a persisted topic result may repeat.
+The drafting repair prompt also redacts invalid model-supplied IDs before a
+retry, closing a secret-echo path found by the new generation privacy check.
+See `docs/flows/draft-plan.md` and `tests/test_generation.py`.
+
+
+Client logic can also be checked with `node --test tests/browser_client.test.cjs`
+using Node's built-in runner and no packages. It checks stable submission IDs,
+fragmented SSE, early disconnects and retryable failures; it does not replace
+real-browser visual/accessibility QA. New browser submissions keep their IDs
+across transport retries and query the receipt when acknowledgement is lost.

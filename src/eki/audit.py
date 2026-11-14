@@ -17,6 +17,7 @@ from eki.llm import ChatModel, Message, Reply, ToolSpec
 
 Operation = Literal[
     "deliver_message",
+    "generate_plan",
     "draft",
     "interview",
     "answer",
@@ -46,7 +47,7 @@ Operation = Literal[
     "list_messages",
     "get_message",
 ]
-Kind = Literal["model", "tool", "approval", "review", "access", "ingest", "delivery"]
+Kind = Literal["model", "tool", "approval", "review", "access", "ingest", "delivery", "generation"]
 Phase = Literal["started", "completed", "failed", "refused", "skipped"]
 
 
@@ -57,6 +58,7 @@ class AuditError(Exception):
 class AuditDetails(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     operation: Operation
+    generation_status: Literal["running", "needs_retry", "completed"] | None = None
     delivery_status: Literal["saved", "processing", "needs_retry", "processed"] | None = None
     model_name: str | None = Field(default=None, max_length=200)
     target_id: UUID | None = None

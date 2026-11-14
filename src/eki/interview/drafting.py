@@ -159,7 +159,9 @@ async def draft_questions(
             for candidate in candidates:
                 checked = _check(candidate, by_id, work_email_domains)
                 if isinstance(checked, str):
-                    problems.append(checked)
+                    problems.append(
+                        str(redact(checked, work_email_domains=work_email_domains).text)
+                    )
                 elif checked not in accepted:
                     accepted.append(checked)
         if not problems or attempt == 1:

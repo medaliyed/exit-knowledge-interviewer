@@ -28,10 +28,12 @@ from eki.auth import Authenticator, ForbiddenError, TokenAuthenticator
 from eki.config import ConfigError, get_settings, work_domains
 from eki.graph.workflow import db
 from eki.ingest.redaction import redact
+from eki.interview import generation
 from eki.interview.models import InterviewPlan
 from eki.interview.plan import PlanError, PlanFrozenError, add_topic, remove_topic, reorder
 from eki.interview.service import (
     ConflictError,
+    GenerationFailed,
     InterviewService,
     NotFoundError,
     SessionView,
@@ -344,8 +346,14 @@ def create_app(
         return handler
 
     async def model_down(request: Request, exc: Exception) -> JSONResponse:
-        detail = "The model could not be reached. Nothing was changed; try again."
-        return JSONResponse(status_code=502, content={"detail": detail})
+        detail = "The model could not be reached. Try again when the provider is available."
+        body: dict[str, Any] = {"detail": detail}
+        if isinstance(exc, GenerationFailed):
+            body.update(
+                detail="Model unavailable. Drafting paused; resume the saved generation.",
+                generation_id=str(exc.generation_id),
+            )
+        return JSONResponse(status_code=502, content=body)
 
     async def not_configured(request: Request, exc: Exception) -> JSONResponse:
         detail = "The service is not configured: " + (
@@ -368,9 +376,36 @@ def create_app(
         return {"status": "ok"}
 
     @app.post("/runs/{run_id}/plan", status_code=201)
-    async def draft_plan(run_id: UUID, service: Service) -> dict[str, Any]:
+    async def draft_plan(
+        run_id: UUID, service: Service, generation_id: UUID | None = None
+    ) -> dict[str, Any]:
         """Draft an interview plan from the run's gap scores."""
-        return _plan(await service.draft_plan(run_id))
+        return _plan(await service.draft_plan(run_id, generation_id=generation_id))
+
+    @app.get("/runs/{run_id}/generations")
+    async def generation_list(run_id: UUID, books: Runbooks) -> list[dict[str, Any]]:
+        def read() -> list[dict[str, Any]]:
+            with books._connect() as conn:
+                return generation.listing(conn, run_id)
+
+        return await db(read)
+
+    @app.get("/runs/{run_id}/generations/{generation_id}")
+    async def generation_status(
+        run_id: UUID, generation_id: UUID, books: Runbooks
+    ) -> dict[str, Any]:
+        def read() -> dict[str, Any]:
+            with books._connect() as conn:
+                return generation.read(conn, run_id, generation_id)
+
+        return await db(read)
+
+    @app.post("/runs/{run_id}/generations/{generation_id}/resume")
+    async def resume_generation(
+        run_id: UUID, generation_id: UUID, service: Service
+    ) -> dict[str, Any]:
+        await service.generation_status(run_id, generation_id)  # refuse unknown/cross-run IDs
+        return _plan(await service.draft_plan(run_id, generation_id=generation_id))
 
     @app.get("/plans/{plan_id}")
     async def read_plan(plan_id: UUID, service: Service) -> dict[str, Any]:

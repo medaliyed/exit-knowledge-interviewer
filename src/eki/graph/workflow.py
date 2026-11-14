@@ -21,7 +21,7 @@ tables; nodes write it in a way that is safe to repeat.
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol, TypedDict
 from uuid import UUID
 
@@ -37,7 +37,8 @@ from langgraph.types import interrupt
 from eki.audit import AuditRecorder
 from eki.ingest.embedding import Embedder
 from eki.ingest.pipeline import load as load_snapshot
-from eki.interview import store
+from eki.ingest.redaction import redact
+from eki.interview import drafting, generation, store
 from eki.interview.conflicts import find_order_conflicts
 from eki.interview.drafting import draft_questions
 from eki.interview.plan import DEFAULT_LIMIT, build_plan, with_questions
@@ -91,6 +92,7 @@ class Deps:
     work_email_domains: frozenset[str]
     audit: AuditRecorder
     limits: Limits = field(default_factory=Limits)
+    draft_configuration: dict[str, Any] = field(default_factory=dict)
 
 
 AgentNode = Callable[[Deps, InterviewState], Awaitable[dict[str, Any]]]
@@ -151,7 +153,26 @@ async def _draft_plan(deps: Deps, state: InterviewState) -> dict[str, Any]:
         contradicting=[topic_id for topic_id, found in conflicts.items() if found],
         plan_id=plan_id,
     )
+    digest = generation.fingerprint(
+        {
+            "model": deps.drafter.name,
+            "configuration": deps.draft_configuration,
+            "system_prompt": drafting.SYSTEM,
+            "limits": asdict(deps.limits),
+            "domains": sorted(deps.work_email_domains),
+            "snapshot": snapshot.model_dump(mode="json"),
+            "topics": [t.model_dump(mode="json") for t in topics],
+            "scores": [s.model_dump(mode="json") for s in scores],
+            "selected_plan": plan.model_dump(mode="json"),
+        }
+    )
+    await db(generation.begin, deps.conn, plan, digest)
+    saved = await db(generation.completed_topics, deps.conn, plan_id)
     for planned in plan.topics:
+        if planned.topic_id in saved:
+            completed = saved[planned.topic_id]
+            plan = with_questions(plan, completed.topic_id, completed.questions, completed.dropped)
+            continue
         topic = topic_by_id[planned.topic_id]
         draft = await draft_questions(
             topic,
@@ -164,8 +185,20 @@ async def _draft_plan(deps: Deps, state: InterviewState) -> dict[str, Any]:
         # A contradiction is asked about first, in words that quote both sides.
         questions = [conflict.question() for conflict in conflicts[topic.id]]
         questions += [q for q in draft.questions if q not in questions]
-        plan = with_questions(plan, topic.id, questions, draft.dropped)
-    await db(store.save_plan, deps.conn, plan)
+        dropped = tuple(
+            redact(d, work_email_domains=deps.work_email_domains).text for d in draft.dropped
+        )
+        plan = with_questions(plan, topic.id, questions, dropped)
+        selected_result = plan.topic(topic.id)
+        assert selected_result is not None  # noqa: S101 - selected topic
+        await db(generation.save_topic, deps.conn, plan_id, selected_result)
+
+    def finish() -> None:
+        with deps.conn.transaction():
+            store.save_plan(deps.conn, plan)
+            generation.set_status(deps.conn, plan_id, "completed")
+
+    await db(finish)
     return {"status": "review"}
 
 

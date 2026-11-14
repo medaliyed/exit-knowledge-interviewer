@@ -43,8 +43,6 @@ Things the flow pages flag. Each is cited on its page.
 
 - **Approval is bound to a display name**, not to an account.
   ([review-entry.md](review-entry.md))
-- **A failed plan draft discards all drafted questions**; a retry pays for
-  them again. ([draft-plan.md](draft-plan.md))
 - **Real-provider calls interrupted before their result is persisted may repeat**
   on recovery. Accepted messages and stored replies survive.
   ([message-delivery.md](message-delivery.md))

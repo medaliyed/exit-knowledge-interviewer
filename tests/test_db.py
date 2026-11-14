@@ -33,6 +33,8 @@ TABLES = {
     "audit_events",
     "message_receipts",
     "interview_replies",
+    "plan_generations",
+    "generation_topics",
 }
 MIGRATIONS = [
     "0001_init.sql",
@@ -45,6 +47,7 @@ MIGRATIONS = [
     "0008_entry_edited.sql",
     "0009_delivery.sql",
     "0010_artifact_model.sql",
+    "0011_generation.sql",
 ]
 
 

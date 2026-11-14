@@ -32,7 +32,7 @@ from eki.graph.workflow import (
 from eki.ingest.embedding import Embedder, HashingEmbedder
 from eki.ingest.redaction import RedactedText, redact
 from eki.ingest.semantic import for_run as artifact_embedder_for_run
-from eki.interview import delivery, store
+from eki.interview import delivery, generation, store
 from eki.interview.interviewer import interview_topic
 from eki.interview.models import (
     InterviewPlan,
@@ -55,6 +55,12 @@ Action = Literal["answer", "skip", "correct"]
 
 class BusyError(ConflictError):
     """Someone else is working on this session right now."""
+
+
+class GenerationFailed(ModelError):
+    def __init__(self, generation_id: UUID) -> None:
+        self.generation_id = generation_id
+        super().__init__(f"model unavailable; saved plan generation {generation_id} can be resumed")
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,7 @@ class InterviewService:
     limits: Limits = field(default_factory=Limits)
     tracer: Tracer = field(default_factory=NullTracer)
     artifact_resolver: Callable[[psycopg.Connection, UUID], Embedder] | None = None
+    draft_configuration: dict[str, Any] = field(default_factory=dict)
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def _connect(self) -> psycopg.Connection:
@@ -120,32 +127,64 @@ class InterviewService:
             ),
             work_email_domains=self.work_email_domains,
             limits=self.limits,
+            draft_configuration=self.draft_configuration,
         )
 
     # --- plans ---
 
-    async def draft_plan(self, run_id: UUID) -> InterviewPlan:
-        """Draft a plan for a mapped run and stop for the expert's review."""
-        plan_id = uuid4()
+    async def generation_status(self, run_id: UUID, generation_id: UUID) -> dict[str, Any]:
+        with self._connect() as conn:
+            return await db(generation.read, conn, run_id, generation_id)
+
+    async def draft_plan(self, run_id: UUID, *, generation_id: UUID | None = None) -> InterviewPlan:
+        """Start a new generation or resume a known one, retaining validated topic results."""
+        plan_id = generation_id or uuid4()
         with self._connect() as conn:
             if not await db(store.run_exists, conn, run_id):
                 raise NotFoundError(f"no completed run {run_id}")
+            owner = await db(generation.owner_run, conn, plan_id)
+            existing = await db(store.load_plan, conn, plan_id)
+            if (owner is not None and owner != run_id) or (
+                existing is not None and existing.run_id != run_id
+            ):
+                raise NotFoundError("plan generation not found")
+            if not await db(store.try_lock, conn, plan_id):
+                raise BusyError("this plan generation is being handled")
+            if existing is not None and existing.status == "approved":
+                return existing
             try:
                 deps = self._deps(conn, run_id=run_id, plan_id=plan_id)
                 async with open_workflow(self.dsn, deps, self.agent) as workflow:
+                    config = thread_config(plan_id)
+                    snapshot = await workflow.aget_state(config)
+                    if snapshot.values and snapshot.values.get("run_id") != str(run_id):
+                        raise NotFoundError("plan generation not found")
+                    if existing is not None and any(
+                        isinstance(i.value, dict) and i.value.get("type") == "plan_review"
+                        for i in snapshot.interrupts
+                    ):
+                        return existing
                     await workflow.ainvoke(
-                        {"run_id": str(run_id), "plan_id": str(plan_id)},
-                        thread_config(plan_id),
+                        None
+                        if snapshot.values
+                        else {"run_id": str(run_id), "plan_id": str(plan_id)},
+                        config,
                         durability="sync",
                     )
             except WorkflowError as error:
-                await forget_thread(self.dsn, plan_id)
+                if await db(generation.owner_run, conn, plan_id) is None:
+                    await forget_thread(self.dsn, plan_id)
                 raise ConflictError(str(error)) from error
-            except ModelError:
-                await forget_thread(self.dsn, plan_id)
+            except ModelError as error:
+                await db(generation.mark_retry, conn, run_id, plan_id)
+                raise GenerationFailed(plan_id) from error
+            except BaseException:
+                # Keep topic results/checkpoints even if failure reporting is unavailable.
+                with suppress(AuditError, psycopg.Error):
+                    await db(generation.mark_retry, conn, run_id, plan_id)
                 raise
             plan = await db(store.load_plan, conn, plan_id)
-        assert plan is not None  # noqa: S101 - the workflow just saved it
+        assert plan is not None  # noqa: S101 - workflow publication is atomic
         return plan
 
     async def get_plan(self, plan_id: UUID) -> InterviewPlan:
@@ -557,4 +596,5 @@ def build_service(settings: Settings) -> InterviewService:
         work_email_domains=domains,
         tracer=build_tracer(settings),
         artifact_resolver=lambda conn, run_id: artifact_embedder_for_run(conn, run_id, settings),
+        draft_configuration={"timeout_seconds": settings.model_timeout_seconds, "max_tokens": 4096},
     )

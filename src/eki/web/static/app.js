@@ -75,7 +75,7 @@ async function stream(path, body, saved) {
   } finally { reader.releaseLock(); }
 }
 function heading(title, context) { $("title").textContent = title; $("context").textContent = context || "WORKSPACE"; }
-function content(...nodes) { $("content").replaceChildren(...nodes); }
+function content(...nodes) { state.view = (state.view || 0) + 1; $("content").replaceChildren(...nodes); }
 function tabs(active) {
   state.tab = active; const nav = $("tabs"); nav.replaceChildren();
   if (!state.run) return;
@@ -101,10 +101,9 @@ async function chooseRun(run) {
 async function showPlans() {
   if (!state.run) return;
   tabs("plans"); heading("A plan for the conversation", state.run.expert_name);
-  const plans = await api(`/runs/${state.run.id}/plans`), box = el("div", null, "stack");
+  const plans = await api(`/runs/${state.run.id}/plans`), generations = await api(`/runs/${state.run.id}/generations`), box = el("div", null, "stack");
   const top = el("div", null, "row between"); top.append(el("p", "Review the topics before starting the interview.", "muted"), button("Draft a new plan", async () => {
-    notice("Drafting questions from the selected knowledge gaps…");
-    const plan = await api(`/runs/${state.run.id}/plan`, "POST"); await showPlan(plan.id); notice("Draft ready for review.");
+    await runGeneration(state.run.id, crypto.randomUUID(), false);
   }, "primary")); box.append(top);
   for (const plan of plans) {
     const card = el("div", null, "card row between");
@@ -112,8 +111,60 @@ async function showPlans() {
     card.append(label, button(plan.session_id ? "Open conversation →" : "Review plan →", () => plan.session_id ? showSession(plan.session_id) : showPlan(plan.id)));
     box.append(card);
   }
-  if (!plans.length) box.append(el("div", "No interview plans yet. Draft one from this handover’s mapped knowledge gaps.", "empty"));
+  for (const generation of generations.filter(g => g.status !== "completed")) {
+    const card = el("div", null, "card row between");
+    const label = el("div"); label.append(el("h3", "Saved plan generation"), el("p", `${generation.completed} of ${generation.total} topics saved · ${generation.status}`, "muted"));
+    card.append(label, button("Inspect progress →", () => showGeneration(state.run.id, generation.id)));
+    box.append(card);
+  }
+  if (!plans.length && !generations.length) box.append(el("div", "No interview plans yet. Draft one from this handover’s mapped knowledge gaps.", "empty"));
   content(box);
+}
+function generationProgress(data, target, runId) {
+  target.replaceChildren();
+  target.append(el("p", `${data.completed} of ${data.total} topics saved · ${data.status}`, "badge"));
+  for (const topic of data.topics) {
+    const card = el("article", null, "card"); card.append(el("p", topic.generation_state.toUpperCase(), "eyebrow"), el("h3", topic.label));
+    for (const question of topic.questions) { card.append(el("p", question.text)); if (question.quote) card.append(el("blockquote", question.quote)); }
+    for (const reason of topic.dropped) card.append(el("p", reason, "warning"));
+    target.append(card);
+  }
+  const tools = el("div", null, "toolbar");
+  if (data.plan_id) tools.append(button("Review completed plan →", () => showPlan(data.plan_id), "primary"));
+  else tools.append(button("Resume saved generation", () => runGeneration(runId, data.id, true), "primary"));
+  tools.append(button("Refresh progress", () => showGeneration(runId, data.id)));
+  target.append(tools);
+}
+async function showGeneration(runId, id) {
+  const data = await api(`/runs/${runId}/generations/${id}`), box = el("div");
+  tabs("plans"); heading("Questions, one topic at a time", "PLAN GENERATION");
+  box.append(el("p", "Completed topics are saved. Partial generations can be inspected, then resumed before plan approval.", "muted"));
+  const progress = el("div"); box.append(progress); generationProgress(data, progress, runId); content(box);
+}
+async function runGeneration(runId, id, resume) {
+  const box = el("div"), progress = el("div");
+  box.append(el("p", "Drafting questions from your sources. Completed topics are saved as we go.", "muted"), progress);
+  tabs("plans"); heading("Preparing your conversation", "PLAN GENERATION"); content(box);
+  const view = state.view;
+  let polling = false;
+  const timer = setInterval(async () => {
+    if (state.view !== view || !state.token) { clearInterval(timer); return; }
+    if (polling) return;
+    polling = true;
+    try { const data = await api(`/runs/${runId}/generations/${id}`); if (state.view === view) generationProgress(data, progress, runId); }
+    catch (_) { /* Initial acceptance can race the first progress request. */ }
+    finally { polling = false; }
+  }, 1000);
+  try {
+    const path = resume ? `/runs/${runId}/generations/${id}/resume` : `/runs/${runId}/plan?generation_id=${id}`;
+    const plan = await api(path, "POST");
+    if (state.view === view) { await showPlan(plan.id); notice("Draft ready for review."); }
+  } catch (error) {
+    if (state.view === view && state.token) {
+      try { await showGeneration(runId, id); } catch (_) { await showPlans(); }
+      notice(error.message, true);
+    }
+  } finally { clearInterval(timer); }
 }
 async function showPlan(id) {
   const plan = await api(`/plans/${id}`); state.plan = plan; tabs("plans"); heading("Shape your interview", "PLAN REVIEW");
