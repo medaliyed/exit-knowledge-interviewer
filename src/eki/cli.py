@@ -22,11 +22,19 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 
 from eki import access
+from eki.audit import (
+    AuditDetails,
+    AuditError,
+    AuditRecorder,
+    append_event,
+    audit_context,
+    list_events,
+)
 from eki.auth import AuthenticationError, Principal, TokenAuthenticator
 from eki.config import ConfigError, get_settings, work_domains
 from eki.db import connect, migrate
@@ -120,6 +128,12 @@ def _parser() -> argparse.ArgumentParser:
     export.add_argument(
         "--output", type=Path, help="new file; existing files are never overwritten"
     )
+    audit = commands.add_parser(
+        "audit", help="read a run's metadata-only audit log (local operator)"
+    )
+    audit.add_argument("--run", type=UUID, required=True)
+    audit.add_argument("--after", type=int, default=0)
+    audit.add_argument("--limit", type=int, default=100)
     return parser
 
 
@@ -154,10 +168,26 @@ def _ingest(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
         until=until,
         work_email_domains=work_domains(settings),
     )
-    snapshot = asyncio.run(ingest_from_source(scope, Path(source_dir).resolve()))
-    run_id = store(conn, snapshot)
-    chunks = index_run(conn, run_id, HashingEmbedder())
-    conn.commit()
+    run_id, call_id = uuid4(), uuid4()
+    recorder = AuditRecorder(settings.database_url.get_secret_value())
+    with audit_context(run_ids=(run_id,), recorder=recorder):
+        recorder.record("ingest", "started", AuditDetails(operation="ingest"), call_id=call_id)
+        try:
+            snapshot = asyncio.run(ingest_from_source(scope, Path(source_dir).resolve()))
+            store(conn, snapshot, run_id=run_id)
+            chunks = index_run(conn, run_id, HashingEmbedder())
+            append_event(
+                conn,
+                "ingest",
+                "completed",
+                AuditDetails(operation="ingest", count=len(snapshot.artifacts)),
+                call_id=call_id,
+            )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            recorder.record("ingest", "failed", AuditDetails(operation="ingest"), call_id=call_id)
+            raise
     print(f"Ingested {len(snapshot.artifacts)} artifacts and indexed {chunks} chunks.")
     print(run_id)
     return 0
@@ -438,6 +468,11 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    with audit_context(user_id="local-operator", correlation_id=uuid4()):
+        return _main(argv)
+
+
+def _main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
         if arguments.command in ("search", "ask", "export"):
@@ -504,6 +539,15 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.command in ("plan", "interview"):
             return _interview_commands(arguments)
         with connect(get_settings()) as conn:
+            if arguments.command == "audit":
+                print(
+                    json.dumps(
+                        list_events(
+                            conn, arguments.run, after=arguments.after, limit=arguments.limit
+                        )
+                    )
+                )
+                return 0
             if arguments.command == "access":
                 operator = Principal("local-operator", "Local operator", True)
                 if arguments.owner is not None:
@@ -519,6 +563,8 @@ def main(argv: list[str] | None = None) -> int:
             if arguments.command == "map":
                 return _map(conn, arguments.run)
             return _gaps(conn, arguments)
+    except AuditError:
+        return _fail("audit storage unavailable; operation refused")
     except AuthenticationError:
         return _fail("valid EKI_API_TOKEN credentials are required", USAGE_ERROR)
     except ConfigError as error:

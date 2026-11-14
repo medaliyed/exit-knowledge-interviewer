@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 import psycopg
 from langgraph.types import Command
 
+from eki.audit import AuditedModel, AuditRecorder, Operation
 from eki.config import Settings, model_name, work_domains
 from eki.errors import ConflictError as ConflictError
 from eki.errors import NotFoundError as NotFoundError
@@ -102,9 +103,11 @@ class InterviewService:
     ) -> Deps:
         """Node dependencies, with both models traced under the given IDs."""
 
-        def traced(model: ChatModel, step: str) -> ChatModel:
+        def traced(model: ChatModel, step: Operation) -> ChatModel:
             return TracedModel(
-                model,
+                AuditedModel(
+                    model, AuditRecorder(self.dsn), step, () if run_id is None else (run_id,)
+                ),
                 self.tracer,
                 step=step,
                 work_email_domains=self.work_email_domains,
@@ -115,6 +118,7 @@ class InterviewService:
 
         return Deps(
             conn=conn,
+            audit=AuditRecorder(self.dsn),
             drafter=traced(self.drafter, "draft"),
             interviewer=traced(self.interviewer, "interview"),
             embedder=self.embedder,

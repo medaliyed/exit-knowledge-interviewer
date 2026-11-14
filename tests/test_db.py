@@ -30,6 +30,7 @@ TABLES = {
     "entry_decisions",
     "run_readers",
     "runbook_index",
+    "audit_events",
 }
 MIGRATIONS = [
     "0001_init.sql",
@@ -37,6 +38,7 @@ MIGRATIONS = [
     "0003_runbook.sql",
     "0004_access.sql",
     "0005_runbook_search.sql",
+    "0006_audit.sql",
 ]
 
 

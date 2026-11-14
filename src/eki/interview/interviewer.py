@@ -11,11 +11,12 @@ or when a limit is reached; a limit marks what is left as open. Text from the
 model and from the expert is redacted before it is stored or sent anywhere.
 """
 
-from typing import Any
-from uuid import UUID
+from typing import Any, cast
+from uuid import UUID, uuid4
 
 from langgraph.types import interrupt
 
+from eki.audit import AuditDetails, Operation, Phase
 from eki.graph.workflow import Deps, InterviewState, WorkflowError, db, emit
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store, tools
@@ -236,25 +237,60 @@ class _Step:
     # --- the model's side ---
 
     async def handle(self, reply: Reply) -> None:
-        calls = tuple(ToolCall(c.id, c.name, self.clean(c.arguments)) for c in reply.tool_calls)
+        calls = tuple(
+            ToolCall(self.clean(c.id), self.clean(c.name), self.clean(c.arguments))
+            for c in reply.tool_calls
+        )
         self.messages.append(Message("assistant", self.clean(reply.text), tool_calls=calls))
         if not calls:
             self.messages.append(Message("user", NUDGE))
             return
         asked: ToolCall | None = None
         after: list[list[str]] = []
+        recorder = self.deps.audit
         for call in calls:
-            if asked is not None:
-                after.append([call.id, "Not run: the question to the expert came first."])
-            elif self.done:
-                self.say(call.id, "Not run: the topic is finished.")
-            elif call.name == "ask_expert":
-                if await self.may_ask(call):
-                    asked = call
-            else:
-                self.say(call.id, await self.run_tool(call))
-        if asked is not None:
-            await self.ask(asked, after)
+            operation = (
+                cast(Operation, call.name) if call.name in tools.TOOL_NAMES else "unknown_tool"
+            )
+            details = AuditDetails(operation=operation)
+            call_id = uuid4()
+            await db(
+                recorder.record, "tool", "started", details, call_id=call_id, run_ids=(self.run_id,)
+            )
+            phase: Phase = "completed"
+            try:
+                if asked is not None:
+                    after.append([call.id, "Not run: the question to the expert came first."])
+                    phase = "skipped"
+                elif self.done:
+                    self.say(call.id, "Not run: the topic is finished.")
+                    phase = "skipped"
+                elif call.name == "ask_expert":
+                    if await self.may_ask(call):
+                        asked = call
+                        await self.ask(asked, after)
+                    else:
+                        phase = "refused"
+                else:
+                    result = await self.run_tool(call)
+                    self.say(call.id, result)
+                    if result.startswith(("Refused:", "Unknown tool:")):
+                        phase = "refused"
+            except BaseException:
+                await db(
+                    recorder.record,
+                    "tool",
+                    "failed",
+                    details,
+                    call_id=call_id,
+                    run_ids=(self.run_id,),
+                )
+                raise
+            await db(
+                recorder.record, "tool", phase, details, call_id=call_id, run_ids=(self.run_id,)
+            )
+        if self.pending is not None:
+            self.pending["after"] = after
 
     async def may_ask(self, call: ToolCall) -> bool:
         question, section = call.arguments.get("question"), call.arguments.get("section")

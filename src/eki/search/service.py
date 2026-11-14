@@ -7,6 +7,7 @@ import psycopg
 from psycopg import sql
 
 from eki.access import VISIBLE_RUN, visible_params
+from eki.audit import audit_context
 from eki.auth import Principal
 from eki.config import Settings, work_domains
 from eki.ingest.embedding import HashingEmbedder, to_vector_literal
@@ -97,7 +98,19 @@ class SearchService:
             return []
         with psycopg.connect(self.dsn, autocommit=True) as conn:
             refresh(conn, principal, self.embedder, self.work_email_domains)
-            (vector,) = checked_vectors(self.embedder.embed([clean]), 1)
+            run_ids = conn.execute(
+                sql.SQL(
+                    "SELECT DISTINCT r.id FROM ingest_runs r "
+                    "JOIN interview_plans p ON p.run_id = r.id "
+                    "JOIN sessions s ON s.plan_id = p.id "
+                    "JOIN runbook_entries e ON e.session_id = s.id "
+                    "WHERE e.status = 'approved' AND "
+                )
+                + sql.SQL(VISIBLE_RUN),
+                visible_params(principal),
+            ).fetchall()
+            with audit_context(user_id=principal.subject, run_ids=tuple(r[0] for r in run_ids)):
+                (vector,) = checked_vectors(self.embedder.embed([clean]), 1)
             literal = to_vector_literal(vector)
             rows = conn.execute(
                 sql.SQL("""WITH eligible AS MATERIALIZED (

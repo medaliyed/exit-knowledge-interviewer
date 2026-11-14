@@ -11,6 +11,7 @@ import psycopg
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from eki.access import approved_entry
+from eki.audit import AuditedModel, AuditRecorder
 from eki.auth import Principal
 from eki.config import Settings, work_domains
 from eki.errors import NotFoundError
@@ -248,7 +249,28 @@ class AnswerService:
                     "user", redact(payload, work_email_domains=self.search.work_email_domains).text
                 ),
             )
-            reply = await self.model.complete(messages)
+
+            def scopes() -> tuple[UUID, ...]:
+                with psycopg.connect(self.search.dsn, autocommit=True) as conn:
+                    rows = conn.execute(
+                        "SELECT DISTINCT p.run_id FROM runbook_entries e "
+                        "JOIN sessions s ON s.id = e.session_id "
+                        "JOIN interview_plans p ON p.id = s.plan_id "
+                        "WHERE e.id = ANY(%s)",
+                        ([UUID(h.entry.id) for h in hits],),
+                    ).fetchall()
+                    return tuple(r[0] for r in rows)
+
+            from eki.audit import audit_context
+
+            with audit_context(user_id=principal.subject):
+                model = AuditedModel(
+                    self.model,
+                    AuditRecorder(self.search.dsn),
+                    "answer",
+                    await asyncio.to_thread(scopes),
+                )
+                reply = await model.complete(messages)
             try:
                 selection = _Selection.model_validate_json(reply.text)
                 by_id = {e.id: e for _, e in ranked}

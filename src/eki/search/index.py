@@ -4,6 +4,7 @@ import psycopg
 from psycopg import sql
 
 from eki.access import VISIBLE_RUN, visible_params
+from eki.audit import audit_context
 from eki.auth import Principal
 from eki.ingest.chunking import chunk
 from eki.ingest.embedding import to_vector_literal
@@ -20,7 +21,7 @@ def refresh(
 ) -> int:
     rows = conn.execute(
         sql.SQL(
-            "SELECT e.id, e.content, e.version FROM runbook_entries e "
+            "SELECT e.id, e.content, e.version, p.run_id FROM runbook_entries e "
             "JOIN sessions s ON s.id = e.session_id "
             "JOIN interview_plans p ON p.id = s.plan_id "
             "JOIN ingest_runs r ON r.id = p.run_id WHERE e.status = 'approved' AND "
@@ -33,7 +34,7 @@ def refresh(
         (*visible_params(principal), embedder.name),
     ).fetchall()
     count = 0
-    for entry_id, content, version in rows:
+    for entry_id, content, version, run_id in rows:
         entry = RunbookEntry.model_validate(content)
         title = redact(entry.title, work_email_domains=domains).text
         pending: list[tuple[SectionName, int, RedactedText]] = []
@@ -51,7 +52,8 @@ def refresh(
             texts = [
                 RedactedText(f"{title[:200]}\n{body}") for _, _, body in pending[start : start + 64]
             ]
-            vectors.extend(checked_vectors(embedder.embed(texts), len(texts)))
+            with audit_context(user_id=principal.subject, run_ids=(run_id,)):
+                vectors.extend(checked_vectors(embedder.embed(texts), len(texts)))
         with conn.transaction():
             # Short write locks serialize refreshes and keep approval, version and ACL
             # stable during insertion. Never hold these locks during provider latency.

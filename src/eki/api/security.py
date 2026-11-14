@@ -1,7 +1,7 @@
 """Authenticate before resolving data dependencies; protect legacy routes as well."""
 
 from collections.abc import Awaitable, Callable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 from fastapi import FastAPI, Request, Response
@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from eki import access
+from eki.audit import audit_context
 from eki.auth import AuthenticationError, Authenticator, Principal
 from eki.config import ConfigError
 from eki.errors import NotFoundError
@@ -72,7 +73,8 @@ def install_security(
             )
         except NotFoundError:
             return JSONResponse(status_code=404, content={"detail": "resource not found"})
-        response = await following(request)
+        with audit_context(user_id=principal.subject, correlation_id=uuid4()):
+            response = await following(request)
         response.headers["Cache-Control"] = "private, no-store"
         response.headers["Vary"] = "Authorization"
         return response

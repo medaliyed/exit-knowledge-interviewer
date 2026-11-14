@@ -12,6 +12,7 @@ from functools import lru_cache
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
+import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
@@ -21,6 +22,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from eki import __version__, access
 from eki.api.security import identity, install_security
+from eki.audit import AuditError, list_events
 from eki.auth import Authenticator, ForbiddenError, TokenAuthenticator
 from eki.config import ConfigError, get_settings, work_domains
 from eki.graph.workflow import db
@@ -324,6 +326,7 @@ def create_app(
         )
         return JSONResponse(status_code=503, content={"detail": detail})
 
+    app.add_exception_handler(AuditError, error(503))
     app.add_exception_handler(ForbiddenError, error(403))
     app.add_exception_handler(NotFoundError, error(404))
     app.add_exception_handler(ConflictError, error(409))
@@ -468,6 +471,19 @@ def create_app(
         exports = ExportService(search.dsn, search.work_email_domains)
         content = await operation(lambda: exports.run(identity(request), run_id))
         return markdown_response(content, f"runbook-{run_id}.md")
+
+    @app.get("/runs/{run_id}/audit")
+    async def read_audit(
+        run_id: UUID, request: Request, search: Search, after: int = 0, limit: int = 100
+    ) -> dict[str, object]:
+        def read() -> list[dict[str, object]]:
+            with psycopg.connect(search.dsn, autocommit=True) as conn:
+                if not identity(request).admin:
+                    access.require_manager(conn, run_id, identity(request))
+                return list_events(conn, run_id, after=after, limit=limit)
+
+        rows = await operation(read)
+        return {"events": rows, "next_after": rows[-1]["id"] if rows else after}
 
     return app
 

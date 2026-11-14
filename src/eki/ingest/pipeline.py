@@ -20,6 +20,7 @@ from mcp import Client, StdioServerParameters
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ValidationError
 
+from eki.audit import AuditDetails, current_context
 from eki.ingest import wire
 from eki.ingest.documents import paths_mentioned
 from eki.ingest.models import ActivitySummary, Artifact, Snapshot
@@ -82,12 +83,23 @@ class _Cleaner:
 
 
 async def _call(client: Client, tool: str, arguments: dict[str, Any] | None = None) -> Any:
+    context = current_context()
+    recorder, call_id = context.recorder, uuid4()
+    details = AuditDetails.model_validate({"operation": tool})
+    if recorder:
+        recorder.record("tool", "started", details, call_id=call_id)
     try:
         result = await client.call_tool(tool, arguments or {})
     except Exception as error:
+        if recorder:
+            recorder.record("tool", "failed", details, call_id=call_id)
         raise IngestError(f"{tool} failed: {type(error).__name__}") from error
     if result.is_error or result.structured_content is None:
+        if recorder:
+            recorder.record("tool", "failed", details, call_id=call_id)
         raise IngestError(f"{tool} returned an error")
+    if recorder:
+        recorder.record("tool", "completed", details, call_id=call_id)
     return result.structured_content
 
 
@@ -346,9 +358,9 @@ async def ingest_from_source(scope: Scope, source_dir: Path) -> Snapshot:
             return await pull(git, tickets, scope)
 
 
-def store(conn: psycopg.Connection, snapshot: Snapshot) -> UUID:
+def store(conn: psycopg.Connection, snapshot: Snapshot, *, run_id: UUID | None = None) -> UUID:
     """Write a snapshot as a new run, atomically. Returns the run ID."""
-    run_id = uuid4()
+    run_id = run_id or uuid4()
     try:
         with conn.transaction():
             conn.execute(

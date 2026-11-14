@@ -34,6 +34,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 
+from eki.audit import AuditRecorder
 from eki.ingest.embedding import Embedder
 from eki.ingest.pipeline import load as load_snapshot
 from eki.interview import store
@@ -88,6 +89,7 @@ class Deps:
     interviewer: ChatModel
     embedder: Embedder
     work_email_domains: frozenset[str]
+    audit: AuditRecorder
     limits: Limits = field(default_factory=Limits)
 
 

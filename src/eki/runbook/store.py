@@ -8,6 +8,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
+from eki.audit import AuditDetails, append_event
 from eki.ingest.redaction import RedactedText
 from eki.runbook.models import RunbookEntry
 
@@ -92,6 +93,19 @@ def add_decision(
     at: datetime,
     reason: RedactedText | None = None,
 ) -> None:
+    row = conn.execute(
+        "SELECT p.run_id, e.version FROM runbook_entries e JOIN sessions s ON s.id = e.session_id "
+        "JOIN interview_plans p ON p.id = s.plan_id WHERE e.id = %s",
+        (entry_id,),
+    ).fetchone()
+    if row is not None:
+        append_event(
+            conn,
+            "approval" if action == "approve" else "review",
+            "completed",
+            AuditDetails(operation=action, target_id=UUID(entry_id), version=row[1]),
+            run_id=row[0],
+        )
     conn.execute(
         "INSERT INTO entry_decisions (entry_id, action, who, at, reason) VALUES (%s,%s,%s,%s,%s)",
         (entry_id, action, who, at, reason),

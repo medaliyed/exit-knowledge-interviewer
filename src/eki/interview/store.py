@@ -11,6 +11,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
+from eki.audit import AuditDetails, append_event
 from eki.ingest.redaction import RedactedText
 from eki.interview.models import (
     SECTIONS,
@@ -45,6 +46,17 @@ def run_exists(conn: psycopg.Connection, run_id: UUID) -> bool:
 def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
     """Insert or replace a plan with its topics and questions, atomically."""
     with conn.transaction():
+        previous = conn.execute(
+            "SELECT status FROM interview_plans WHERE id = %s FOR UPDATE", (plan.id,)
+        ).fetchone()
+        if plan.status == "approved" and (previous is None or previous[0] != "approved"):
+            append_event(
+                conn,
+                "approval",
+                "completed",
+                AuditDetails(operation="approve_plan", target_id=plan.id),
+                run_id=plan.run_id,
+            )
         conn.execute(
             "INSERT INTO interview_plans (id, run_id, status, approved_by, approved_at) "
             "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "

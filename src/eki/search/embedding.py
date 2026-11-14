@@ -3,7 +3,9 @@
 import math
 from collections.abc import Sequence
 from typing import Protocol
+from uuid import uuid4
 
+from eki.audit import AuditDetails, AuditRecorder
 from eki.config import Settings, work_domains
 from eki.ingest.embedding import Embedder, HashingEmbedder
 from eki.ingest.redaction import RedactedText, redact
@@ -50,9 +52,32 @@ class LiteLLMEmbedder:
             raise ModelError("embedding provider failed or returned invalid vectors") from error
 
 
+class AuditedEmbedder:
+    def __init__(self, inner: SearchEmbedder, recorder: AuditRecorder) -> None:
+        self.inner, self.recorder = inner, recorder
+        self.name, self.dimensions = inner.name, inner.dimensions
+
+    def embed(self, texts: Sequence[RedactedText]) -> list[list[float]]:
+        if not texts:
+            return []
+        call_id = uuid4()
+        details = AuditDetails(operation="embedding", model_name=self.name, count=len(texts))
+        self.recorder.record("model", "started", details, call_id=call_id)
+        try:
+            result = self.inner.embed(texts)
+        except BaseException:
+            self.recorder.record("model", "failed", details, call_id=call_id)
+            raise
+        self.recorder.record("model", "completed", details, call_id=call_id)
+        return result
+
+
 def build_embedder(settings: Settings) -> SearchEmbedder:
     if settings.model_embedding:
-        return LiteLLMEmbedder(
-            settings.model_embedding, settings.model_timeout_seconds, work_domains(settings)
+        return AuditedEmbedder(
+            LiteLLMEmbedder(
+                settings.model_embedding, settings.model_timeout_seconds, work_domains(settings)
+            ),
+            AuditRecorder(settings.database_url.get_secret_value()),
         )
     return HashingEmbedder()

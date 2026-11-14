@@ -154,7 +154,10 @@ class TracedModel:
         return value
 
     def _calls(self, calls: Sequence[ToolCall]) -> tuple[ToolCall, ...]:
-        return tuple(ToolCall(c.id, c.name, self._clean(c.arguments)) for c in calls)
+        return tuple(
+            ToolCall(self._clean(c.id), self._clean(c.name), self._clean(c.arguments))
+            for c in calls
+        )
 
     def _report(
         self,
@@ -191,4 +194,4 @@ class TracedModel:
             )
         except Exception:
             # Tracing is an aid. It must never cost the expert an answer.
-            logger.warning("could not record a trace for a %s call", self._step, exc_info=True)
+            logger.warning("could not record a trace for a %s call", self._step)

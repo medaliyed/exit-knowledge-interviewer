@@ -4,6 +4,7 @@ from uuid import UUID
 
 import psycopg
 
+from eki.audit import AuditDetails, append_event
 from eki.auth import ForbiddenError, Principal
 from eki.errors import NotFoundError
 from eki.runbook.models import RunbookEntry
@@ -66,6 +67,9 @@ def set_owner(conn: psycopg.Connection, run_id: UUID, subject: str, principal: P
         ).fetchone()
         if row is None:
             raise NotFoundError("run not found")
+        append_event(
+            conn, "access", "completed", AuditDetails(operation="set_owner"), run_id=run_id
+        )
 
 
 def readers(conn: psycopg.Connection, run_id: UUID, principal: Principal) -> dict[str, object]:
@@ -88,6 +92,13 @@ def set_readers(
     with conn.transaction():
         conn.execute("SELECT 1 FROM ingest_runs WHERE id = %s FOR UPDATE", (run_id,))
         require_manager(conn, run_id, principal)
+        append_event(
+            conn,
+            "access",
+            "completed",
+            AuditDetails(operation="set_readers", count=len(set(subjects))),
+            run_id=run_id,
+        )
         conn.execute("DELETE FROM run_readers WHERE run_id = %s", (run_id,))
         with conn.cursor() as cursor:
             cursor.executemany(
