@@ -9,9 +9,10 @@ preview extension.
 
 ## The pipeline
 
-Seven stages turn an expert's work history into a searchable runbook. A model
-is used in two of them. People decide twice: the expert approves the plan, and
-the expert approves every entry.
+Seven stages turn an expert's work history into a searchable runbook. Drafting
+and interviewing require chat models; optional embeddings and an evidence
+selector can also use providers during ingestion and retrieval. People decide
+twice: the expert approves the plan, and the expert approves every entry.
 
 ```mermaid
 flowchart LR
@@ -35,7 +36,7 @@ flowchart LR
 
 | Stage | Command | Code | Model |
 | --- | --- | --- | --- |
-| 1 Ingest | `eki ingest` | `eki.ingest`, `mcp_servers` | none |
+| 1 Ingest | `eki ingest`, `eki reindex-artifacts` | `eki.ingest`, `mcp_servers` | optional artifact embeddings (`EKI_MODEL_ARTIFACT_EMBEDDING`) |
 | 2 Map gaps | `eki map`, `eki gaps` | `eki.mapping` | none |
 | 3 Plan | `eki plan` | `eki.interview.plan`, `eki.interview.drafting` | drafter (`EKI_MODEL_DRAFTER`) |
 | 4 Interview | `eki interview` | `eki.interview.interviewer` | interviewer (`EKI_MODEL_INTERVIEWER`) |
@@ -57,6 +58,7 @@ flowchart TB
     subgraph entry["Entry points"]
         cli["eki CLI<br/>src/eki/cli.py"]
         api["FastAPI app<br/>src/eki/api"]
+        browser["Expert browser workspace<br/>src/eki/web"]
     end
 
     subgraph core["eki package"]
@@ -84,6 +86,7 @@ flowchart TB
         langfuse(["Langfuse"])
     end
 
+    browser -->|authenticated same-origin HTTP| api
     cli --> ingest & mapping & interview & runbook & search
     api --> authz
     api --> interview & runbook & search
@@ -92,6 +95,7 @@ flowchart TB
     interview --> wf
     wf --> llm
     search --> llm
+    ingest -.->|optional artifact embeddings| provider
     llm --> provider
     llm -.->|best effort| langfuse
     ingest & mapping & interview & wf & runbook & search & audit & authz --> pg
@@ -103,20 +107,22 @@ Notes on the picture:
   (`InterviewService`, `RunbookService`, `SearchService`, `AnswerService`). The
   CLI is a trusted local operator tool with database credentials; untrusted
   readers use the API.
-- **Every model call passes through the same wrappers**, outermost first:
+- **Chat calls pass through these wrappers**, outermost first:
   `TracedModel` (Langfuse, best effort) wraps `AuditedModel` (must succeed
-  before the call) wraps `LiteLLMModel` (`src/eki/interview/service.py:106`).
+  before the call) wraps `LiteLLMModel` (`src/eki/interview/service.py`).
+  Provider embeddings use `AuditedEmbedder` around `LiteLLMEmbedder`
+  (`src/eki/search/embedding.py`), with the artifact run scope attached explicitly.
 - **MCP servers are separate processes** started per ingest over stdio
-  (`src/eki/ingest/pipeline.py:423`). The mail server is started only when mail
+  (`src/eki/ingest/pipeline.py`). The mail server is started only when mail
   folders were named.
 - **Langfuse** needs `EKI_LANGFUSE_PUBLIC_KEY` and `EKI_LANGFUSE_SECRET_KEY`;
-  without them tracing is off (`src/eki/llm/tracing.py:104`). Audit does not
+  without them tracing is off (`src/eki/llm/tracing.py`). Audit does not
   depend on it.
 
 ## The interview workflow
 
 Stages 3 to 5 are a fixed graph with one agentic node
-(`src/eki/graph/workflow.py:237`). Only `interview_topic` lets a model choose
+(`src/eki/graph/workflow.py`). Only `interview_topic` lets a model choose
 what to do next, and only through six tools.
 
 ```mermaid
@@ -143,21 +149,24 @@ stateDiagram-v2
 ```
 
 - **State is checkpointed in Postgres after every step**, one thread per plan
-  (`thread_config`, `src/eki/graph/workflow.py:109`). A stopped process
+  (`thread_config`, `src/eki/graph/workflow.py`). A stopped process
   continues from the last question.
 - **The record lives in tables, not in workflow state.** State holds control
-  data and the model conversation of the current topic. Plans, turns, notes
-  and open items are rows, written so that a repeated step rewrites its own
-  rows instead of adding new ones (`src/eki/interview/store.py`).
+  data and the redacted model conversation of the current topic. Plans, turns,
+  notes, open items, receipts, cached redacted replies and generation results
+  live in application tables. Accepted submissions are deduplicated; repeated
+  identical notes/synthesis retain their records and versions. Changes to an
+  accepted answer use an explicit correction (`eki.interview.delivery`,
+  `eki.interview.generation`, `eki.interview.store`, `eki.runbook.service`).
 - **A topic is complete** when each of the seven sections (trigger, diagnosis,
   steps, rollback, contacts, pitfalls, rationale) has a note or is recorded as
   open. `check_complete` is plain code, so the model cannot declare a topic
-  finished on its own (`src/eki/graph/workflow.py:215`).
+  finished on its own (`src/eki/graph/workflow.py`).
 - **Limits per topic:** 12 questions and 40 model calls. When a limit is
   reached the remaining sections are marked open (`Limits`,
-  `src/eki/graph/workflow.py:76`).
+  `src/eki/graph/workflow.py`).
 
-The interviewer's tools (`src/eki/interview/tools.py:30`):
+The interviewer's tools (`src/eki/interview/tools.py`):
 
 | Tool | Effect |
 | --- | --- |
@@ -198,9 +207,9 @@ stateDiagram-v2
   version it was built from and ignores rows of any other version.
 - Re-running synthesis rebuilds drafts from the notes. It never touches
   approved or rejected entries, and it keeps drafts the expert edited by hand
-  unless `overwrite_edits` is set (`src/eki/runbook/service.py:54`).
+  unless `overwrite_edits` is set (`src/eki/runbook/service.py`).
 - Approval requires a complete template and a citation on every claim
-  (`src/eki/runbook/review.py:28`).
+  (`src/eki/runbook/review.py`).
 
 ## Data model
 
@@ -216,11 +225,16 @@ erDiagram
     topics ||--o{ topic_artifacts : groups
     artifacts ||--o{ topic_artifacts : "belongs to"
     topics ||--|| gap_scores : "scored by"
+    ingest_runs ||--o{ plan_generations : "drafted through"
+    plan_generations ||--o{ generation_topics : "saves completed topics"
     ingest_runs ||--o{ interview_plans : "planned as"
     interview_plans ||--o{ plan_topics : lists
     plan_topics ||--o{ questions : drafts
     interview_plans ||--o| sessions : "opens one"
     sessions ||--o{ turns : records
+    sessions ||--o{ message_receipts : "tracks delivery"
+    turns ||--o| message_receipts : "protected payload reference"
+    sessions ||--o{ interview_replies : "caches redacted replies"
     turns ||--o{ notes : "source of"
     sessions ||--o{ open_items : "leaves open"
     sessions ||--o{ runbook_entries : produces
@@ -242,7 +256,7 @@ erDiagram
 | `message_receipts`, `interview_replies` | 0009 | durable acceptance and replay of redacted model replies |
 | `ingest_runs.artifact_embedding_model` | 0010 | artifact index/query model identity |
 | `plan_generations`, `generation_topics` | 0011 | per-topic drafting progress and recovery |
-| `audit_events` | 0006 | every model call, tool call and decision |
+| `audit_events` | 0006, 0009, 0011 | model/tool attempts, decisions and delivery/generation transitions |
 | LangGraph checkpoint tables | created by `eki migrate` | the workflow |
 
 Migrations are in `src/eki/migrations/` and are applied in order by
@@ -252,18 +266,18 @@ Migrations are in `src/eki/migrations/` and are applied in order by
 
 **Redaction comes first.** Secrets and personal email addresses are replaced
 with `[REDACTED:kind]` before text is stored, indexed, logged, traced or sent
-to a model (`redact`, `src/eki/ingest/redaction.py:82`). It is applied more
+to a model (`redact`, `src/eki/ingest/redaction.py`). It is applied more
 than once on purpose:
 
 | Where | Code |
 | --- | --- |
-| In each MCP server, before a tool returns | `mcp_servers/common/source.py:77` |
-| In the ingest client, again, on every artifact | `src/eki/ingest/pipeline.py:71` |
-| On the expert's answers and corrections | `src/eki/interview/service.py:303` |
-| On everything the model writes | `src/eki/interview/interviewer.py:111` |
-| On every message sent to a provider | `src/eki/llm/litellm_model.py:58` |
-| On every trace sent to Langfuse | `src/eki/llm/tracing.py:155` |
-| On search queries and questions | `src/eki/search/service.py:88` |
+| In each MCP server, before a tool returns | `mcp_servers/common/source.py` |
+| In the ingest client, again, on every artifact | `src/eki/ingest/pipeline.py` |
+| On the expert's answers and corrections | `src/eki/interview/service.py` |
+| On everything the model writes | `src/eki/interview/interviewer.py` |
+| On every message sent to a provider | `src/eki/llm/litellm_model.py` |
+| On every trace sent to Langfuse | `src/eki/llm/tracing.py` |
+| On search queries and questions | `src/eki/search/service.py` |
 
 Storage functions accept only the `RedactedText` type for anything a person or
 a model wrote, so an unredacted string is a type error.
@@ -275,16 +289,16 @@ an instruction.
 
 **Confidential answers stay out.** An answer marked confidential is stored and
 flagged. The model is told only that the section was answered
-(`src/eki/interview/interviewer.py:196`); the runbook shows a fixed marker.
+(`src/eki/interview/interviewer.py`); the runbook shows a fixed marker.
 
 **Access.** API data routes need a bearer token from `EKI_API_TOKENS`. A run
 has one owner and a list of readers. Owners and admins manage a run and see
 drafts; readers see approved entries only; everyone else gets 404
-(`src/eki/api/security.py:28`, `src/eki/access.py:14`).
+(`src/eki/api/security.py`, `src/eki/access.py`).
 
 **Audit.** Every model call, tool call and decision is written to
 `audit_events` with run, user and call ID, and no content. The write must
-succeed before a model or tool call is made (`src/eki/audit.py:210`).
+succeed before a model or tool call is made (`src/eki/audit.py`).
 
 ## Not built, or not verified
 
@@ -293,6 +307,9 @@ succeed before a model or tool call is made (`src/eki/audit.py:210`).
 - **Real models.** Tests use scripted model doubles. Interview quality,
   semantic search and model-selected answers are unverified until the opt-in
   live tests are run with a provider key.
-- **Plan editing from the CLI.** Removing, adding and reordering topics exists
-  in the API (`PATCH /plans/{id}`) but not as a CLI command.
-- **A user interface.** There is the CLI and the HTTP API, nothing else.
+- **Plan editing from the CLI.** Removing, adding and reordering topics is
+  available in the browser and API (`PATCH /plans/{id}`), not as a CLI command.
+- **Visual browser QA.** The [expert workspace](flows/browser-workspace.md) is
+  implemented with HTTP and client-logic coverage. Actual browser interaction
+  and visual/accessibility verification remain pending because browser control
+  was unavailable. Live provider validation remains deferred by user request.

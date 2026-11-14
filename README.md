@@ -14,9 +14,10 @@ connector to a live mailbox, Git host or issue tracker.
 | Read | For |
 | --- | --- |
 | [docs/tutorial.md](docs/tutorial.md) | **Start here.** Your first run, step by step, with the output to expect |
-| [docs/PDR.md](docs/PDR.md) | Requirements F1 to F13, stack, phases, current status |
+| [docs/PDR.md](docs/PDR.md) | Requirements F1 to F18, stack, phases, current status |
 | [docs/architecture.md](docs/architecture.md) | Pipeline, components, workflow graph, data model, with diagrams |
-| [docs/flows/](docs/flows/index.md) | What happens at runtime, one sequence diagram per flow, and known gaps |
+| [Browser workspace](docs/flows/browser-workspace.md) | Sign in, review plans, interview, recover saved work and approve entries |
+| [docs/flows/](docs/flows/index.md) | Runtime flows, recovery boundaries and known gaps |
 | [CLAUDE.md](CLAUDE.md) | Hard rules, working agreement, API and configuration reference |
 | [docs/fixtures-spec.md](docs/fixtures-spec.md) | The synthetic corpus and the gaps planted in it |
 | [docs/plans/](docs/plans/) | The approved plan and outcome of each phase |
@@ -25,8 +26,8 @@ connector to a live mailbox, Git host or issue tracker.
 
 - Python 3.12 and [uv](https://docs.astral.sh/uv/)
 - Docker, for Postgres with pgvector and the optional Langfuse stack
-- A model provider key for two steps only: drafting the plan and running the
-  interview. Any provider LiteLLM supports.
+- A configured model/provider key for drafting and interviewing. Optional
+  semantic embeddings and Q&A evidence selection also use a provider when enabled.
 
 ## Set up
 
@@ -69,7 +70,10 @@ uv run eki entries --plan PLAN_ID
 uv run eki review  --plan PLAN_ID
 ```
 
-Steps 1, 2 and 5 need no model.
+With the optional artifact embedder blank, steps 1, 2 and 5 need no provider.
+Mapping and entry review always run locally. The CLI offers `/retry` if an
+accepted interview message needs processing to resume; the saved answer does
+not need to be retyped.
 
 ### Search, ask and export
 
@@ -104,7 +108,7 @@ retrieval. Existing runs keep their saved model; use
 `uv run eki reindex-artifacts --run RUN_ID` to replace that index explicitly.
 `EKI_MODEL_EMBEDDING` controls runbook retrieval separately.
 
-### The HTTP API
+### Browser workspace and HTTP API
 
 ```bash
 uv run uvicorn eki.api.app:app --reload     # http://localhost:8000/docs
@@ -113,8 +117,10 @@ uv run uvicorn eki.api.app:app --reload     # http://localhost:8000/docs
 Open `http://localhost:8000/` for the expert workspace. Sign in with an existing
 API token to review plans, answer questions, review and approve cited entries,
 search and export. Tokens stay in tab memory; after a refresh, sign in again
-and reopen the saved conversation. Ingest and map the synthetic sources with
-the CLI before drafting the first plan.
+and reopen the saved conversation. Assign the run to the token's `subject`
+with `eki access`, and ingest/map the synthetic sources with the CLI before
+drafting the first plan. The [browser walkthrough](docs/tutorial.md#optional-the-browser-workspace)
+covers setup, permissions and recovery.
 
 Every data route needs `Authorization: Bearer <token>`. The routes are listed
 in [CLAUDE.md](CLAUDE.md) and their behaviour in [docs/flows/](docs/flows/index.md).

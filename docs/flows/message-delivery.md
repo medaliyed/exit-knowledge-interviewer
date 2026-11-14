@@ -38,7 +38,10 @@ process death releases its advisory lock; status reads recognize abandoned
   interrupted workflow step, such as a first question not yet checkpointed.
 
 All routes require owner/admin access, as other session routes do. The CLI
-shows receipt IDs and offers `/retry` when it finds outstanding delivery.
+shows receipt IDs and offers `/retry` when it finds outstanding delivery. The
+[browser workspace](browser-workspace.md) retains submission IDs for unchanged
+transport retries, checks receipts when a response is lost, and exposes
+**Resume saved answer** on reconnect.
 If there is no valid question to answer, submitting new text is refused; use
 resume first. There is no background worker: reconnect/retry drives recovery.
 

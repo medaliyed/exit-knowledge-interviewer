@@ -1,14 +1,15 @@
 # Runtime flows
 
-What `eki` does at runtime, one page per flow. Each page has a sequence
-diagram, a walkthrough that cites the code, the failure modes and the things
-that are worth knowing before changing it.
+What `eki` does at runtime, one page per flow. Pages include diagrams,
+walkthroughs that cite the code, failure modes and the things worth knowing
+before changing a flow.
 
 For the static picture (pipeline, components, workflow graph, data model) see
 [../architecture.md](../architecture.md).
 
 | Flow | Trigger | In one line |
 | --- | --- | --- |
+| [Expert browser workspace](browser-workspace.md) | `/` on the FastAPI server | Sign in, review a plan, interview, resume saved work and use approved knowledge through the authenticated API. |
 | [Ingest one expert's work](ingest.md) | `eki ingest` | Read sources through read-only MCP servers, redact twice, store and index a run atomically. |
 | [Draft an interview plan](draft-plan.md) | `eki plan`, `POST /runs/{id}/plan` | Pick the highest-gap topics and have a model draft questions that must quote an artifact. |
 | [Message delivery and recovery](message-delivery.md) | Message POST or receipt resume | Save a question-bound message before processing and resume without repeating logical effects. |
@@ -16,7 +17,8 @@ For the static picture (pipeline, components, workflow graph, data model) see
 | [Review and approve an entry](review-entry.md) | `eki review`, `POST /entries/{id}/approve` | Show the draft with its unsupported claims, then approve it under lock with a decision and an audit event. |
 | [Search and ask](search-and-ask.md) | `eki search`, `eki ask`, `/runbook/search`, `/runbook/ask` | Index approved entries lazily, rank with keyword and vector search under access rules, answer with exact claims or abstain. |
 
-The flows run in this order for one expert. `eki map` sits between the first
+The pipeline flows run in order for one expert; the browser workspace spans
+them. `eki map` sits between the first
 two; it is described at the end of [ingest.md](ingest.md).
 
 ## Triggers without a page
@@ -35,6 +37,7 @@ These are single-component operations. A sentence is enough.
 | `eki export`, `GET /entries/{id}/markdown`, `GET /runbook/export` | Renders approved, permitted entries as Markdown. One read, no model. |
 | `eki access`, `/runs/{id}/owner`, `/runs/{id}/access` | Sets a run's owner and readers, with an audit event in the same transaction. |
 | `eki audit`, `GET /runs/{id}/audit` | Pages through a run's audit events by ascending ID. |
+| `eki reindex-artifacts --run ID` | Atomically replaces a run's artifact vectors/model identity; described in [ingest.md](ingest.md). |
 | `GET /healthz` | Returns `{"status": "ok"}`. No authentication, no database. |
 
 ## Known gaps, collected
@@ -55,3 +58,7 @@ Things the flow pages flag. Each is cited on its page.
 - **Nothing here has run against a real model or a real source.** All flows
   were traced by reading the code and are exercised by tests with scripted
   model doubles and the synthetic corpus.
+
+- **Visual browser QA remains pending.** The implemented UI has HTTP and
+  client-logic coverage; browser interaction/layout/accessibility checks could
+  not run. ([browser-workspace.md](browser-workspace.md))

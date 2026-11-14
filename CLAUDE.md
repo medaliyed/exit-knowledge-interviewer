@@ -37,6 +37,9 @@ uv run python -m tests.fixtures.generator # regenerate the synthetic corpus
 uv run pytest -m live -s -rs              # opt-in real-model checks; needs models/provider key, costs money
 uv run eki migrate                        # then: eki ingest --since D --until D | eki map --run ID | eki gaps --run ID
 uv run eki plan --run ID                  # draft the interview plan, then: eki interview --plan ID
+uv run eki plan --run ID --generation-status GENERATION_ID  # inspect without models
+uv run eki plan --run ID --resume-generation GENERATION_ID  # resume saved topics
+uv run eki reindex-artifacts --run ID     # explicitly replace an artifact index/model pair
 uv run eki entries --plan ID              # list generated runbook entries and their status
 uv run eki review --plan ID               # approve, reject, edit or skip drafts; quit and resume
 uv run eki access --run ID --owner SUBJECT --readers SUBJECT  # trusted local operator
@@ -59,6 +62,7 @@ real providers with credentials exported to the test process.
 ```
 src/eki/
   api/        FastAPI app: plan review, interview chat (SSE), runbook entry review
+  web/        authenticated browser workspace, static assets and navigation metadata
   graph/      LangGraph workflow: fixed nodes around the one agentic node
   ingest/     connectors' client side, redaction, indexing
   interview/  plan, question drafting, the interviewer node and its six tools, storage, service
@@ -380,7 +384,8 @@ uses the same-origin authenticated API; bearer credentials stay in memory.
 Navigation endpoints are `GET /runs`, `GET /runs/{id}/plans`,
 `GET /runbook/identity` and `GET /runbook/entries?run_id=...`. Run listings apply
 live ACLs; plan/session/review access stays owner/admin-only. Readers browse
-approved entries only. Listings are bounded to the latest 200 records.
+approved entries only. Listings are capped at 200 records; run/plan listings
+show newest first.
 
 The UI supports plan pruning/reordering/additions, explicit approval, interview
 chat, confidential/skip/correct controls, saved-message resume, cited review and

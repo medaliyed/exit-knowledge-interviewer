@@ -8,23 +8,24 @@ You will play two roles:
 
 - the **operator**, who runs the commands;
 - the **expert**, Nadia Ferrand, a made-up engineer who is leaving. The
-  project ships with her made-up work history: 262 tickets, commits, pull
-  requests, wiki pages and emails.
+  project ships with her made-up tickets, commits, pull requests, wiki pages
+  and emails. The default expert/date filter ingests 262 non-mail artifacts.
 
 By the end you will have interviewed "Nadia" about the things only she knows,
 approved the runbook entries written from her answers, and searched them.
 
 **Time:** 30 to 60 minutes, most of it typing answers in step 7. You can stop
 the interview at any point and continue later. **Cost:** steps 6 and 7 call a
-paid model through your own provider key. Everything else is free and runs on
-your machine. If you have no key, do steps 1 to 5 and then read
+paid model through your own provider key. With the optional model settings
+left blank, the other steps run locally without provider calls. If you have no key, do steps 1 to 5 and then read
 [No provider key?](#no-provider-key).
 
 > **About the output shown here.** It was captured from a real run of these
 > commands on 14 November 2026. Your IDs and dates will differ. In steps 6 and
 > 7 the model was replaced by the project's test stand-in, and the plan was
-> cut to 4 topics, to keep the examples short. A real model words its
-> questions better and your plan will have about 10 topics.
+> cut to 4 topics, to keep the examples short. A configured model will use
+> its own wording; the default plan selects 10 topics plus any additional
+> topics whose sources contradict each other. Real-model quality is unverified.
 
 Phase 5 also prints generation and message receipt lines. The migration output
 and the recovery examples below were re-captured with scripted models after
@@ -54,7 +55,7 @@ cd exit-knowledge-interviewer
 cp .env.example .env
 ```
 
-Open `.env` in an editor and do two things:
+Open `.env` in an editor:
 
 1. Find the line `ANTHROPIC_API_KEY=` and paste your key after the `=`.
    If you use another provider, add its key under its own name (for example
@@ -67,9 +68,14 @@ Open `.env` in an editor and do two things:
    EKI_MODEL_DRAFTER=anthropic/claude-opus-5-5
    ```
 
-Leave everything else as it is. The passwords in the file are placeholders
-that are good enough for a trial on your own machine. Change them before using
-the project for anything else.
+3. Replace the placeholder secrets, following the comments in `.env.example`.
+   Keep the Postgres password in `EKI_DATABASE_URL` consistent with
+   `POSTGRES_PASSWORD`, and keep the two Langfuse API-key pairs consistent.
+   `LANGFUSE_ENCRYPTION_KEY` needs 64 hex characters; the example file includes
+   a command to generate them.
+4. For this walkthrough, leave `EKI_MODEL_ARTIFACT_EMBEDDING`,
+   `EKI_MODEL_EMBEDDING` and `EKI_MODEL_ANSWERER` blank. They enable optional
+   provider calls described in [Optional semantic retrieval](#optional-semantic-retrieval).
 
 `.env` is ignored by git. Never commit it.
 
@@ -106,7 +112,11 @@ uv run eki migrate
 Applied: 0001_init.sql, 0002_interview.sql, 0003_runbook.sql, 0004_access.sql, 0005_runbook_search.sql, 0006_audit.sql, 0007_mail.sql, 0008_entry_edited.sql, 0009_delivery.sql, 0010_artifact_model.sql, 0011_generation.sql
 ```
 
-If you run it a second time it prints `Database is up to date.`
+On an existing installation, run these commands too: `uv sync` installs the
+current dependencies and `eki migrate` applies only the missing migrations,
+including `0009_delivery.sql`, `0010_artifact_model.sql` and
+`0011_generation.sql`. Existing runs, plans and interviews are retained.
+If nothing is missing it prints `Database is up to date.`
 
 **What just happened:** `uv sync` installed the exact library versions the
 project pins. `eki migrate` created the empty tables.
@@ -129,7 +139,8 @@ rest of this tutorial, replace `RUN_ID` with it.
 
 **What just happened:** the program read Nadia's tickets, commits, pull
 requests and wiki pages from `tests/fixtures/corpus/`, removed secrets and
-private email addresses, and stored the result. Nothing was sent to a model.
+private email addresses, and stored the result. With artifact embeddings left
+blank as above, nothing was sent to a provider.
 
 To include her email as well, name the folders you allow. Mail is never read
 unless you do:
@@ -225,7 +236,14 @@ this tutorial says `PLAN_ID`.
   right. This question is written by code, not by the model.
 
 **What just happened:** the highest-scoring topics were chosen, and the
-drafter model wrote up to five questions for each. Nothing has been asked yet.
+drafter model wrote up to five questions for each. Completed topics were saved
+as drafting progressed; the complete plan is now ready for review. If drafting
+stops, use the printed generation ID and the commands in
+[Recover saved work](#recover-saved-work-phase-5).
+
+The CLI displays the plan and approves it as-is when you start `eki interview`.
+To remove, add or reorder topics first, use the
+[browser workspace](#optional-the-browser-workspace) or the plan-edit API.
 
 ## Step 7: the interview
 
@@ -290,8 +308,10 @@ Type it and press Enter.
 `noted trigger: ...` is the interviewer telling you what it wrote down. Read
 it: this text is what ends up in the runbook.
 
-For `steps`, write one sentence per step. Each sentence becomes one numbered
-step.
+For `steps`, write separate sentences or an explicit numbered/bulleted list.
+Synthesis and later corrections use the same splitter. Common abbreviations
+such as `e.g.` and `Dr.` stay intact, and each resulting step retains its
+citation. Other runbook sections keep the note as a whole claim.
 
 A real model is told to fill every part an answer covers, so one good answer
 can settle several parts and you may get fewer questions than shown here.
@@ -315,7 +335,8 @@ question is asked again because you have not answered it yet.
 
 ### Situation 3: you do not know
 
-Say so. Nothing is made up to fill the hole.
+Say that you do not know. The interviewer should record the gap as an open
+question; check that outcome during entry review.
 
 ```text
 [turn 18, diagnosis] You did not mention the diagnosis. What is it?
@@ -397,9 +418,13 @@ Things you may notice:
 - The line `--- Topic 1 of N ---` is not printed for the first topic. The
   first question simply appears.
 - A topic stops after 12 questions. Parts still missing are marked open.
-- If the model cannot be reached you see `The model could not be reached.
-  Nothing was lost: send the same message again.` Your answer was saved; type
-  it again.
+- If processing pauses, you see `Processing paused. Resume the saved message.`
+  The next prompt identifies the saved message and offers `/retry` or `/quit`.
+  Choose `/retry` there to continue without retyping the answer. `/retry` is
+  used at this recovery prompt, not as an answer to a normal interview question.
+- Receipt lines such as `message ...: saved` are omitted from the longer
+  conversation excerpts above. `saved` means the answer was accepted durably;
+  it does not mean model processing or runbook approval is complete.
 
 ## Step 8: review the runbook entries
 
@@ -473,7 +498,8 @@ Open question (blank for none):
 Edited; approval is required.
 ```
 
-**reject** discards the entry and asks why.
+**reject** marks the entry rejected and asks why. It stays in the review
+history and is excluded from search/export; an edit can return it to draft.
 
 ```text
 Approve, reject, edit, skip, or quit? reject
@@ -611,8 +637,8 @@ Exported to runbook.md
 ```
 
 `runbook.md` holds every approved entry: seven headed parts each, numbered
-steps, open questions, who approved it and when, and a footnote per claim
-naming its source. It refuses to overwrite an existing file; pick a new name
+steps, open questions, who approved it and when, and source footnotes. Claims
+that cite the same source share a footnote. It refuses to overwrite an existing file; pick a new name
 or delete the old one. An excerpt:
 
 ```markdown
@@ -644,9 +670,48 @@ Open <http://localhost:3000> and sign in with `LANGFUSE_INIT_USER_EMAIL` and
 model call from steps 6 and 7, already redacted, tagged with its run, plan and
 session.
 
+## Optional: the browser workspace
+
+You can use the browser for steps 6–9 after ingesting and mapping the run with
+the CLI. Complete [step 9a and 9b](#step-9-use-the-runbook) first: assign this
+run to your token's `subject` and register its token in `.env`. The token's
+`name` must match the run's expert for approvals.
+
+Start the server in a second terminal:
+
+```bash
+uv run uvicorn eki.api.app:app --reload
+```
+
+Open <http://localhost:8000/>, enter the access token from `EKI_API_TOKEN`, and
+choose **Open workspace**. Restart the server after changing token registration
+or model settings. The browser keeps the token only in tab memory; after a
+refresh, sign in again and select the same handover.
+
+| What to do | In the workspace |
+| --- | --- |
+| Prepare a plan | Select your handover, open **Interview plans**, then **Draft a new plan**. Inspect per-topic progress; a paused draft offers **Inspect progress** and **Resume saved generation**. |
+| Review topics | Use **Move up**, **Move down**, **Remove topic** or **Add topic**, then **Approve plan & start interview**. |
+| Answer | Enter **Your answer** and choose **Save answer & continue**. Use the confidential checkbox, **Skip this question**, or **Correct an earlier answer** when needed. |
+| Recover | Reopen **Open conversation**. Outstanding receipts offer **Resume saved answer**; an interrupted step without one offers **Recover conversation**. |
+| Review entries | After completion, choose **Review drafted entries** or the **Review entries** tab. Inspect source-turn links, open questions and flagged terms before approving. |
+| Edit or reject | **Edit entry** returns the entry to draft. In the editor, separate claims/steps with a blank line. Supply a reason when choosing **Reject entry**. |
+| Use approved knowledge | Open **Approved knowledge** to search or ask across your permitted entries, read citations, and download approved Markdown. |
+
+Only submitted messages acknowledged as saved, or found through their receipt,
+are durable. Unsubmitted text remains in the current tab. Owners/admins can
+manage interviews and review drafts; readers see approved knowledge only.
+An empty workspace usually means no run has been assigned/shared with the
+token's `subject`. Navigation lists show at most 200 records.
+
+The implementation has HTTP and client-logic test coverage. Visual browser and
+accessibility QA remain pending because browser control was unavailable. See
+[the browser flow](flows/browser-workspace.md) for permissions and endpoint details.
+
 ## Optional: the web API
 
-Everything above is also available over HTTP.
+The browser uses the same authenticated HTTP API. Its interactive reference
+is available alongside the workspace.
 
 ```bash
 uv run uvicorn eki.api.app:app --reload
@@ -680,9 +745,13 @@ about how well a real model asks questions.
 | `eki: run ... has no topics yet; run: eki map --run ...` | You skipped `eki map` | Run it, then `eki gaps` again |
 | `eki: no completed run ...` | Wrong or mistyped run ID | Copy the ID printed by `eki ingest` again |
 | `eki: EKI_MODEL_DRAFTER is not set (a LiteLLM model name)` | The model lines are missing from `.env` | Redo step 1 |
-| `eki: the model could not be reached; nothing was lost, run the command again` | The provider key is missing or wrong, the model name is wrong, or the network is down | Check the key and model name in `.env`, then run the same command again |
-| `The model could not be reached. Nothing was lost: send the same message again.` (during the interview) | same, in the middle of an interview | Resume the saved answer with `/retry` when offered |
+| `eki: Drafting paused; completed topics are saved. Use the resume command above.` | A provider call failed while drafting | Check provider configuration, inspect the printed generation ID, then use `--resume-generation` to keep completed topics |
+| `Processing paused. Resume the saved message.` | The answer is saved but model or audit processing could not finish | Choose `/retry` at the recovery prompt, or **Resume saved answer** in the browser |
 | `eki: valid EKI_API_TOKEN credentials are required` | Step 9b is not done, or the two token values differ | Fix the two lines in `.env` |
+| `generation inputs or configuration changed; start a new generation` | The saved draft used different source/mapping, prompt, model or drafting settings | Run `eki plan --run RUN_ID` without a resume flag to start a new generation |
+| `message differs from saved submission; resume it first` | A retry changed a saved message | Resume the existing receipt, then use an explicit correction to change its answer |
+| The browser shows no handovers | The token subject has no accessible run | Check `eki access --run RUN_ID --owner SUBJECT` and token registration; restart the API after changing `.env` |
+| `only a draft can be approved or rejected; edit it first` | The entry is already approved or rejected | Edit it to return it to draft before another review decision |
 | Search finds nothing | No entry is approved yet, or step 9a named a different owner than `subject` in 9b | Approve an entry; make the two names match |
 | `Review refused: check the name, section and content.` | A part name was mistyped in `edit`, or the edit left a part empty | Use one of the seven part names; give at least one claim or an open question |
 | `eki: cannot create output file; check permissions and that it does not exist` | The export file already exists | Choose another name |
@@ -690,12 +759,16 @@ about how well a real model asks questions.
 
 ## Recover saved work (Phase 5)
 
-Drafting prints a generation ID before its model calls. This line was captured
-from a fresh synthetic three-topic check:
+Drafting prints a generation ID before its model calls. This output was
+captured from a synthetic three-topic check that failed on its second topic:
 
 ```text
-Generation b594ec48-911f-4cb7-9b07-6b90bf8c20f3. Resume with: eki plan --run b5bc2ffe-94e9-4251-a67c-b0e265b6465d --resume-generation b594ec48-911f-4cb7-9b07-6b90bf8c20f3
+Generation 3c57066b-cdb5-4af1-84a8-e1f0bddfc554. Resume with: eki plan --run 2e4cd7a6-6135-47f9-a706-275310dc2756 --resume-generation 3c57066b-cdb5-4af1-84a8-e1f0bddfc554
+eki: Drafting paused; completed topics are saved. Use the resume command above.
 ```
+
+Its progress record contained one completed topic out of three, with status
+`needs_retry`. Resuming kept the first topic and completed the remaining two.
 
 If drafting stops, inspect or resume that ID instead of creating another plan:
 
@@ -708,11 +781,12 @@ Completed topics keep their original questions. If configuration or inputs have
 changed, start a new generation explicitly. An unfinished generation can be
 inspected but cannot yet be approved.
 
-After accepting an interview answer, the CLI also prints a receipt line. This
-was captured from the same synthetic check:
+This output was captured when the scripted interviewer failed after accepting
+an answer:
 
 ```text
-  message 92232bf6-80d8-4b24-88b3-a78c84fa88dc: saved
+  message a3447bc8-6544-4068-9d98-bac51ae34c3d: saved
+  Processing paused. Resume the saved message.
 ```
 
 On reconnect, the CLI finds saved messages and offers `/retry` or `/quit`.
@@ -720,6 +794,35 @@ Choose `/retry` to continue processing the saved answer without retyping it.
 The HTTP API and browser workspace expose the same delivery status and resume
 operations. To use the browser, start the API and open `http://localhost:8000/`;
 sign in with the token configured in step 9.
+
+## Optional semantic retrieval
+
+These settings are independent. Leave them blank for the provider-free defaults
+outside drafting/interviewing; enabling one can add provider calls and charges.
+
+| Setting | What it controls |
+| --- | --- |
+| `EKI_MODEL_ARTIFACT_EMBEDDING` | Artifact embeddings at ingestion/reindexing and the interviewer's source retrieval. Models must support 256 dimensions. |
+| `EKI_MODEL_EMBEDDING` | Approved runbook embeddings for search/Q&A. Models must support 256 dimensions. |
+| `EKI_MODEL_ANSWERER` | Optional evidence selection for Q&A; answers still use exact approved claims and citations. |
+
+Changing the artifact setting affects new ingestion and explicit reindexing.
+Existing runs keep their recorded model, which the interviewer continues to use.
+To replace one run's artifact index after selecting a model, run:
+
+```bash
+uv run eki reindex-artifacts --run RUN_ID
+```
+
+Vectors are validated in batches and the replacement commits atomically with
+its model identity. A failed rebuild leaves the previous index/model pair usable.
+To return an existing run to offline hashing, clear the artifact setting and
+reindex it explicitly. Restart a running API after configuration changes.
+Mapping/gap scoring continues to use local hashing.
+
+Real-provider quality validation remains deferred by request. The
+[evaluation guide](../evals/README.md) lists the opt-in checks; no live provider
+runs are needed to follow the local defaults in this tutorial.
 
 ## Starting again
 
@@ -735,5 +838,6 @@ sign in with the token configured in step 9.
 
 - [architecture.md](architecture.md) explains how the pieces fit, with
   diagrams.
+- [flows/browser-workspace.md](flows/browser-workspace.md) covers the browser workflow and access rules.
 - [flows/](flows/index.md) shows what each command does inside, step by step.
 - [../README.md](../README.md) is the short reference for all commands.

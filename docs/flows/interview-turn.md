@@ -1,138 +1,125 @@
 # One interview turn
 
-**Trigger:** `POST /sessions/{id}/messages` (`src/eki/api/app.py:406`), or a
-line typed in `eki interview --plan ID` (`src/eki/cli.py:332`)
-**Outcome:** the expert's answer stored as a turn, notes or open items for the
-sections it covered, and either the next question or, after the last topic, a
-finished session with draft runbook entries.
+**Trigger:** a message from `eki interview --plan ID`, the browser conversation,
+or `POST /sessions/{id}/messages`. **Outcome:** a durable expert turn and either
+the next question or a finished session with private draft runbook entries.
 
-This flow repeats once per answer. Everything between two answers is one step
-of the workflow.
+Message acceptance and reconnect behavior are described in
+[message-delivery.md](message-delivery.md). This page explains how a saved
+submission becomes notes and the next question.
 
 ## What happens
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Expert
     participant Svc as InterviewService
     participant WF as Interviewer node
-    participant LLM as Interviewer model
     participant DB as Postgres
+    participant LLM as Interviewer model
 
-    Expert->>Svc: answer, skip or correction
-    Svc->>DB: take the plan's advisory lock
-    Svc->>DB: read the checkpoint, which question is waiting?
-    Note over Svc: redact the answer
-    Svc->>DB: insert the expert turn
-    Svc->>WF: resume with the turn number
-    WF->>DB: load the turn
-    Note over WF: a confidential answer is not shown to the model
-    loop until the model asks, or the topic is done
-        WF->>DB: audit "model started"
-        WF->>LLM: conversation so far, six tools
-        LLM-->>WF: tool calls
-        WF->>DB: record_note, mark_open or artifact search
-        WF-)Expert: event "note" or "open"
+    Expert->>Svc: message ID, question target, answer/skip/correction
+    Svc->>DB: acquire plan lock; validate target and deduplicate ID
+    Note over Svc: redact before storage
+    Svc->>DB: commit protected turn, receipt and audit together
+    Svc-->>Expert: saved receipt (delivery event for explicit-ID clients)
+    Svc->>DB: reconcile receipt with workflow checkpoint
+    Svc->>WF: resume with the saved turn number
+    WF->>DB: load protected expert turn
+    Note over WF: confidential text is replaced by a marker before model context
+    loop until another question or topic completion
+        WF->>DB: load cached redacted reply for this step/call
+        opt no saved reply
+            WF->>DB: audit model attempt
+            WF->>LLM: redacted conversation and six tools
+            LLM-->>WF: tool calls
+            WF->>DB: save redacted reply before applying its tools
+        end
+        WF->>DB: audited tool attempts; notes/open items/artifact reads
+        WF-->>Expert: note/open/topic progress events
     end
-    alt the model asks the next question
-        WF->>DB: insert the question turn
-        WF->>DB: checkpoint, stopped at the question
-        Svc-->>Expert: event "question"
-    else every topic is finished
-        WF->>DB: finish session, build draft entries
-        WF->>DB: checkpoint, workflow ended
-        Svc-->>Expert: event "done"
+    alt another question
+        WF->>DB: store question; checkpoint at its interrupt
+        Svc->>DB: mark receipt processed with terminal question
+        Svc-->>Expert: question event
+    else all topics complete
+        WF->>DB: finish session and synthesise private drafts atomically
+        WF->>DB: checkpoint ended workflow
+        Svc->>DB: mark receipt processed with terminal done result
+        Svc-->>Expert: done event
     end
 ```
 
+A repeated processed receipt returns its stored terminal result before any
+model or tool work. The diagram shows a new submission's processing path.
+
 ## Walkthrough
 
-1. **Three actions** - `answer`, `skip` and `correct`. Over HTTP the reply is a
-   server-sent event stream; the CLI prints the same events
-   (`src/eki/interview/service.py:232`).
-2. **One message at a time** - an advisory lock on the plan is held for the
-   whole step. A second message for the same session is refused, not queued
-   (`src/eki/interview/service.py:251`).
-3. **The checkpoint says what is waiting** - the question is read from the
-   workflow's saved state, not from the request
-   (`src/eki/interview/service.py:259`).
-4. **Redaction before storage** - the answer is redacted before it is written
-   anywhere (`src/eki/interview/service.py:303`).
-5. **The answer is stored before the model runs** - and the insert is keyed by
-   the question it answers, so a retry rewrites the same row
-   (`src/eki/interview/store.py:224`).
-6. **Resume carries a number, not the text** - the workflow gets only the turn
-   number and reads the turn from the table
-   (`src/eki/interview/service.py:316`, `src/eki/interview/interviewer.py:160`).
-   Answer text never enters workflow state this way; a confidential answer
-   therefore cannot leak into a checkpoint.
-7. **Confidential answers** (after step 6) - the section is recorded as answered with
-   a fixed marker, and the model is told only that
-   (`src/eki/interview/interviewer.py:196`).
-8. **The model works through tools** (steps 7 to 11) - each reply is a set of
-   tool calls. Model text and tool arguments are redacted before they are kept
-   (`src/eki/interview/interviewer.py:246`). Every tool call is audited before
-   and after (`src/eki/interview/interviewer.py:264`).
-9. **A note needs an answer** - `record_note` is refused until the expert has
-   said something about this topic, and the note cites that turn
-   (`src/eki/interview/interviewer.py:383`).
-10. **Asking stops the step** (steps 12 to 14) - `ask_expert` stores the
-    question and the node returns; on its next run it interrupts at the very
-    top and waits (`src/eki/interview/interviewer.py:316`,
-    `src/eki/interview/interviewer.py:425`). Tool calls after the question in
-    the same reply are not run.
-11. **Topic end is checked by code** - the `check_complete` node sends the
-    model back if a section has neither a note nor an open item
-    (`src/eki/graph/workflow.py:215`).
-12. **Last topic** (steps 15 to 17) - the session is marked finished and one
-    draft entry per topic is built from the notes, in one transaction, with no
-    model call (`src/eki/graph/workflow.py:227`,
-    `src/eki/runbook/service.py:55`). Procedure notes become ordered steps at
-    sentence boundaries or explicit numbered/bulleted list items; common
-    abbreviations stay intact. Every step cites the note's source turn
-    (`src/eki/runbook/steps.py`, `src/eki/runbook/synthesis.py`).
+1. **Actions and access.** The service accepts `answer`, `skip` and `correct`.
+   API/browser callers must own the run or be admins. The CLI remains a trusted
+   local operator. One advisory lock on the plan serializes interview messages
+   and holds through processing; a concurrent worker gets a conflict.
+2. **Question binding.** Answers/skips name `question_turn`; corrections name
+   `corrects`. The service validates the target against the durable transcript.
+   Legacy callers can omit the ID/target when the waiting question is unambiguous.
+   A different submission cannot overwrite an accepted answer.
+3. **Durable acceptance.** The redacted turn, receipt, correction effects when
+   applicable, and audit event commit together. The HTTP response starts only
+   after that commit. `saved` means accepted, not finished or approved.
+4. **Workflow recovery.** The service reconciles the target turn with its saved
+   checkpoint. It recovers an interrupted step before delivering an answer when
+   needed. The resume value carries a turn number, not answer text. A receipt
+   that already advanced the workflow cannot accidentally answer the next question.
+5. **Confidentiality and skip.** A skipped question is marked open. A confidential
+   answer records a fixed note marker; the answer text is excluded from model
+   input, reply caches, checkpoints, traces and API responses.
+6. **Reply replay.** The interviewer reuses persisted redacted replies keyed by
+   session, workflow step and call index. When no reply exists, the audited model
+   is called and its result is saved before tools run. An identical note replay
+   does not create another superseded note. Provider attempts without a persisted
+   result can repeat and be billed again.
+7. **Questions and completion.** `ask_expert` stores a question and stops that
+   step's tool sequence; the next node invocation interrupts for its answer.
+   Plain code checks every template section before a topic can finish. Missing
+   sections return the model to the topic, subject to question/model-call limits.
+8. **Final synthesis.** The last topic finishes the session and builds one draft
+   entry per topic in the same transaction. No synthesis model runs. Procedure
+   text uses the shared abbreviation/list-aware step splitter, and every claim
+   cites its source turn. Repeating unchanged synthesis leaves versions alone.
+   The delivery receipt is completed before its terminal result is returned.
 
-Message acceptance and reconnect behavior are described in
-[message-delivery.md](message-delivery.md). New clients use stable message IDs
-and explicit question targets. Saved answers can resume without their text.
+Implementation: `eki.interview.service.InterviewService`,
+`eki.interview.interviewer._Step`, `eki.interview.delivery`,
+`eki.interview.store`, `eki.graph.workflow` and `eki.runbook.synthesis`.
 
-**Skip:** the section is recorded as open with the reason "skipped by expert"
-and the model is told not to ask again (`src/eki/interview/interviewer.py:174`).
+## Corrections
 
-**Correction:** the correction is stored as a new turn, every note taken from
-the corrected turn is replaced by the correction word for word, and any runbook
-entry citing that turn is updated and returned to draft, all in one transaction
-(`src/eki/interview/service.py:318`). The pending question stays open.
-Procedure claims use the same step splitter as synthesis, and all replacement
-steps cite the correction turn. Other sections retain the correction as one
-claim (`src/eki/runbook/service.py:251`).
+The correction becomes a new expert turn. Notes from the corrected turn are
+superseded and replaced word for word; affected entry claims are updated with
+new citations, and affected entries return to draft for review. Procedure text
+is split into ordered steps by the same helper used for synthesis; other
+sections keep the correction as a whole claim. Unrelated claims are retained.
+A correction does not answer the pending question. Its receipt and effects commit
+atomically, so repeating its message ID does not add another review decision.
 
 ## Failure modes
 
-| When | Behaviour | Where |
-| --- | --- | --- |
-| Another message for the session is in progress | 409; nothing stored | `src/eki/interview/service.py:251` |
-| An answer with no text | 422; nothing stored | `src/eki/interview/service.py:301` |
-| The interview is already finished | 409 (a correction is still accepted) | `src/eki/interview/service.py:293` |
-| The model cannot be reached | event `error` / `model_unavailable`. The answer is already stored; resume its receipt to continue | `src/eki/interview/service.py:394` |
-| Audit storage is down | event `error` / `audit_unavailable`; the model is not called; the session can be retried | `src/eki/interview/service.py:387` |
-| The process stopped in the middle of a step | Resume the saved receipt or session. A new answer without an unambiguous pending question is refused rather than discarded. | `src/eki/interview/service.py` |
-| 12 questions asked about one topic | the remaining sections are marked open and the topic ends | `src/eki/interview/interviewer.py:310` |
-| 40 model calls spent on one topic | same, with the reason "the interviewer stopped" | `src/eki/interview/interviewer.py:436` |
-| The model replies with plain text and no tool call | it is told to use a tool; this counts towards the 40 calls | `src/eki/interview/interviewer.py:252` |
+| When | Behavior |
+| --- | --- |
+| Another worker holds the plan lock | 409; retry/resume after it finishes |
+| Empty answer or invalid action/target fields | 422; no accepted submission |
+| ID reused with changed canonical payload, stale question, or different outstanding submission | 409; saved answers are retained; resume or correct explicitly |
+| New answer submitted to a finished interview | 409; corrections remain available |
+| Model/audit processing pauses after acceptance | SSE `error` with `model_unavailable` or `audit_unavailable`; resume the saved receipt |
+| Acceptance storage/audit fails before commit | No saved acknowledgement; the request fails before processing |
+| Process stops between a write and its checkpoint | Resume the receipt/session; saved replies and idempotent writes recover the step |
+| 12 questions or 40 model calls for a topic | Remaining sections are marked open and the topic ends |
+| Model returns prose without a tool call | It is asked to use a tool; this counts toward the call limit |
 
-## Notes
+The notes remain the model's wording; review compares them with the cited
+answer and highlights unsupported terms. Artifact search uses the run's saved
+embedding model, with lexical hashing as the default. See
+[ingest.md](ingest.md) and [review-entry.md](review-entry.md).
 
-- **A retry with different text replaces the stored answer.** The insert in
-  step 4 updates the existing row when the same question is answered again
-  (`src/eki/interview/store.py:243`). After a model failure, what the expert
-  sends the second time is what the transcript keeps.
-- **A step is re-run from its start after a failure.** Model calls made before
-  the failure are made again and audited again as separate attempts. The
-  question turn is rewritten in place; a note recorded twice supersedes the
-  first, which is kept but no longer in force.
-- **The interviewer's artifact search is lexical**, see
-  [ingest.md](ingest.md).
-- **The notes are the model's wording.** They are compared with the cited
-  answer only later, at review; see [review-entry.md](review-entry.md).
+Service and crash-recovery evidence uses scripted models and synthetic sources.
+Real-model interview quality remains deferred by user request.
