@@ -5,7 +5,8 @@ It is the brief for designing the next version of the workspace and the yardstic
 for accepting it. The design prompt in
 [claude-design-prompt.md](claude-design-prompt.md) is derived from this document.
 
-**Status:** draft for review, 2026-11-14.
+**Status:** implemented with automated coverage, 2026-11-14; manual screen-reader
+walkthrough and real-provider validation remain pending.
 **Covers:** requirement F16 (browser workflow for plan review, interview, cited
 entry review and approval), and the browser side of F10, F11, F12 and F14.
 **Starts from:** the existing workspace in `src/eki/web/static/` (commit
@@ -281,3 +282,28 @@ Interview stream events: `delivery`, `topic`, `note`, `open`, `corrected`,
 | Who approves plans and entries? | The expert only (today) / a delegate | Expert only, until identity is account-based |
 | Dark theme | Now / later | Later, unless users ask |
 | Plan editing depth | Topic level (today) / question level | Topic level; questions are drafted per topic |
+
+## 13. Implementation decisions
+
+The owner requested implementation after reviewing the supplied HTML prototype
+and the proposed React/TypeScript/Vite stack. This authorizes the framework and
+dependencies described in §10. Source lives in `frontend/`; production HTML,
+JavaScript and CSS are bundled into `src/eki/web/static/workspace/` and remain
+same-origin assets served by FastAPI. Browser routes use `/workspace/*` so API
+paths remain unchanged. Tailwind and locally owned shadcn-style Radix controls
+preserve the prototype's design tokens.
+
+The implementation corrects three prototype promises to match the server:
+automatic entry drafting happens at interview completion; edited/corrected
+approved entries are withdrawn until reapproval; drafting saves completed topics
+for resumption without promising an independent background worker. Search/ask
+are explicitly labelled as spanning all permitted handovers, while entry lists
+and bulk downloads remain scoped to the selected handover. Review includes a
+conversation selector for handovers with more than one plan.
+
+Plan approval now enforces expert-name matching over HTTP, matching entry review
+and the rule in §7. Confidential answers are cleared at acceptance and remain
+placeholders after submission. Expiry/sign-out clears cached data, unsent drafts
+and outstanding requests while preserving the browser route for reauthentication.
+See `frontend/README.md` and `docs/flows/browser-workspace.md` for verification and
+remaining manual checks.

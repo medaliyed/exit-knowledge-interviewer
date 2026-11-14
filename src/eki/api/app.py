@@ -43,7 +43,7 @@ from eki.llm import ModelError
 from eki.runbook.export import ExportService
 from eki.runbook.faithfulness import Unsupported
 from eki.runbook.models import SECTION_NAMES, SectionName
-from eki.runbook.review import SectionEdit
+from eki.runbook.review import SectionEdit, check_expert
 from eki.runbook.service import RunbookService
 from eki.runbook.store import StoredEntry
 from eki.search.answers import AnswerService, build_answers
@@ -436,6 +436,19 @@ def create_app(
     ) -> dict[str, Any]:
         """Freeze the plan and open its session. Returns the session with the first question."""
         actor(request, approval.approved_by)
+
+        def expert() -> None:
+            with psycopg.connect(service.dsn, autocommit=True) as conn:
+                row = conn.execute(
+                    "SELECT r.expert_name FROM ingest_runs r "
+                    "JOIN interview_plans p ON p.run_id=r.id WHERE p.id=%s",
+                    (plan_id,),
+                ).fetchone()
+            if row is None:
+                raise NotFoundError(f"no plan {plan_id}")
+            check_expert(approval.approved_by, row[0])
+
+        await operation(expert)
         return _session(await service.approve(plan_id, approval.approved_by))
 
     @app.get("/sessions/{session_id}")

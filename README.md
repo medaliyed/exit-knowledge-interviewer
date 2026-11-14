@@ -123,6 +123,11 @@ with `eki access`, and ingest/map the synthetic sources with the CLI before
 drafting the first plan. The [browser walkthrough](docs/tutorial.md#optional-the-browser-workspace)
 covers setup, permissions and recovery.
 
+The redesigned workspace follows the HTML prototype and UI PDR with React,
+TypeScript and Vite. Its production assets are included, so running the API is
+enough to use it. For frontend development, run `npm ci` and `npm run dev` in
+`frontend/`; see [frontend/README.md](frontend/README.md) for build and browser tests.
+
 Every data route needs `Authorization: Bearer <token>`. The routes are listed
 in [CLAUDE.md](CLAUDE.md) and their behaviour in [docs/flows/](docs/flows/index.md).
 
@@ -162,9 +167,11 @@ uv run pytest -m live -s -rs
 
 Phases 0–4 and the Phase 5 code deliverables are implemented with synthetic
 acceptance coverage: durable message recovery, an expert browser workspace,
-model-aware artifact retrieval and resumable plan generation. Real-provider
-validation is deferred by user request, and visual browser QA is pending because
-browser control is unavailable. Source connectors remain synthetic. The
+model-aware artifact retrieval and resumable plan generation. The redesigned
+workspace follows the supplied HTML prototype and UI PDR, with automated browser
+workflow, accessibility and responsive-layout checks. Real-provider validation
+remains deferred by user request; manual screen-reader validation is still pending.
+Source connectors remain synthetic. The
 [Phase 5 PDR](docs/plans/phase-5.md) records evidence and remaining acceptance
 work. Known gaps are listed in
 [docs/flows/index.md](docs/flows/index.md).

@@ -7,7 +7,7 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -22,9 +22,15 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
     app.mount("/assets", StaticFiles(directory=ASSETS), name="assets")
 
     @app.get("/", include_in_schema=False)
-    def workspace() -> FileResponse:
+    @app.get("/workspace", include_in_schema=False)
+    @app.get("/workspace/{path:path}", include_in_schema=False)
+    def workspace(path: str = "") -> FileResponse:
+        # Only browser paths use the SPA shell. Missing assets must remain 404s,
+        # rather than returning HTML to a script/style request.
+        if Path(path).suffix:
+            raise HTTPException(status_code=404, detail="Not Found")
         return FileResponse(
-            ASSETS / "index.html",
+            ASSETS / "workspace" / "index.html",
             headers={
                 "Cache-Control": "no-store",
                 "X-Content-Type-Options": "nosniff",

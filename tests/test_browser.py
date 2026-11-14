@@ -1,5 +1,7 @@
 """F16: the browser shell and its navigation endpoints preserve API access rules."""
 
+import re
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -8,22 +10,86 @@ from fastapi.testclient import TestClient
 from eki.access import set_owner, set_readers
 from eki.api.app import create_app
 from eki.runbook.service import RunbookService
+from eki.web import routes
 from tests.conftest import Scratch
 from tests.interview_support import make_service
 from tests.test_api_access import ADMIN, OWNER, authenticator, headers
 from tests.test_workflow_synthesis import finished
 
 
-def test_browser_shell_has_no_embedded_credentials() -> None:
+def test_browser_paths_do_not_intercept_api_or_missing_assets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    build = tmp_path / "workspace"
+    build.mkdir()
+    shell = '<div id="root"></div><script src="/assets/workspace/app.js"></script>'
+    (build / "index.html").write_text(shell)
+    (build / "app.js").write_text("console.log('workspace');")
+    (tmp_path / "app.js").write_text("console.log('legacy client');")
+    monkeypatch.setattr(routes, "ASSETS", tmp_path)
+    client = TestClient(create_app())
+    for path in ("/", "/workspace", "/workspace/", "/workspace/handovers/example/plans"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.text == shell
+        assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+        assert "script-src 'self'" in response.headers["content-security-policy"]
+        assert "style-src 'self'" in response.headers["content-security-policy"]
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
+    assert client.get("/assets/workspace/app.js").text == "console.log('workspace');"
+    assert client.get("/assets/app.js").text == "console.log('legacy client');"
+    assert client.get("/assets/../config.py").status_code == 404
+    assert client.get("/assets/workspace/missing.js").status_code == 404
+    assert client.get("/workspace/missing.js").status_code == 404
+    assert client.get("/not-a-workspace-route").status_code == 404
+    assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/runs").status_code == 401
+    assert client.get("/plans/00000000-0000-0000-0000-000000000000").status_code == 401
+    assert client.post("/workspace/handovers/example/plans").status_code == 405
+
+
+def test_packaged_workspace_build_serves_local_javascript_and_styles() -> None:
     client = TestClient(create_app())
     response = client.get("/")
     assert response.status_code == 200
-    assert 'id="login"' in response.text
-    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
-    script = client.get("/assets/app.js")
-    assert script.status_code == 200
-    assert "localStorage" not in script.text and "innerHTML" not in script.text
-    assert client.get("/assets/../config.py").status_code == 404
+    assert '<div id="root"></div>' in response.text
+    assets = re.findall(r'(?:src|href)="([^"]+)"', response.text)
+    assert any(asset.endswith(".js") for asset in assets)
+    assert any(asset.endswith(".css") for asset in assets)
+    for asset in assets:
+        assert asset.startswith("/assets/workspace/")
+        resource = client.get(asset)
+        assert resource.status_code == 200
+        assert "text/html" not in resource.headers["content-type"]
+    assert client.get("/workspace/example/plans").text == response.text
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("subject", ["owner", "admin"])
+def test_plan_approval_requires_the_authenticated_expert(scratch: Scratch, subject: str) -> None:
+    from eki.interview import store
+    from tests.interview_support import seed_run
+
+    with scratch.connect() as conn:
+        run = seed_run(conn)
+        set_owner(conn, run, OWNER.subject, ADMIN)
+        if subject == "owner":
+            conn.execute("UPDATE ingest_runs SET expert_name='Another Expert' WHERE id=%s", (run,))
+    service = make_service(scratch.dsn)
+    client = TestClient(create_app(service, authenticator=authenticator()))
+    plan = client.post(f"/runs/{run}/plan", headers=headers(subject)).json()
+    name = OWNER.name if subject == "owner" else "admin"
+    response = client.post(
+        f"/plans/{plan['id']}/approve",
+        headers=headers(subject),
+        json={"approved_by": name},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "reviewer must match the run's expert"
+    assert client.get(f"/plans/{plan['id']}", headers=headers(subject)).json()["status"] == "draft"
+    with scratch.connect() as conn:
+        assert store.session_of_plan(conn, UUID(plan["id"])) is None
 
 
 @pytest.mark.db

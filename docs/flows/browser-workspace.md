@@ -5,9 +5,19 @@
 entries and exports them. A reader can browse approved knowledge shared with
 their identity.
 
-The browser is a same-origin HTML/CSS/JavaScript client in `src/eki/web/static/`.
-It uses the same authenticated API as other clients. It does not start ingestion
-or mapping; those remain CLI setup steps.
+The browser is a React/TypeScript client in `frontend/`, built with Vite into
+`src/eki/web/static/workspace/`. The committed production build is served by
+FastAPI at `/` and `/workspace/*`; its scripts and styles use
+`/assets/workspace/`. Browser paths have their own prefix so they cannot shadow
+the API's `/plans`, `/sessions` or `/entries` routes. Missing static files still
+return 404. It uses the same authenticated API as other clients. Ingestion and
+mapping remain CLI setup steps.
+
+To develop the frontend, run `npm ci` and `npm run dev` in `frontend/`, with the
+FastAPI server running on port 8000. Vite proxies data requests to that server.
+Run `npm run build` to type-check and update the production assets. Serving the
+committed build needs no Node process; FastAPI serves it on the same origin as
+the API.
 
 ## Prepare a handover
 
@@ -48,7 +58,7 @@ flowchart LR
 | --- | --- |
 | **Interview plans** | Draft a plan; inspect saved generation progress; resume unfinished topics; open an existing conversation. |
 | Plan review | Read source quotations; move, remove or add topics; explicitly approve the completed plan. Partial generations cannot be approved. |
-| Conversation | Save an answer; mark it confidential; skip; correct an earlier answer by its expert turn number. |
+| Conversation | Save an answer; mark it confidential; skip; select an earlier answer to correct it. |
 | Conversation recovery | Resume a saved receipt or recover an interrupted step without submitting its answer again. |
 | **Review entries** | Inspect sections, citations, open questions and unsupported-term flags; read permitted source turns; edit, reject or approve. |
 | **Approved knowledge** | Search, ask cited questions, open approved entries, download an entry or the handover as Markdown. |
@@ -56,6 +66,10 @@ flowchart LR
 Editing separates claims/steps with a blank line and returns the entry to draft.
 Approval is a separate action. Rejection records a reason and keeps the entry
 in review history while excluding it from readers, search and export.
+Editing or correcting an approved entry withdraws it from approved knowledge
+until the expert approves it again; a previous approved version is not kept
+published alongside the new draft. Automatic draft entries are created when
+the complete interview finishes, after all topics have been covered.
 Search/Q&A spans all permitted handovers; the entry list and bulk Markdown
 export are scoped to the selected handover.
 
@@ -81,6 +95,11 @@ outstanding receipt. A saved plan generation has its own progress and
 a new generation. See [message delivery](message-delivery.md) and
 [plan generation](draft-plan.md) for the server contracts.
 
+Plan drafting runs inside an HTTP request rather than an independent background
+worker. Completed topics are saved, so returning later can inspect progress and
+resume unfinished work. Closing the page does not guarantee that drafting will
+finish without another request.
+
 ## Access and HTTP endpoints
 
 | Identity | Visible data and controls |
@@ -97,8 +116,9 @@ apply reader ACLs. The UI relies on those server checks.
 
 An empty workspace means no runs are accessible to the token subject, or none
 have been ingested. A reader's workspace intentionally has only **Approved
-knowledge**. Name-based approval validation still requires the token's `name`
-to match the run expert. There is no separate user-account/login service.
+knowledge**. HTTP plan and entry approvals require the token's `name` to match
+the run expert, including for an admin. There is no separate user-account/login
+service.
 
 Browser downloads fetch approved Markdown with the bearer header before creating
 a local download. Answer text, credentials and queries are not placed in URLs
@@ -109,9 +129,22 @@ remain references and do not grant transcript access.
 
 ## Verification status
 
-`tests/test_browser.py` covers static serving, ACL-filtered navigation and the
-synthetic plan/interview/correction/review/search/export HTTP workflow.
+`tests/test_browser.py` covers SPA browser paths, missing-asset and API routing,
+the packaged production assets, the shell's security headers, expert-bound plan
+approval, ACL-filtered navigation and the synthetic
+plan/interview/correction/review/search/export HTTP workflow.
 `node --test tests/browser_client.test.cjs` checks submission identity and SSE
-failure handling using Node's built-in runner. Actual browser interaction,
-visual layout and accessibility QA remain pending because browser control was
-unavailable. Real-provider validation is deferred by user request.
+failure handling for the retained original client using Node's built-in runner.
+In `frontend/`, `npm test` checks the new client's transport and
+`npm run test:e2e` exercises the React UI in Chrome against synthetic mocked
+REST/SSE responses. The browser suite covers sign-in, reader route boundaries,
+plan review, confidential-answer clearing, interrupted-answer recovery, entry
+editing/reapproval/rejection, cited search/Q&A and downloads. It checks overflow
+and automated WCAG A/AA rules at 360, 768 and 1440 pixels. These mocked browser
+checks complement the real HTTP tests; they do not establish real-provider
+quality or replace manual visual and accessibility review. Real-provider
+validation is deferred by user request.
+
+The same browser suite has also passed against the compiled files served by
+FastAPI, using `EKI_TEST_BASE_URL`, with no Content Security Policy violations.
+Dialog scroll locking uses external CSS to preserve the server's strict policy.
