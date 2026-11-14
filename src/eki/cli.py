@@ -53,6 +53,7 @@ from eki.runbook.models import SECTION_NAMES, EntryStatus, InterviewTurnCitation
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
 from eki.runbook.store import StoredEntry
+from eki.search.answers import build_answers
 from eki.search.service import build_search
 
 USAGE_ERROR = 2
@@ -108,6 +109,9 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=5)
     search.add_argument("--json", action="store_true")
+    ask = commands.add_parser("ask", help="answer from cited approved runbook claims")
+    ask.add_argument("question")
+    ask.add_argument("--json", action="store_true")
     return parser
 
 
@@ -428,7 +432,7 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
-        if arguments.command == "search":
+        if arguments.command in ("search", "ask"):
             settings = get_settings()
             credential = settings.api_token
             if credential is None or not credential.get_secret_value():
@@ -437,6 +441,18 @@ def main(argv: list[str] | None = None) -> int:
                 "Bearer " + credential.get_secret_value()
             )
             search = build_search(settings)
+            if arguments.command == "ask":
+                answer = asyncio.run(
+                    build_answers(settings, search).ask(principal, arguments.question)
+                )
+                print(answer.model_dump_json() if arguments.json else answer.answer)
+                if not arguments.json:
+                    for evidence in answer.evidence:
+                        print(
+                            f"[{evidence.id}] {evidence.title}, {evidence.section}, "
+                            f"version {evidence.version}"
+                        )
+                return 0
             hits = search.search(principal, arguments.query, limit=arguments.limit)
             if arguments.json:
                 print(

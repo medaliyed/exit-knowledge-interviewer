@@ -50,7 +50,7 @@ that instruction authorizes proceeding without another approval round.
 - [x] b / F11: approved-only versioned search index, invalidation, provider/offline
   embeddings, filtered hybrid ranking, search API/CLI, relevance and isolation
   tests including immediate edit/correction/revocation visibility changes.
-- [ ] c / F11: cited extractive Q&A, optional evidence selector, answer API/CLI,
+- [x] c / F11: cited extractive Q&A, optional evidence selector, answer API/CLI,
   abstention, injection/forged citations/redaction and in-flight revocation tests.
 - [ ] d / F12: safe Markdown renderer and gated API/CLI exports; citations,
   complete template, open questions, approval/access and file safety tests.

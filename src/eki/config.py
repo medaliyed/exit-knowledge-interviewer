@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # Models, reached through LiteLLM. No default on purpose: the choice is the operator's.
     # The provider key is read by LiteLLM from the provider's own variable, never from here.
+    model_answerer: str | None = None
     model_embedding: str | None = None
     model_interviewer: str | None = None
     model_drafter: str | None = None

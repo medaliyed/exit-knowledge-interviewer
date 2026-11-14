@@ -38,6 +38,7 @@ from eki.runbook.models import SECTION_NAMES, SectionName
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
 from eki.runbook.store import StoredEntry
+from eki.search.answers import AnswerService, build_answers
 from eki.search.service import SearchService, build_search
 
 CONFIDENTIAL = "[confidential]"
@@ -72,6 +73,10 @@ class ExpertMessage(_Body):
     confidential: bool = False
     corrects: int | None = None
     """For ``correct``: the ordinal of the turn being corrected."""
+
+
+class RunbookQuestion(_Body):
+    question: str
 
 
 class Readers(_Body):
@@ -144,11 +149,14 @@ def create_app(
     runbook_service: RunbookService | None = None,
     authenticator: Authenticator | None = None,
     search_service: SearchService | None = None,
+    answer_service: AnswerService | None = None,
 ) -> FastAPI:
     """The application. Without ``service`` one is built from settings on first use."""
     app = FastAPI(title="Exit-Knowledge Interviewer", version=__version__)
 
     def database_dsn() -> str:
+        if answer_service is not None:
+            return answer_service.search.dsn
         if search_service is not None:
             return search_service.dsn
         if runbook_service is not None:
@@ -188,6 +196,8 @@ def create_app(
     Runbooks = Annotated[RunbookService, Depends(get_runbooks)]
 
     def get_search() -> SearchService:
+        if answer_service is not None:
+            return answer_service.search
         if search_service is not None:
             return search_service
         if service is not None:
@@ -197,6 +207,15 @@ def create_app(
         return build_search(get_settings())
 
     Search = Annotated[SearchService, Depends(get_search)]
+
+    def get_answers() -> AnswerService:
+        if answer_service is not None:
+            return answer_service
+        if search_service is not None or service is not None or runbook_service is not None:
+            return AnswerService(get_search())
+        return build_answers(get_settings(), get_search())
+
+    Answers = Annotated[AnswerService, Depends(get_answers)]
 
     async def operation[T](call: Callable[[], T]) -> T:
         try:
@@ -396,6 +415,16 @@ def create_app(
     ) -> dict[str, object]:
         hits = await operation(lambda: search.search(identity(request), q, limit=limit))
         return {"results": [h.public() for h in hits], "embedding_model": search.embedder.name}
+
+    @app.post("/runbook/ask")
+    async def ask_runbook(
+        body: RunbookQuestion, request: Request, answers: Answers
+    ) -> dict[str, Any]:
+        try:
+            answer = await answers.ask(identity(request), body.question)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="invalid question") from exc
+        return answer.model_dump(mode="json")
 
     return app
 
