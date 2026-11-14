@@ -46,6 +46,10 @@ async def test_fixture_interview_becomes_reviewable_runbook(world: World) -> Non
     entries = books.list(view.session.id)
     assert len(entries) == len(plan.topics)
     assert all(e.entry.status == "draft" for e in entries)
+    doubts = books.unsupported(view.session.id)
+    assert len(doubts) == len(entries) and not any(doubts.values()), (
+        "notes that repeat the expert's words give the reviewer nothing to check"
+    )
     by_topic = {e.entry.topic_id: e.entry for e in entries}
     g3 = by_topic[world.topic_of("G3")]
     assert all(g3.section(s).claims for s in SECTION_NAMES)

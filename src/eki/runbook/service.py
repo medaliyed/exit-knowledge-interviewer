@@ -11,6 +11,7 @@ from eki.errors import ConflictError, NotFoundError
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
 from eki.runbook import review, store
+from eki.runbook.faithfulness import Unsupported, check_entry
 from eki.runbook.models import (
     SECTION_NAMES,
     Claim,
@@ -113,6 +114,20 @@ class RunbookService:
             if stored is None:
                 raise NotFoundError(f"no entry {entry_id}")
             return stored
+
+    def unsupported(self, session_id: UUID) -> dict[str, tuple[Unsupported, ...]]:
+        """Per entry of a session, the claims that say more than the turns they cite.
+
+        For the reviewing side only: the comparison reads the interview transcript.
+        """
+        with self._connect() as conn:
+            if interviews.load_session(conn, session_id) is None:
+                raise NotFoundError(f"no session {session_id}")
+            turns = interviews.load_turns(conn, session_id)
+            return {
+                stored.entry.id: check_entry(stored.entry, turns)
+                for stored in store.list_entries(conn, session_id)
+            }
 
     def history(self, entry_id: UUID) -> tuple[store.Decision, ...]:
         with self._connect() as conn:

@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import json
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,7 @@ from eki.mapping.scoring import score_topics
 from eki.mapping.store import load_mapping, save_mapping
 from eki.mapping.topics import build_topics
 from eki.runbook.export import ExportService
+from eki.runbook.faithfulness import Unsupported
 from eki.runbook.models import SECTION_NAMES, EntryStatus, InterviewTurnCitation
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
@@ -374,13 +376,14 @@ def _interview_commands(arguments: argparse.Namespace) -> int:
         flush_tracer(service.tracer)
 
 
-def _show_entry(stored: StoredEntry) -> None:
+def _show_entry(stored: StoredEntry, unsupported: Sequence[Unsupported] = ()) -> None:
     entry = stored.entry
+    doubts = {(u.section, u.index): u.terms for u in unsupported}
     print(f"\n{entry.title} ({entry.status.value}, version {stored.version}) [{entry.id}]")
     for name in SECTION_NAMES:
         section = entry.section(name)
         print(f"  {name}:")
-        for claim in section.claims:
+        for index, claim in enumerate(section.claims):
             sources = "; ".join(
                 f"interview {c.session_id}, turn {c.turn_index}"
                 if isinstance(c, InterviewTurnCitation)
@@ -388,6 +391,8 @@ def _show_entry(stored: StoredEntry) -> None:
                 for c in claim.citations
             )
             print(f"    - {claim.text} [{sources}]")
+            if (name, index) in doubts:
+                print("      ! not in the cited answer: " + ", ".join(doubts[name, index]))
         if section.open_question is not None:
             print(f"    Open: {section.open_question}")
 
@@ -403,7 +408,7 @@ def _review_entries(books: RunbookService, session: UUID, plan: UUID, by: str) -
             stored = books.get(entry_id)
             if stored.entry.status != EntryStatus.DRAFT:
                 break
-            _show_entry(stored)
+            _show_entry(stored, books.unsupported(session).get(stored.entry.id, ()))
             try:
                 action = input("Approve, reject, edit, skip, or quit? ").strip().lower()
                 if action in ("quit", "q", "/quit"):
@@ -466,9 +471,12 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
         expert = row[0]
     if arguments.command == "entries":
         entries = books.list(session)
+        unsupported = books.unsupported(session)
         for stored in entries:
             entry = stored.entry
-            marker = "  (edited by hand)" if stored.edited else ""
+            doubts = len(unsupported.get(entry.id, ()))
+            marker = f"  ({doubts} claim{'s' if doubts > 1 else ''} to check)" if doubts else ""
+            marker += "  (edited by hand)" if stored.edited else ""
             print(f"{entry.id}  {entry.status.value:8}  {entry.title}{marker}")
         if not entries:
             print("No entries yet. Finish the interview first.")

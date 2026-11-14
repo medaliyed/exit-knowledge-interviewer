@@ -6,7 +6,7 @@ the interviewer did, ending with its next question, ``done`` or ``error``.
 """
 
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import asdict
 from functools import lru_cache
 from typing import Annotated, Any, Literal
@@ -38,6 +38,7 @@ from eki.interview.service import (
 )
 from eki.llm import ModelError
 from eki.runbook.export import ExportService
+from eki.runbook.faithfulness import Unsupported
 from eki.runbook.models import SECTION_NAMES, SectionName
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
@@ -119,7 +120,7 @@ class Rejection(_Body):
     reason: str
 
 
-def _entry_summary(stored: StoredEntry) -> dict[str, Any]:
+def _entry_summary(stored: StoredEntry, unsupported: Sequence[Unsupported]) -> dict[str, Any]:
     entry = stored.entry
     return {
         "id": entry.id,
@@ -128,6 +129,7 @@ def _entry_summary(stored: StoredEntry) -> dict[str, Any]:
         "status": entry.status.value,
         "version": stored.version,
         "edited": stored.edited,
+        "unsupported_count": len(unsupported),
         "claim_count": sum(len(entry.section(n).claims) for n in SECTION_NAMES),
         "open_question_count": sum(
             entry.section(n).open_question is not None for n in SECTION_NAMES
@@ -248,14 +250,24 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    def summaries(books: RunbookService, session_id: UUID) -> list[dict[str, Any]]:
+        unsupported = books.unsupported(session_id)
+        return [_entry_summary(e, unsupported.get(e.entry.id, ())) for e in books.list(session_id)]
+
     async def detail(books: RunbookService, entry_id: UUID) -> dict[str, Any]:
         def work() -> dict[str, Any]:
             stored = books.get(entry_id)
+            unsupported = books.unsupported(stored.session_id).get(stored.entry.id, ())
             return {
                 **stored.entry.model_dump(mode="json"),
                 "session_id": str(stored.session_id),
                 "version": stored.version,
                 "rejection_reason": stored.rejection_reason,
+                # Claims that say more than the answer they cite; see eki.runbook.faithfulness.
+                "unsupported": [
+                    {"section": u.section, "claim_index": u.index, "terms": list(u.terms)}
+                    for u in unsupported
+                ],
                 "decisions": [asdict(d) for d in books.history(entry_id)],
             }
 
@@ -271,14 +283,12 @@ def create_app(
         session_id: UUID, books: Runbooks, overwrite_edits: bool = False
     ) -> list[dict[str, Any]]:
         """Rebuild drafts from the notes. Hand-edited drafts are kept unless told otherwise."""
-        entries = await operation(
-            lambda: books.synthesise(session_id, overwrite_edits=overwrite_edits)
-        )
-        return [_entry_summary(e) for e in entries]
+        await operation(lambda: books.synthesise(session_id, overwrite_edits=overwrite_edits))
+        return await db(summaries, books, session_id)
 
     @app.get("/sessions/{session_id}/entries")
     async def list_entries(session_id: UUID, books: Runbooks) -> list[dict[str, Any]]:
-        return [_entry_summary(e) for e in await db(books.list, session_id)]
+        return await db(summaries, books, session_id)
 
     @app.get("/entries/{entry_id}")
     async def read_entry(entry_id: UUID, books: Runbooks, request: Request) -> dict[str, Any]:

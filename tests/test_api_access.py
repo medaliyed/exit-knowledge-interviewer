@@ -61,6 +61,8 @@ async def test_approved_reader_cannot_read_drafts_or_interview_data(scratch: Scr
         assert response.status_code == 200, response.text
         if subject == "reader":
             assert "decisions" not in response.json()
+        # The check reads the transcript, so only the reviewing side gets its result.
+        assert ("unsupported" in response.json()) == (subject != "reader")
     assert client.get(url, headers=headers("stranger")).status_code == 404
     for path in (
         f"/entries/{draft.entry.id}",

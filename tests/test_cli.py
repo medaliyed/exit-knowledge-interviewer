@@ -330,11 +330,13 @@ def test_entries_and_review_quit_resume(
         assert main(["entries", *args]) == 0
         listing = capsys.readouterr().out
         assert listing.count("draft") == 3
+        assert listing.count("(7 claims to check)") == 3
         typed(monkeypatch, "approve", "reject", "Not needed", "quit")
         assert main(["review", *args]) == 0
         first = capsys.readouterr().out
         assert "Stopped. Continue with: eki review" in first
         assert "interview" in first and "turn 2" in first, "review displays citations"
+        assert first.count("      ! not in the cited answer: noted") == 21
         entries = RunbookService(scratch.dsn).list(session)
         assert [e.entry.status for e in entries] == ["approved", "rejected", "draft"]
         typed(monkeypatch, "edit", "steps", "Restart twice.", "", "", "approve")
@@ -345,6 +347,8 @@ def test_entries_and_review_quit_resume(
         assert main(["entries", *args]) == 0
         lines = capsys.readouterr().out.strip().splitlines()
         assert [line.endswith("(edited by hand)") for line in lines] == [False, False, True]
+        assert ["(6 claims to check)" in line for line in lines] == [False, False, True]
+        assert ["(7 claims to check)" in line for line in lines] == [True, True, False]
         typed(monkeypatch)
         assert main(["review", *args]) == 0
         assert "No draft entries" in capsys.readouterr().out

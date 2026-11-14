@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pytest
 
+from eki.errors import NotFoundError
 from eki.interview import store as interviews
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
@@ -156,3 +157,36 @@ async def test_approval_keeps_the_edit_and_a_later_synthesis_leaves_it(scratch: 
     approved = service.approve(entry_id, EXPERT)
     assert service.synthesise(session, overwrite_edits=True)[0] == approved
     assert approved.entry.steps.claims[0].text == "Restart twice."
+
+
+async def test_review_is_told_what_the_cited_answer_does_not_say(scratch: Scratch) -> None:
+    """F9: the stand-in interviewer notes "noted"; the answer "Recorded answer." never says it."""
+    session = await finished(scratch)
+    service = RunbookService(scratch.dsn)
+    first, second, third = service.list(session)
+    found = service.unsupported(session)
+    assert list(found) == [first.entry.id, second.entry.id, third.entry.id]
+    assert [(u.section, u.index, u.terms) for u in found[first.entry.id]] == [
+        (name, 0, ("noted",))
+        for name in ("trigger", "diagnosis", "steps", "rollback", "contacts", "pitfalls")
+    ] + [("rationale", 0, ("noted",))]
+
+    service.edit(
+        UUID(first.entry.id),
+        EXPERT,
+        {"steps": SectionEdit(claims=("Restart twice.", "Then wait 15 minutes."))},
+    )
+    after = service.unsupported(session)
+    assert "steps" not in [u.section for u in after[first.entry.id]], "an edit is its own source"
+    assert len(after[first.entry.id]) == 6 and len(after[second.entry.id]) == 7
+
+    await say(
+        make_service(scratch.dsn),
+        session,
+        "Use the corrected procedure.",
+        action="correct",
+        corrects=4,
+    )
+    assert service.unsupported(session)[second.entry.id] == (), "so is a correction"
+    with pytest.raises(NotFoundError):
+        service.unsupported(UUID(int=0))

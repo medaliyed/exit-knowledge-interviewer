@@ -123,3 +123,19 @@ async def test_synthesise_keeps_edits_unless_asked_to_overwrite(scratch: Scratch
     assert client.get(url).json()["steps"]["claims"][0]["text"] != "Restart twice."
     bad = client.post(f"/sessions/{session}/synthesise", params={"overwrite_edits": "maybe"})
     assert bad.status_code == 422
+
+
+async def test_owner_sees_claims_the_cited_answer_does_not_support(scratch: Scratch) -> None:
+    session = await finished(scratch)
+    client = TestClient(create_app(runbook_service=RunbookService(scratch.dsn)))
+    first = client.get(f"/sessions/{session}/entries").json()[0]
+    assert first["unsupported_count"] == 7
+    url = f"/entries/{first['id']}"
+    detail = client.get(url).json()
+    assert len(detail["unsupported"]) == 7
+    assert detail["unsupported"][2] == {"section": "steps", "claim_index": 0, "terms": ["noted"]}
+    patch = {"edited_by": EXPERT, "sections": {"steps": {"claims": ["Restart twice."]}}}
+    changed = client.patch(url, json=patch).json()
+    assert [u["section"] for u in changed["unsupported"]].count("steps") == 0
+    assert client.get(f"/sessions/{session}/entries").json()[0]["unsupported_count"] == 6
+    assert client.post(f"/sessions/{session}/synthesise").json()[1]["unsupported_count"] == 7

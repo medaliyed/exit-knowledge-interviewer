@@ -120,6 +120,16 @@ Entry API (also independent of model configuration):
 - `POST /entries/{id}/approve`: `{"approved_by":"Nadia Ferrand"}`.
 - `POST /entries/{id}/reject`: `{"rejected_by":"Nadia Ferrand","reason":"Outdated"}`.
 
+Faithfulness check (`eki.runbook.faithfulness`): the interviewer model words the
+notes, so review compares each claim with the turns it cites, plus the question
+that turn answered, and lists the claim's words and numbers found in neither.
+The owner sees them as `unsupported` in `GET /entries/{id}`, `unsupported_count`
+in the listing, a `! not in the cited answer:` line in `eki review` and
+`(N claims to check)` in `eki entries`. It is advisory and deterministic: no
+model, no stored state, nothing blocked. It compares words, not meaning, so a
+paraphrase is listed and a wrong claim made of the answer's own words is not.
+Confidential turns are never read; reader responses do not include it.
+
 Editing an approved or rejected entry returns it to draft. Correcting a cited
 turn updates its claims and reopens review. Each change increments the version;
 review and corrections share the session lock and commit atomically. A stopped
