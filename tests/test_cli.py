@@ -11,6 +11,7 @@ from psycopg import sql
 from eki.cli import main
 from eki.config import get_settings
 from eki.db import connect
+from tests.conftest import Scratch
 from tests.support import CORPUS, EXPERT_EMAIL, EXPERT_NAME, FAKE_CREDENTIALS
 
 pytestmark = pytest.mark.db
@@ -301,3 +302,47 @@ def test_plan_without_a_model_name_is_a_usage_error(
     get_settings.cache_clear()
     assert main(["plan", "--run", str(uuid.uuid4())]) == 2
     assert "EKI_MODEL_DRAFTER is not set" in capsys.readouterr().err
+
+
+# --- phase 3a: entries and resumable review, without model configuration ---
+
+
+def test_entries_and_review_quit_resume(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import asyncio
+
+    from eki.interview import store as interviews
+    from eki.runbook.service import RunbookService
+    from tests.test_workflow_synthesis import finished
+
+    session = asyncio.run(finished(scratch))
+    with scratch.connect() as conn:
+        plan = interviews.load_session(conn, session)
+        assert plan is not None
+    monkeypatch.setenv("EKI_DATABASE_URL", scratch.dsn)
+    monkeypatch.setenv("EKI_MODEL_DRAFTER", "")
+    monkeypatch.setenv("EKI_MODEL_INTERVIEWER", "")
+    get_settings.cache_clear()
+    try:
+        args = ["--plan", str(plan.plan_id)]
+        assert main(["entries", *args]) == 0
+        listing = capsys.readouterr().out
+        assert listing.count("draft") == 3
+        typed(monkeypatch, "approve", "reject", "Not needed", "quit")
+        assert main(["review", *args]) == 0
+        first = capsys.readouterr().out
+        assert "Stopped. Continue with: eki review" in first
+        assert "interview" in first and "turn 2" in first, "review displays citations"
+        entries = RunbookService(scratch.dsn).list(session)
+        assert [e.entry.status for e in entries] == ["approved", "rejected", "draft"]
+        typed(monkeypatch, "edit", "steps", "Restart twice.", "", "", "approve")
+        assert main(["review", *args]) == 0
+        assert "Restart twice." in capsys.readouterr().out
+        entries = RunbookService(scratch.dsn).list(session)
+        assert [e.entry.status for e in entries] == ["approved", "rejected", "approved"]
+        typed(monkeypatch)
+        assert main(["review", *args]) == 0
+        assert "No draft entries" in capsys.readouterr().out
+    finally:
+        get_settings.cache_clear()

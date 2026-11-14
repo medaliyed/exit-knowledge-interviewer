@@ -136,9 +136,9 @@ An edit replaces the claims or the open question of one or more sections. It is 
 
 **Files:** `src/eki/cli.py`, `tests/test_cli.py` (`db`).
 
-- [ ] `eki entries --plan ID`: list the entries of the plan's session with their status. `eki review --plan ID`: show each draft entry with its citations and ask approve, reject (with a reason), edit a section, or skip; it can be quit and resumed.
-- [ ] Failing tests with scripted input: list, approve one, reject one with a reason, edit one then approve it, quit and resume.
-- [ ] Implement. Commit `feat(P3-g): eki entries and eki review`.
+- [x] `eki entries --plan ID`: list the entries of the plan's session with their status. `eki review --plan ID`: show each draft entry with its citations and ask approve, reject (with a reason), edit a section, or skip; it can be quit and resumed.
+- [x] Failing tests with scripted input: list, approve one, reject one with a reason, edit one then approve it, quit and resume.
+- [x] Implement. Commit `feat(P3-g): eki entries and eki review`.
 
 ### Task h: Acceptance and docs
 

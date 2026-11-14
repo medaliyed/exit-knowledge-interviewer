@@ -6,6 +6,8 @@
     eki gaps --run ID [--json]       show the ranked topics
     eki plan --run ID                draft an interview plan (calls the drafting model)
     eki interview --plan ID          approve the plan and run the interview in the terminal
+    eki entries --plan ID            list runbook entries and their review status
+    eki review --plan ID             review draft entries; quit and resume
 
 The expert, the work email domains and the source directory come from settings
 (``EKI_EXPERT_NAME`` and friends) and can be overridden on the command line.
@@ -31,6 +33,7 @@ from eki.ingest.embedding import HashingEmbedder
 from eki.ingest.index import index_run
 from eki.ingest.pipeline import IngestError, ingest_from_source, load, store
 from eki.ingest.scope import Scope
+from eki.interview import store as interviews
 from eki.interview.models import InterviewPlan
 from eki.interview.service import (
     ConflictError,
@@ -44,6 +47,10 @@ from eki.llm import ModelError
 from eki.mapping.scoring import score_topics
 from eki.mapping.store import load_mapping, save_mapping
 from eki.mapping.topics import build_topics
+from eki.runbook.models import SECTION_NAMES, EntryStatus, InterviewTurnCitation
+from eki.runbook.review import SectionEdit
+from eki.runbook.service import RunbookService
+from eki.runbook.store import StoredEntry
 
 USAGE_ERROR = 2
 FAILURE = 1
@@ -83,6 +90,11 @@ def _parser() -> argparse.ArgumentParser:
     interview = commands.add_parser("interview", help="approve a plan and run its interview")
     interview.add_argument("--plan", type=UUID, required=True)
     interview.add_argument("--approve-as", help="who approves the plan (default: the expert)")
+    entries = commands.add_parser("entries", help="list runbook entries and review status")
+    entries.add_argument("--plan", type=UUID, required=True)
+    review = commands.add_parser("review", help="review draft runbook entries; quit and resume")
+    review.add_argument("--plan", type=UUID, required=True)
+    review.add_argument("--review-as", help="reviewer's name (default: the run's expert)")
     return parser
 
 
@@ -299,9 +311,112 @@ def _interview_commands(arguments: argparse.Namespace) -> int:
         service.tracer.flush()
 
 
+def _show_entry(stored: StoredEntry) -> None:
+    entry = stored.entry
+    print(f"\n{entry.title} ({entry.status.value}, version {stored.version}) [{entry.id}]")
+    for name in SECTION_NAMES:
+        section = entry.section(name)
+        print(f"  {name}:")
+        for claim in section.claims:
+            sources = "; ".join(
+                f"interview {c.session_id}, turn {c.turn_index}"
+                if isinstance(c, InterviewTurnCitation)
+                else f"artifact {c.artifact_id}"
+                for c in claim.citations
+            )
+            print(f"    - {claim.text} [{sources}]")
+        if section.open_question is not None:
+            print(f"    Open: {section.open_question}")
+
+
+def _review_entries(books: RunbookService, session: UUID, plan: UUID, by: str) -> int:
+    drafts = [e for e in books.list(session) if e.entry.status == EntryStatus.DRAFT]
+    if not drafts:
+        print("No draft entries to review.")
+        return 0
+    for stored in drafts:
+        entry_id = UUID(stored.entry.id)
+        while True:
+            stored = books.get(entry_id)
+            if stored.entry.status != EntryStatus.DRAFT:
+                break
+            _show_entry(stored)
+            try:
+                action = input("Approve, reject, edit, skip, or quit? ").strip().lower()
+                if action in ("quit", "q", "/quit"):
+                    raise EOFError
+                if action in ("skip", "s"):
+                    break
+                if action in ("approve", "a"):
+                    books.approve(entry_id, by)
+                    print("Approved.")
+                    break
+                if action in ("reject", "r"):
+                    books.reject(entry_id, by, input("Reason: "))
+                    print("Rejected.")
+                    break
+                if action in ("edit", "e"):
+                    name = input("Section: ").strip()
+                    if name not in SECTION_NAMES:
+                        print("Choose a section: " + ", ".join(SECTION_NAMES))
+                        continue
+                    claims = []
+                    while text := input("Claim (blank to finish): ").strip():
+                        claims.append(text)
+                    question = input("Open question (blank for none): ").strip() or None
+                    books.edit(
+                        entry_id,
+                        by,
+                        {name: SectionEdit(claims=tuple(claims), open_question=question)},
+                    )
+                    print("Edited; approval is required.")
+                    continue
+                print("Choose approve, reject, edit, skip, or quit.")
+            except (EOFError, KeyboardInterrupt):
+                print(f"Stopped. Continue with: eki review --plan {plan}")
+                return 0
+            except (ValueError, ConflictError) as error:
+                # Validation can contain rejected input. Never echo that input in the terminal.
+                print(
+                    str(error)
+                    if isinstance(error, ConflictError)
+                    else "Review refused: check the name, section and content."
+                )
+    print("Review complete.")
+    return 0
+
+
+def _entry_commands(arguments: argparse.Namespace) -> int:
+    settings = get_settings()
+    books = RunbookService(settings.database_url.get_secret_value(), work_domains(settings))
+    with books._connect() as conn:
+        plan = interviews.load_plan(conn, arguments.plan)
+        if plan is None:
+            raise NotFoundError(f"no plan {arguments.plan}")
+        session = interviews.session_of_plan(conn, plan.id)
+        if session is None:
+            raise ConflictError("approve the plan and finish its interview first")
+        row = conn.execute(
+            "SELECT expert_name FROM ingest_runs WHERE id = %s", (plan.run_id,)
+        ).fetchone()
+        assert row is not None  # noqa: S101 - plan references this run
+        expert = row[0]
+    if arguments.command == "entries":
+        entries = books.list(session)
+        for stored in entries:
+            entry = stored.entry
+            print(f"{entry.id}  {entry.status.value:8}  {entry.title}")
+        if not entries:
+            print("No entries yet. Finish the interview first.")
+        return 0
+    return _review_entries(books, session, plan.id, arguments.review_as or expert)
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
+        if arguments.command in ("entries", "review"):
+            return _entry_commands(arguments)
         if arguments.command in ("plan", "interview"):
             return _interview_commands(arguments)
         with connect(get_settings()) as conn:
