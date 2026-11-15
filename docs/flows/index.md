@@ -46,7 +46,10 @@ These are single-component operations. A sentence is enough.
 
 Things the flow pages flag. Each is cited on its page.
 
-- **Approval is bound to a display name**, not to an account.
+- **Entry maintenance depends on the original expert.** Transferring run
+  ownership does not bypass the expert-name review gate; review-by dates and
+  reader flags are absent. [Phase 8](../plans/phase-8.md) proposes successor
+  maintenance and freshness, pending implementation approval.
   ([review-entry.md](review-entry.md))
 - **Real-provider calls interrupted before their result is persisted may repeat**
   on recovery. Accepted messages and stored replies survive.

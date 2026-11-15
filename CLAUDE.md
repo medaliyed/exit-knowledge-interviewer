@@ -7,7 +7,7 @@ design is a fixed LangGraph workflow with ONE agentic node (the interviewer):
 Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable
 runbook. The expert prunes the plan and approves every entry.
 
-Full requirements (F1-F20), stack and phases: `docs/PDR.md`.
+Full requirements (F1-F21), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
 Architecture and diagrams: `docs/architecture.md`. Runtime flows, one page
 each with a sequence diagram: `docs/flows/`. How to run it: `README.md`;
@@ -530,3 +530,12 @@ The shared `SimulatedExpert` and provider opt-in guard live in `eki.evals`;
 `tests/fakes.py` and `tests/live_support.py` re-export the original import names.
 The runtime never imports tests or reads the fixture answer key/expert script.
 No paid model run was performed as part of implementation.
+
+
+## Proposed Phase 8: knowledge maintenance (F21)
+
+`docs/plans/phase-8.md` is a planning proposal, not an implemented capability.
+It covers explicit successor ownership after capture, subject-based maintenance
+review, attributed maintainer edits, review-by dates and reader flags with
+owner triage. Its defaults and Q&A freshness policy require phase approval
+before implementation. Current expert-name approval checks remain in force.

@@ -37,6 +37,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F18 | Resumable plan generation that retains completed topics and retries unfinished work under a stable generation ID. Delivered: Phase 5e. |
 | F19 | Invited work-email/password accounts, bounded server-side browser sessions, one-time password links, local operator account management, CSRF protection, throttling and metadata-only authentication audit. Phase 6. |
 | F20 | Golden interview evaluations: strict scenario/golden files, isolated real-service runs, shared model-call budgets, deterministic scorecards and comparable redacted reports. Phase 7; paid evidence pending. |
+| F21 | Maintain knowledge after the expert leaves: explicit successor ownership and attributed re-approval, entry review-by dates, freshness across retrieval/export, and reader flags with owner triage. Proposed: Phase 8; not implemented. |
 
 ## Stack
 
@@ -62,6 +63,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | 5 | Recovery and expert workflow | [Phase 5 PDR](plans/phase-5.md): reliable interview recovery, real-model validation, expert UI, semantic artifact retrieval and resumable plan drafting, in that order. |
 | 6 | Email/password accounts | [Phase 6 PDR](plans/phase-6.md): account provisioning, sessions/authentication, browser sign-in and operational documentation. |
 | 7 | Golden interview evals | [Phase 7 PDR](plans/phase-7.md): bounded real-model interviews, deterministic grading, saved reports and comparisons; owner-review drafts for G1–G8. |
+| 8 | Knowledge maintenance | [Phase 8 PDR](plans/phase-8.md): successor handover, review dates and reader flags. Proposed; implementation awaits approval. |
 
 Each phase is planned separately in `docs/plans/phase-N.md` and needs human
 approval before implementation starts. The hard rules that apply to every
@@ -85,6 +87,7 @@ line and, where there is one, their Outcome section.
 | 5 Recovery and expert workflow | [docs/plans/phase-5.md](plans/phase-5.md) | F14/F16/F17/F18 implemented; F15 live evidence and manual screen-reader validation pending |
 | 6 Email/password accounts | [docs/plans/phase-6.md](plans/phase-6.md) | F19 implemented 2026-11-15; manual browser pass and timing check pending |
 | 7 Golden interview evals | [docs/plans/phase-7.md](plans/phase-7.md) | F20 implemented 2026-11-15; draft adoption and paid model evidence pending |
+| 8 Knowledge maintenance | [docs/plans/phase-8.md](plans/phase-8.md) | F21 proposed 2026-11-15; planning only |
 
 Added after the phases: synthesis keeps drafts the expert edited by hand
 (F10), review lists claims that say more than the answer they cite (F9), and
@@ -101,6 +104,11 @@ How it is built and how it behaves at runtime: `docs/architecture.md` and
 `docs/flows/`. How to run it: `README.md` and, for a first run, `docs/tutorial.md`.
 
 Still open:
+
+- Entry review still requires the original expert's name, even after ownership
+  transfer. Entries have no review-by dates or reader-report workflow.
+  [Phase 8](plans/phase-8.md) proposes the maintenance lifecycle; it is not yet
+  implemented.
 
 - No run against a real model yet. Interview quality, semantic search and
   model-selected answers are unverified; Phase 5b will record actual evidence.
