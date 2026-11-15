@@ -16,6 +16,9 @@ def test_healthz_ok() -> None:
 def test_api_routes_are_exactly_these() -> None:
     assert set(create_app().openapi()["paths"]) == {
         "/healthz",
+        "/runs/{run_id}/maintenance/entries",
+        "/entries/{entry_id}/review",
+        "/entries/{entry_id}/withdraw",
         "/runs/{run_id}/handover",
         "/runs/{run_id}/maintenance",
         "/auth/login",

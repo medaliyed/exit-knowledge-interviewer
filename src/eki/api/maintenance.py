@@ -1,17 +1,19 @@
 """F21 endpoints. All mutations call the same transaction services as the CLI."""
 
 from collections.abc import Callable
+from datetime import date
 from typing import Any
 from uuid import UUID
 
 import psycopg
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from eki import maintenance
 from eki.api.security import identity
 from eki.auth import Principal
 from eki.graph.workflow import db
+from eki.runbook.service import RunbookService
 
 
 class Handover(BaseModel):
@@ -19,6 +21,17 @@ class Handover(BaseModel):
     owner_subject: str = Field(min_length=1, max_length=200)
     expected_owner_subject: str | None
     expected_run_revision: int = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class Review(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1)
+    expected_maintenance_revision: int = Field(ge=0)
+    review_by: date | None = None
+
+
+class Withdrawal(Review):
     reason: str = Field(min_length=1, max_length=2000)
 
 
@@ -53,6 +66,41 @@ def install_maintenance(
                     reason=body.reason,
                     start=True,
                     identities=identities(),
+                )
+
+        return await operation(work)
+
+    @app.post("/entries/{entry_id}/review")
+    async def review_entry(entry_id: UUID, body: Review, request: Request) -> dict[str, Any]:
+        def work() -> dict[str, Any]:
+            books = RunbookService(dsn())
+            books.review(entry_id, identity(request).name, **body.model_dump())
+            return books.metadata(entry_id)
+
+        return await operation(work)
+
+    @app.post("/entries/{entry_id}/withdraw")
+    async def withdraw_entry(entry_id: UUID, body: Withdrawal, request: Request) -> dict[str, Any]:
+        def work() -> dict[str, Any]:
+            books = RunbookService(dsn())
+            values = body.model_dump(exclude={"review_by", "reason"})
+            books.withdraw(entry_id, identity(request).name, body.reason, **values)
+            return books.metadata(entry_id)
+
+        return await operation(work)
+
+    @app.get("/runs/{run_id}/maintenance/entries")
+    async def entries(
+        run_id: UUID,
+        request: Request,
+        filter: str = "all",
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+    ) -> dict[str, Any]:
+        def work() -> dict[str, Any]:
+            with psycopg.connect(dsn(), autocommit=True) as conn:
+                return maintenance.queue(
+                    conn, run_id, identity(request), filter=filter, limit=limit, offset=offset
                 )
 
         return await operation(work)

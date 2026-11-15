@@ -1,5 +1,6 @@
 """F21: successor authority, attributed sources, freshness and scoped reader feedback."""
 
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -15,6 +16,13 @@ from tests.search_support import ADMIN, OWNER, search_world
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
 SUCCESSOR = Principal("samir", "Samir")
+
+
+def cas(books: RunbookService, entry: UUID) -> dict[str, Any]:
+    return {
+        "expected_version": books.get(entry).version,
+        "expected_maintenance_revision": books.metadata(entry)["maintenance_revision"],
+    }
 
 
 async def handover(scratch: Scratch) -> tuple[UUID, UUID]:
@@ -39,9 +47,12 @@ async def test_successor_edits_and_reapproves_with_attributed_sources(scratch: S
     books = RunbookService(scratch.dsn)
     with acting_as(SUCCESSOR):
         changed = books.edit(
-            entry, SUCCESSOR.name, {"steps": SectionEdit(claims=("Restart twice.",))}
+            entry,
+            SUCCESSOR.name,
+            {"steps": SectionEdit(claims=("Restart twice.",))},
+            **cas(books, entry),
         )
-        approved = books.approve(entry, SUCCESSOR.name)
+        approved = books.approve(entry, SUCCESSOR.name, **cas(books, entry))
     assert approved.entry.approved_by == SUCCESSOR.name
     citation = changed.entry.steps.claims[0].citations[0]
     assert isinstance(citation, InterviewTurnCitation)
@@ -96,7 +107,12 @@ async def test_second_successor_can_review_previous_maintainer_evidence(scratch:
     run, entry = await handover(scratch)
     books = RunbookService(scratch.dsn)
     with acting_as(SUCCESSOR):
-        books.edit(entry, SUCCESSOR.name, {"steps": SectionEdit(claims=("Restart twice.",))})
+        books.edit(
+            entry,
+            SUCCESSOR.name,
+            {"steps": SectionEdit(claims=("Restart twice.",))},
+            **cas(books, entry),
+        )
     next_owner = Principal("lee", "Lee")
     with scratch.connect() as conn:
         maintenance.transfer(
@@ -110,4 +126,60 @@ async def test_second_successor_can_review_previous_maintainer_evidence(scratch:
             identities=(next_owner,),
         )
     with acting_as(next_owner):
-        assert books.approve(entry, next_owner.name).entry.approved_by == "Lee"
+        assert books.approve(entry, next_owner.name, **cas(books, entry)).entry.approved_by == "Lee"
+
+
+async def test_review_renews_metadata_without_changing_content_or_approval(
+    scratch: Scratch,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    _run, entry = await handover(scratch)
+    books = RunbookService(scratch.dsn)
+    before = books.get(entry)
+    meta = books.metadata(entry)
+    with acting_as(SUCCESSOR):
+        books.review(
+            entry,
+            SUCCESSOR.name,
+            expected_version=before.version,
+            expected_maintenance_revision=meta["maintenance_revision"],
+        )
+    after = books.get(entry)
+    assert after == before
+    assert books.metadata(entry)["last_reviewed_by_subject"] == SUCCESSOR.subject
+    now = datetime.now(UTC)
+    assert books.metadata(entry)["review_by"] == (now.date() + timedelta(days=90)).isoformat()
+    with acting_as(SUCCESSOR), pytest.raises(ConflictError):
+        books.review(
+            entry,
+            SUCCESSOR.name,
+            expected_version=before.version,
+            expected_maintenance_revision=meta["maintenance_revision"],
+        )
+
+
+async def test_overdue_search_export_and_answer_policy(scratch: Scratch) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from eki.runbook.export import ExportService
+    from eki.search.answers import AnswerService
+    from eki.search.service import SearchService
+    from tests.search_support import READER
+
+    world = await search_world(scratch)
+    today = datetime.now(UTC).date()
+    with scratch.connect() as conn:
+        conn.execute(
+            "UPDATE runbook_entries SET review_by=%s WHERE id=%s",
+            (today - timedelta(days=1), world.billing),
+        )
+    hits = SearchService(scratch.dsn).search(READER, "month-end reconciliation")
+    assert any(
+        h.entry.id == str(world.billing) and h.public()["freshness"] == "overdue" for h in hits
+    )
+    assert "Review overdue" in ExportService(scratch.dsn).entry(READER, world.billing)
+    answer = await AnswerService(SearchService(scratch.dsn)).ask(
+        READER, "How do I run month-end reconciliation?"
+    )
+    assert all(e.entry_id != str(world.billing) for e in answer.evidence)

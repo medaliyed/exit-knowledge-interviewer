@@ -324,6 +324,16 @@ def test_entries_and_review_quit_resume(
     monkeypatch.setenv("EKI_DATABASE_URL", scratch.dsn)
     monkeypatch.setenv("EKI_MODEL_DRAFTER", "")
     monkeypatch.setenv("EKI_MODEL_INTERVIEWER", "")
+    token = "test-review-credential-00000000000001"
+    monkeypatch.setenv("EKI_API_TOKEN", token)
+    monkeypatch.setenv(
+        "EKI_API_TOKENS", json.dumps([{"token": token, "subject": "reviewer", "name": EXPERT_NAME}])
+    )
+    from eki import access
+    from eki.auth import Principal
+
+    with scratch.connect() as conn:
+        access.set_owner(conn, plan.run_id, "reviewer", Principal("operator", "Operator", True))
     get_settings.cache_clear()
     try:
         args = ["--plan", str(plan.plan_id)]

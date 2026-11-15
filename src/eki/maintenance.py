@@ -175,3 +175,57 @@ def state(conn: psycopg.Connection, run_id: UUID, principal: Principal) -> dict[
             for h in history
         ],
     }
+
+
+def queue(
+    conn: psycopg.Connection,
+    run_id: UUID,
+    principal: Principal,
+    *,
+    filter: str = "all",
+    limit: int = 50,
+    offset: int = 0,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    from eki.access import require_manager
+    from eki.runbook.maintenance import info
+
+    active(conn, principal)
+    require_manager(conn, run_id, principal)
+    if (
+        filter not in ("all", "overdue", "due_soon", "flagged")
+        or not 1 <= limit <= 100
+        or offset < 0
+    ):
+        raise ValueError("invalid maintenance filter or page")
+    today = (now or datetime.now(UTC)).date()
+    rows = conn.execute(
+        "SELECT e.id,e.session_id,e.title,e.status,e.version,(SELECT "
+        "min(f.created_at) FROM entry_flags f WHERE f.entry_id=e.id AND "
+        "f.resolution IS NULL) AS oldest_flag FROM runbook_entries e JOIN "
+        "sessions s ON s.id=e.session_id JOIN interview_plans p ON p.id=s.plan_id"
+        " WHERE p.run_id=%s AND (%s='all' OR (%s='flagged' AND EXISTS(SELECT 1 "
+        "FROM entry_flags f WHERE f.entry_id=e.id AND f.resolution IS NULL)) OR "
+        "(e.status='approved' AND ((%s='overdue' AND e.review_by<%s) OR "
+        "(%s='due_soon' AND e.review_by BETWEEN %s AND %s::date+14)))) ORDER BY "
+        "CASE WHEN e.status='approved' AND e.review_by<%s THEN 0 WHEN "
+        "EXISTS(SELECT 1 FROM entry_flags f WHERE f.entry_id=e.id AND "
+        "f.resolution IS NULL) THEN 1 ELSE 2 END, CASE WHEN e.review_by<%s THEN "
+        "e.review_by END,oldest_flag NULLS LAST,e.review_by NULLS LAST,e.id LIMIT"
+        " %s OFFSET %s",
+        (run_id, filter, filter, filter, today, filter, today, today, today, today, limit, offset),
+    ).fetchall()
+    return {
+        "entries": [
+            {
+                "id": str(r[0]),
+                "session_id": str(r[1]),
+                "title": r[2],
+                "status": r[3],
+                "version": r[4],
+                **info(conn, r[0], now),
+            }
+            for r in rows
+        ],
+        "next_offset": offset + limit if len(rows) == limit else None,
+    }

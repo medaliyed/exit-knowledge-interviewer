@@ -2,7 +2,8 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -12,6 +13,7 @@ from eki.auth import current_principal
 from eki.errors import ConflictError, NotFoundError
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
+from eki.runbook import maintenance as review_metadata
 from eki.runbook import review, store
 from eki.runbook.faithfulness import Unsupported, check_entry
 from eki.runbook.models import (
@@ -47,6 +49,11 @@ def validate_sources(conn: psycopg.Connection, session_id: UUID, entry: RunbookE
                     or turn.topic_id != entry.topic_id
                 ):
                     raise ValueError("citation must refer to a public expert turn of this topic")
+                if turn.speaker == "maintainer" and (
+                    citation.author_subject != turn.author_subject
+                    or citation.author_name != turn.author_name
+                ):
+                    raise ValueError("maintainer citation attribution does not match its source")
                 if conn.execute(
                     "SELECT 1 FROM turns WHERE session_id = %s AND corrects = %s",
                     (session_id, citation.turn_index),
@@ -152,18 +159,31 @@ class RunbookService:
         apply: Callable[[psycopg.Connection, store.StoredEntry, str], RunbookEntry],
         *,
         reason: RedactedText | None = None,
+        expected_version: int | None = None,
+        expected_maintenance_revision: int | None = None,
+        review_by: date | None = None,
     ) -> store.StoredEntry:
         with self._connect() as conn, conn.transaction():
             previous = store.load_entry(conn, str(entry_id))
             if previous is None:
                 raise NotFoundError(f"no entry {entry_id}")
             run_id = maintenance_run(conn, previous.session_id)
-            expert, _ = maintenance.reviewer(conn, run_id, by)
+            expert, maintaining = maintenance.reviewer(conn, run_id, by)
             # Acquire run before session and entry for every maintenance mutation.
             conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (previous.session_id,))
             previous = store.load_entry(conn, str(entry_id), lock=True)
             if previous is None:
                 raise NotFoundError(f"no entry {entry_id}")
+            review_metadata.expected(
+                conn,
+                entry_id,
+                previous.version,
+                expected_version,
+                expected_maintenance_revision,
+                required=maintaining,
+            )
+            if action == "approve":
+                review_metadata.deadline(self.clock(), review_by)
             changed = apply(conn, previous, expert)
             validate_sources(conn, previous.session_id, changed)
             result = store.save_entry(
@@ -173,20 +193,41 @@ class RunbookService:
                 rejection_reason=reason,
                 edited=True if action == "edit" else None,
             )
+            if action == "approve":
+                review_metadata.reviewed(conn, entry_id, self._clean(by), self.clock(), review_by)
             store.add_decision(conn, changed.id, action, self._clean(by), self.clock(), reason)
             return result
 
-    def approve(self, entry_id: UUID, by: str) -> store.StoredEntry:
+    def approve(
+        self,
+        entry_id: UUID,
+        by: str,
+        *,
+        expected_version: int | None = None,
+        expected_maintenance_revision: int | None = None,
+        review_by: date | None = None,
+    ) -> store.StoredEntry:
         return self._change(
             entry_id,
             by,
             "approve",
-            lambda conn, previous, expert: review.approve(
+            expected_version=expected_version,
+            expected_maintenance_revision=expected_maintenance_revision,
+            review_by=review_by,
+            apply=lambda conn, previous, expert: review.approve(
                 previous.entry, self._clean(by), expert, self.clock()
             ),
         )
 
-    def reject(self, entry_id: UUID, by: str, reason: str) -> store.StoredEntry:
+    def reject(
+        self,
+        entry_id: UUID,
+        by: str,
+        reason: str,
+        *,
+        expected_version: int | None = None,
+        expected_maintenance_revision: int | None = None,
+    ) -> store.StoredEntry:
         clean = self._clean(reason)
         return self._change(
             entry_id,
@@ -194,6 +235,8 @@ class RunbookService:
             "reject",
             lambda conn, previous, expert: review.reject(previous.entry, clean),
             reason=clean,
+            expected_version=expected_version,
+            expected_maintenance_revision=expected_maintenance_revision,
         )
 
     def edit(
@@ -201,6 +244,9 @@ class RunbookService:
         entry_id: UUID,
         by: str,
         sections: dict[SectionName, review.SectionEdit],
+        *,
+        expected_version: int | None = None,
+        expected_maintenance_revision: int | None = None,
     ) -> store.StoredEntry:
         # Validate and redact before any text is stored, even in the transcript.
         if not sections or any(name not in SECTION_NAMES for name in sections):
@@ -244,7 +290,10 @@ class RunbookService:
                     (principal.subject, self._clean(principal.name), previous.session_id, ordinal),
                 )
             citation = InterviewTurnCitation(
-                session_id=str(previous.session_id), turn_index=ordinal
+                session_id=str(previous.session_id),
+                turn_index=ordinal,
+                author_subject=principal.subject if mode and mode[0] and principal else None,
+                author_name=self._clean(principal.name) if mode and mode[0] and principal else None,
             )
             replacements = {
                 name: Section(
@@ -255,7 +304,80 @@ class RunbookService:
             }
             return review.edit(previous.entry, replacements)
 
-        return self._change(entry_id, by, "edit", apply)
+        return self._change(
+            entry_id,
+            by,
+            "edit",
+            apply,
+            expected_version=expected_version,
+            expected_maintenance_revision=expected_maintenance_revision,
+        )
+
+    def metadata(self, entry_id: UUID) -> dict[str, Any]:
+        with self._connect() as conn:
+            return review_metadata.info(conn, entry_id, self.clock())
+
+    def review(
+        self,
+        entry_id: UUID,
+        by: str,
+        *,
+        expected_version: int,
+        expected_maintenance_revision: int,
+        review_by: date | None = None,
+    ) -> store.StoredEntry:
+        with self._connect() as conn, conn.transaction():
+            entry = store.load_entry(conn, str(entry_id))
+            if entry is None:
+                raise NotFoundError("entry not found")
+            maintenance.reviewer(conn, maintenance_run(conn, entry.session_id), by)
+            conn.execute("SELECT 1 FROM sessions WHERE id=%s FOR UPDATE", (entry.session_id,))
+            entry = store.load_entry(conn, str(entry_id), lock=True)
+            if entry is None or entry.entry.status != EntryStatus.APPROVED:
+                raise ConflictError("only approved entries can be reviewed unchanged")
+            review_metadata.expected(
+                conn,
+                entry_id,
+                entry.version,
+                expected_version,
+                expected_maintenance_revision,
+                required=True,
+            )
+            validate_sources(conn, entry.session_id, entry.entry)
+            review_metadata.reviewed(conn, entry_id, self._clean(by), self.clock(), review_by)
+            store.add_decision(conn, str(entry_id), "review", self._clean(by), self.clock())
+            return entry
+
+    def withdraw(
+        self,
+        entry_id: UUID,
+        by: str,
+        reason: str,
+        *,
+        expected_version: int,
+        expected_maintenance_revision: int,
+    ) -> store.StoredEntry:
+        if not reason.strip() or len(reason) > 2000:
+            raise ValueError("withdrawal needs a reason")
+
+        def apply(
+            conn: psycopg.Connection, previous: store.StoredEntry, expert: str
+        ) -> RunbookEntry:
+            if previous.entry.status != EntryStatus.APPROVED:
+                raise ConflictError("only an approved entry can be withdrawn")
+            return previous.entry.model_copy(
+                update={"status": EntryStatus.DRAFT, "approved_by": None, "approved_at": None}
+            )
+
+        return self._change(
+            entry_id,
+            by,
+            "withdraw",
+            apply,
+            reason=self._clean(reason),
+            expected_version=expected_version,
+            expected_maintenance_revision=expected_maintenance_revision,
+        )
 
 
 def correct_entries(

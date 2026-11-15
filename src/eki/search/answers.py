@@ -4,7 +4,7 @@ import asyncio
 import json
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import psycopg
@@ -19,6 +19,7 @@ from eki.ingest.redaction import redact
 from eki.llm import ChatModel, Message, ModelError
 from eki.llm.litellm_model import LiteLLMModel
 from eki.llm.tracing import TracedModel, build_tracer
+from eki.runbook.maintenance import info
 from eki.runbook.models import SECTION_NAMES, Citation, SectionName
 from eki.search.service import SearchHit, SearchService, query_tokens
 
@@ -33,6 +34,7 @@ class Evidence(BaseModel):
     claim_index: int
     text: str
     citations: tuple[Citation, ...]
+    maintenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class OpenQuestion(BaseModel):
@@ -108,6 +110,7 @@ def _candidates(hits: list[SearchHit], question: str) -> list[tuple[float, Evide
                             claim_index=index,
                             text=claim.text,
                             citations=claim.citations,
+                            maintenance=hit.maintenance,
                         ),
                     )
                 )
@@ -143,13 +146,15 @@ class AnswerService:
                     current = approved_entry(conn, UUID(hit.entry.id), principal)
                 except NotFoundError:
                     return False
+                if info(conn, hit.entry.id, self.search.clock())["freshness"] == "overdue":
+                    return False
                 if current.version != hit.version:
                     return False
         return True
 
     async def ask(self, principal: Principal, question: str) -> Answer:
         clean = self.search.clean_query(question)
-        hits = await asyncio.to_thread(self.search.search, principal, clean)
+        hits = await asyncio.to_thread(self.search.search, principal, clean, fresh_only=True)
         mode: Literal["extractive", "model_selected"] = (
             "model_selected" if self.model else "extractive"
         )

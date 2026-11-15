@@ -1,5 +1,7 @@
 """Refresh complete approved entries; provider failures never leave partial indexes."""
 
+from datetime import date
+
 import psycopg
 from psycopg import sql
 
@@ -18,6 +20,8 @@ def refresh(
     principal: Principal,
     embedder: SearchEmbedder,
     domains: frozenset[str],
+    *,
+    review_after: date | None = None,
 ) -> int:
     rows = conn.execute(
         sql.SQL(
@@ -25,13 +29,14 @@ def refresh(
             "JOIN sessions s ON s.id = e.session_id "
             "JOIN interview_plans p ON p.id = s.plan_id "
             "JOIN ingest_runs r ON r.id = p.run_id WHERE e.status = 'approved' AND "
+            "(%s::date IS NULL OR e.review_by >= %s) AND "
         )
         + sql.SQL(VISIBLE_RUN)
         + sql.SQL(
             " AND NOT EXISTS (SELECT 1 FROM runbook_index i WHERE i.entry_id = e.id "
             "AND i.version = e.version AND i.model = %s) ORDER BY e.id"
         ),
-        (*visible_params(principal), embedder.name),
+        (review_after, review_after, *visible_params(principal), embedder.name),
     ).fetchall()
     count = 0
     for entry_id, content, version, run_id in rows:
@@ -63,11 +68,12 @@ def refresh(
                     "JOIN sessions s ON s.id = e.session_id "
                     "JOIN interview_plans p ON p.id = s.plan_id "
                     "JOIN ingest_runs r ON r.id = p.run_id WHERE e.id = %s "
-                    "AND e.version = %s AND e.status = 'approved' AND "
+                    "AND e.version = %s AND e.status = 'approved' AND (%s::date IS NULL OR "
+                    "e.review_by >= %s) AND "
                 )
                 + sql.SQL(VISIBLE_RUN)
                 + sql.SQL(" FOR UPDATE OF e, r"),
-                (entry_id, version, *visible_params(principal)),
+                (entry_id, version, review_after, review_after, *visible_params(principal)),
             ).fetchone()
             if current is None:
                 continue

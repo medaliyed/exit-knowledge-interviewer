@@ -1,7 +1,7 @@
 """Private runbook entries and their ordered decision history in Postgres."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -51,12 +51,31 @@ def save_entry(
     entry = RunbookEntry.model_validate(entry.model_dump())
     row = conn.execute(
         "INSERT INTO runbook_entries (id, session_id, topic_id, title, status, content, "
-        "approved_by, approved_at, rejection_reason, edited) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,coalesce(%s, false)) "
+        "approved_by, approved_at, rejection_reason, edited, "
+        "review_by,last_reviewed_at,last_reviewed_by_name,reviewed_version) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,coalesce(%s, false),%s,%s,%s,CASE "
+        "WHEN %s THEN 1 ELSE NULL END) "
         "ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, status = EXCLUDED.status, "
         "content = EXCLUDED.content, approved_by = EXCLUDED.approved_by, "
         "approved_at = EXCLUDED.approved_at, rejection_reason = EXCLUDED.rejection_reason, "
         "edited = coalesce(%s, runbook_entries.edited), "
+        "maintenance_revision=runbook_entries.maintenance_revision+1, "
+        "review_by=CASE WHEN EXCLUDED.status='approved' AND "
+        "(runbook_entries.status<>'approved' OR runbook_entries.approved_at IS "
+        "DISTINCT FROM EXCLUDED.approved_at) THEN EXCLUDED.review_by ELSE "
+        "runbook_entries.review_by END, "
+        "last_reviewed_at=CASE WHEN EXCLUDED.status='approved' AND "
+        "(runbook_entries.status<>'approved' OR runbook_entries.approved_at IS "
+        "DISTINCT FROM EXCLUDED.approved_at) THEN EXCLUDED.last_reviewed_at ELSE "
+        "runbook_entries.last_reviewed_at END, "
+        "last_reviewed_by_name=CASE WHEN EXCLUDED.status='approved' AND "
+        "(runbook_entries.status<>'approved' OR runbook_entries.approved_at IS "
+        "DISTINCT FROM EXCLUDED.approved_at) THEN EXCLUDED.last_reviewed_by_name "
+        "ELSE runbook_entries.last_reviewed_by_name END, "
+        "reviewed_version=CASE WHEN EXCLUDED.status='approved' AND "
+        "(runbook_entries.status<>'approved' OR runbook_entries.approved_at IS "
+        "DISTINCT FROM EXCLUDED.approved_at) THEN runbook_entries.version+1 ELSE "
+        "runbook_entries.reviewed_version END, "
         "version = runbook_entries.version + 1 RETURNING version, edited",
         (
             entry.id,
@@ -69,6 +88,12 @@ def save_entry(
             entry.approved_at,
             rejection_reason,
             edited,
+            None
+            if entry.approved_at is None
+            else entry.approved_at.astimezone(UTC).date() + timedelta(days=90),
+            entry.approved_at,
+            entry.approved_by,
+            entry.status == "approved",
             edited,
         ),
     ).fetchone()

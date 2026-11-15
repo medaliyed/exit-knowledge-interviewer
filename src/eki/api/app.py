@@ -10,6 +10,7 @@ import logging
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import date
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -101,6 +102,9 @@ class PlanEdit(_Body):
 
 class Approval(_Body):
     approved_by: str
+    expected_version: int | None = None
+    expected_maintenance_revision: int | None = None
+    review_by: date | None = None
 
 
 class ExpertMessage(_Body):
@@ -134,11 +138,15 @@ class Owner(_Body):
 
 
 class EntryEdit(_Body):
+    expected_version: int | None = None
+    expected_maintenance_revision: int | None = None
     edited_by: str
     sections: dict[SectionName, SectionEdit]
 
 
 class Rejection(_Body):
+    expected_version: int | None = None
+    expected_maintenance_revision: int | None = None
     rejected_by: str
     reason: str
 
@@ -166,7 +174,13 @@ def _plan(plan: InterviewPlan) -> dict[str, Any]:
 
 def _session(view: SessionView) -> dict[str, Any]:
     waiting = view.waiting
-    turns = [turn.model_dump(mode="json") for turn in view.turns]
+    turns = [
+        turn.model_dump(
+            mode="json",
+            exclude={"author_subject", "author_name"} if turn.author_subject is None else set(),
+        )
+        for turn in view.turns
+    ]
     for turn in turns:
         if turn["confidential"]:
             turn["text"] = CONFIDENTIAL
@@ -308,7 +322,13 @@ def create_app(
 
     def summaries(books: RunbookService, session_id: UUID) -> list[dict[str, Any]]:
         unsupported = books.unsupported(session_id)
-        return [_entry_summary(e, unsupported.get(e.entry.id, ())) for e in books.list(session_id)]
+        return [
+            {
+                **_entry_summary(e, unsupported.get(e.entry.id, ())),
+                **books.metadata(UUID(e.entry.id)),
+            }
+            for e in books.list(session_id)
+        ]
 
     async def detail(books: RunbookService, entry_id: UUID) -> dict[str, Any]:
         def work() -> dict[str, Any]:
@@ -316,6 +336,7 @@ def create_app(
             unsupported = books.unsupported(stored.session_id).get(stored.entry.id, ())
             return {
                 **stored.entry.model_dump(mode="json"),
+                **books.metadata(entry_id),
                 "session_id": str(stored.session_id),
                 "version": stored.version,
                 "rejection_reason": stored.rejection_reason,
@@ -353,7 +374,11 @@ def create_app(
             def read() -> dict[str, Any]:
                 with books._connect() as conn:
                     stored = access.approved_entry(conn, entry_id, identity(request))
-                return {**stored.entry.model_dump(mode="json"), "version": stored.version}
+                return {
+                    **stored.entry.model_dump(mode="json"),
+                    "version": stored.version,
+                    **books.metadata(entry_id),
+                }
 
             return await db(read)
         return await detail(books, entry_id)
@@ -363,7 +388,15 @@ def create_app(
         entry_id: UUID, edit: EntryEdit, books: Runbooks, request: Request
     ) -> dict[str, Any]:
         actor(request, edit.edited_by)
-        await operation(lambda: books.edit(entry_id, edit.edited_by, edit.sections))
+        await operation(
+            lambda: books.edit(
+                entry_id,
+                edit.edited_by,
+                edit.sections,
+                expected_version=edit.expected_version,
+                expected_maintenance_revision=edit.expected_maintenance_revision,
+            )
+        )
         return await detail(books, entry_id)
 
     @app.post("/entries/{entry_id}/approve")
@@ -371,7 +404,15 @@ def create_app(
         entry_id: UUID, approval: Approval, books: Runbooks, request: Request
     ) -> dict[str, Any]:
         actor(request, approval.approved_by)
-        await operation(lambda: books.approve(entry_id, approval.approved_by))
+        await operation(
+            lambda: books.approve(
+                entry_id,
+                approval.approved_by,
+                expected_version=approval.expected_version,
+                expected_maintenance_revision=approval.expected_maintenance_revision,
+                review_by=approval.review_by,
+            )
+        )
         return await detail(books, entry_id)
 
     @app.post("/entries/{entry_id}/reject")
@@ -379,7 +420,15 @@ def create_app(
         entry_id: UUID, rejection: Rejection, books: Runbooks, request: Request
     ) -> dict[str, Any]:
         actor(request, rejection.rejected_by)
-        await operation(lambda: books.reject(entry_id, rejection.rejected_by, rejection.reason))
+        await operation(
+            lambda: books.reject(
+                entry_id,
+                rejection.rejected_by,
+                rejection.reason,
+                expected_version=rejection.expected_version,
+                expected_maintenance_revision=rejection.expected_maintenance_revision,
+            )
+        )
         return await detail(books, entry_id)
 
     def error(status: int) -> Any:

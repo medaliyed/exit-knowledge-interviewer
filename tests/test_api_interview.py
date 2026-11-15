@@ -346,12 +346,14 @@ def test_healthz_still_works(api: Api) -> None:
     assert api.client.get("/healthz").json() == {"status": "ok"}
 
 
-def test_without_model_settings_the_api_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_without_model_settings_the_api_says_so(
+    monkeypatch: pytest.MonkeyPatch, scratch: Scratch
+) -> None:
     from eki.config import get_settings
 
     for name in ("EKI_MODEL_INTERVIEWER", "EKI_MODEL_DRAFTER"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("EKI_DATABASE_URL", get_settings().database_url.get_secret_value())
+    monkeypatch.setenv("EKI_DATABASE_URL", scratch.dsn)
     monkeypatch.chdir("/")
     get_settings.cache_clear()
     try:

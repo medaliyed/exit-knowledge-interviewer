@@ -4,6 +4,7 @@ import hashlib
 import html
 import re
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -12,6 +13,7 @@ from eki.access import VISIBLE_RUN, approved_entry, visible_params
 from eki.auth import Principal
 from eki.errors import NotFoundError
 from eki.ingest.redaction import redact
+from eki.runbook.maintenance import info
 from eki.runbook.models import (
     SECTION_NAMES,
     ArtifactCitation,
@@ -22,7 +24,12 @@ from eki.runbook.models import (
 
 
 def render_markdown(
-    entry: RunbookEntry, *, version: int, domains: frozenset[str] = frozenset(), level: int = 1
+    entry: RunbookEntry,
+    *,
+    version: int,
+    domains: frozenset[str] = frozenset(),
+    level: int = 1,
+    maintenance: dict[str, Any] | None = None,
 ) -> str:
     entry = RunbookEntry.model_validate(entry.model_dump())
     if entry.status != EntryStatus.APPROVED or entry.missing_sections():
@@ -46,6 +53,19 @@ def render_markdown(
         f"Approved at: {escape(entry.approved_at.isoformat() if entry.approved_at else '')}",
         "",
     ]
+    if maintenance:
+        reviewer = escape(str(maintenance.get("last_reviewed_by_name") or "Unknown"))
+        lines += [
+            f"Maintained by: {escape(str(maintenance.get('owner_name') or 'Unassigned'))}",
+            f"Last reviewed by: {reviewer}",
+            f"Last reviewed at: {escape(str(maintenance.get('last_reviewed_at') or 'Unknown'))}",
+            f"Review by: {escape(str(maintenance.get('review_by') or 'Unknown'))}",
+            "**Review overdue**"
+            if maintenance.get("freshness") == "overdue"
+            else f"Review status: {maintenance.get('freshness')}",
+            "Reader feedback pending" if maintenance.get("open_flag_count") else "",
+            "",
+        ]
     for name in SECTION_NAMES:
         lines += [f"{'#' * (level + 1)} {name.title()}", ""]
         section = entry.section(name)
@@ -61,8 +81,10 @@ def render_markdown(
                             description += ": " + escape(citation.quote)
                     else:
                         description = (
-                            f"Interview {escape(citation.session_id)}, turn {citation.turn_index}"
-                        )
+                            f"Maintainer {escape(citation.author_name)}; "
+                            if citation.author_name
+                            else ""
+                        ) + f"Interview {escape(citation.session_id)}, turn {citation.turn_index}"
                     sources[key] = label, description
                 references.append(f"[^{sources[key][0]}]")
             marker = f"{index + 1}." if name == "steps" else "-"
@@ -83,7 +105,10 @@ class ExportService:
         with psycopg.connect(self.dsn, autocommit=True) as conn:
             stored = approved_entry(conn, entry_id, principal)
             return render_markdown(
-                stored.entry, version=stored.version, domains=self.work_email_domains
+                stored.entry,
+                version=stored.version,
+                domains=self.work_email_domains,
+                maintenance=info(conn, entry_id),
             )
 
     def run(self, principal: Principal, run_id: UUID) -> str:
@@ -109,6 +134,7 @@ class ExportService:
                         version=stored.version,
                         domains=self.work_email_domains,
                         level=2,
+                        maintenance=info(conn, entry_id),
                     )
                 )
         return "# Approved runbook\n\n" + (

@@ -16,7 +16,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     StringConstraints,
+    model_serializer,
     model_validator,
 )
 
@@ -56,6 +58,12 @@ class InterviewTurnCitation(_Model):
     kind: Literal["interview_turn"] = "interview_turn"
     session_id: NonBlank
     turn_index: int = Field(ge=0)
+    author_subject: str | None = None
+    author_name: str | None = None
+
+    @model_serializer(mode="wrap")
+    def serialise(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return {key: value for key, value in handler(self).items() if value is not None}
 
 
 Citation = Annotated[ArtifactCitation | InterviewTurnCitation, Field(discriminator="kind")]

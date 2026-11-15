@@ -1,7 +1,10 @@
 """Live ACL filtering precedes both keyword and vector candidate ranking."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 import psycopg
 from psycopg import sql
@@ -12,6 +15,7 @@ from eki.auth import Principal
 from eki.config import Settings, work_domains
 from eki.ingest.embedding import HashingEmbedder, to_vector_literal
 from eki.ingest.redaction import RedactedText, redact
+from eki.runbook.maintenance import info
 from eki.runbook.models import RunbookEntry, SectionName
 from eki.search.embedding import SearchEmbedder, build_embedder, checked_vectors
 from eki.search.index import refresh
@@ -61,9 +65,11 @@ class SearchHit:
     section: SectionName
     snippet: str
     score: float
+    maintenance: dict[str, Any] = field(default_factory=dict)
 
     def public(self) -> dict[str, object]:
         return {
+            **self.maintenance,
             "id": self.entry.id,
             "title": self.entry.title,
             "version": self.version,
@@ -84,31 +90,42 @@ class SearchService:
     work_email_domains: frozenset[str] = field(default_factory=frozenset)
     embedder: SearchEmbedder = field(default_factory=HashingEmbedder)
     min_similarity: float = 0.18
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def clean_query(self, query: str) -> RedactedText:
         if not query.strip() or len(query) > 2000:
             raise ValueError("query must contain 1 to 2000 characters")
         return redact(query.strip(), work_email_domains=self.work_email_domains).text
 
-    def search(self, principal: Principal, query: str, *, limit: int = 5) -> list[SearchHit]:
+    def search(
+        self, principal: Principal, query: str, *, limit: int = 5, fresh_only: bool = False
+    ) -> list[SearchHit]:
         clean = self.clean_query(query)
         if not 1 <= limit <= 50:
             raise ValueError("limit must be between 1 and 50")
         if not query_tokens(clean):
             return []
         with psycopg.connect(self.dsn, autocommit=True) as conn:
-            refresh(conn, principal, self.embedder, self.work_email_domains)
+            refresh(
+                conn,
+                principal,
+                self.embedder,
+                self.work_email_domains,
+                review_after=self.clock().astimezone(UTC).date() if fresh_only else None,
+            )
             run_ids = conn.execute(
                 sql.SQL(
                     "SELECT DISTINCT r.id FROM ingest_runs r "
                     "JOIN interview_plans p ON p.run_id = r.id "
                     "JOIN sessions s ON s.plan_id = p.id "
                     "JOIN runbook_entries e ON e.session_id = s.id "
-                    "WHERE e.status = 'approved' AND "
+                    "WHERE e.status = 'approved' AND (NOT %s OR e.review_by >= %s) AND "
                 )
                 + sql.SQL(VISIBLE_RUN),
-                visible_params(principal),
+                (fresh_only, self.clock().astimezone(UTC).date(), *visible_params(principal)),
             ).fetchall()
+            if not run_ids:
+                return []
             with audit_context(user_id=principal.subject, run_ids=tuple(r[0] for r in run_ids)):
                 (vector,) = checked_vectors(self.embedder.embed([clean]), 1)
             literal = to_vector_literal(vector)
@@ -118,7 +135,8 @@ class SearchService:
                     JOIN runbook_entries e ON e.id = i.entry_id AND e.version = i.version
                     JOIN sessions s ON s.id = e.session_id
                     JOIN interview_plans p ON p.id = s.plan_id JOIN ingest_runs r ON r.id = p.run_id
-                    WHERE e.status = 'approved' AND i.model = %s AND """)
+                    WHERE e.status = 'approved' AND i.model = %s
+                    AND (NOT %s OR e.review_by >= %s) AND """)
                 + sql.SQL(VISIBLE_RUN)
                 + sql.SQL("""
                 ), q AS (SELECT websearch_to_tsquery('english', %s) AS terms,
@@ -154,6 +172,8 @@ class SearchService:
                   ORDER BY r.score DESC, r.entry_id LIMIT %s"""),
                 (
                     self.embedder.name,
+                    fresh_only,
+                    self.clock().astimezone(UTC).date(),
                     *visible_params(principal),
                     clean,
                     literal,
@@ -161,10 +181,17 @@ class SearchService:
                     limit,
                 ),
             ).fetchall()
-        return [
-            SearchHit(RunbookEntry.model_validate(r[0]), r[1], r[2], r[3], float(r[4]))
-            for r in rows
-        ]
+            return [
+                SearchHit(
+                    RunbookEntry.model_validate(r[0]),
+                    r[1],
+                    r[2],
+                    r[3],
+                    float(r[4]),
+                    info(conn, RunbookEntry.model_validate(r[0]).id, self.clock()),
+                )
+                for r in rows
+            ]
 
 
 def build_search(settings: Settings) -> SearchService:

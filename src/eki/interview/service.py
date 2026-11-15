@@ -141,9 +141,9 @@ class InterviewService:
         """Start a new generation or resume a known one, retaining validated topic results."""
         plan_id = generation_id or uuid4()
         with self._connect() as conn:
-            await db(maintenance.capture, conn, run_id)
             if not await db(store.run_exists, conn, run_id):
                 raise NotFoundError(f"no completed run {run_id}")
+            await db(maintenance.capture, conn, run_id)
             owner = await db(generation.owner_run, conn, plan_id)
             existing = await db(store.load_plan, conn, plan_id)
             if (owner is not None and owner != run_id) or (
