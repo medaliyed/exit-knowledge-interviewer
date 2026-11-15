@@ -53,7 +53,16 @@ def install_security(
     ) -> Response:
         parts = request.url.path.strip("/").split("/")
         is_auth = parts[0] == "auth"
-        if parts[0] not in ("runs", "plans", "sessions", "entries", "runbook", "auth", "flags"):
+        if parts[0] not in (
+            "runs",
+            "plans",
+            "sessions",
+            "entries",
+            "runbook",
+            "auth",
+            "flags",
+            "follow-up-requests",
+        ):
             return await following(request)
 
         def private(response: Response) -> Response:
@@ -119,7 +128,7 @@ def install_security(
             if (
                 not is_auth
                 and not principal.admin
-                and parts[0] not in ("runbook", "flags")
+                and parts[0] not in ("runbook", "flags", "follow-up-requests")
                 and len(parts) > 1
             ):
                 try:
@@ -135,6 +144,13 @@ def install_security(
                         try:
                             access.require_manager(conn, run_id, principal)
                         except NotFoundError:
+                            if (
+                                parts[0] == "runs"
+                                and request.method == "POST"
+                                and parts[2:] == ["follow-up-requests"]
+                            ):
+                                access.visible_run(conn, resource_id, principal)
+                                return True
                             if parts[0] == "entries" and (
                                 (
                                     request.method == "GET"

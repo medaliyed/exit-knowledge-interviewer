@@ -25,6 +25,16 @@ def require_manager(conn: psycopg.Connection, run_id: UUID, principal: Principal
         raise NotFoundError("run not found")
 
 
+def visible_run(conn: psycopg.Connection, run_id: UUID, principal: Principal) -> None:
+    """Raise ``NotFoundError`` unless the principal manages or reads this run right now."""
+    row = conn.execute(
+        "SELECT 1 FROM ingest_runs r WHERE r.id = %s AND " + VISIBLE_RUN,  # noqa: S608 - bound
+        (run_id, *visible_params(principal)),
+    ).fetchone()
+    if row is None:
+        raise NotFoundError("run not found")
+
+
 def resource_run(conn: psycopg.Connection, resource: str, resource_id: UUID) -> UUID | None:
     queries = {
         "runs": "SELECT id FROM ingest_runs WHERE id = %s",

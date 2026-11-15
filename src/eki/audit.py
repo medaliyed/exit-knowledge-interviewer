@@ -51,6 +51,8 @@ Operation = Literal[
     "withdraw",
     "flag_created",
     "flag_resolved",
+    "follow_up_requested",
+    "gap_triaged",
     "sign_in",
     "sign_out",
     "session_expired",

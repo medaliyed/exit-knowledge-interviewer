@@ -44,8 +44,14 @@ class OpenQuestion(BaseModel):
     text: str
 
 
+AbstentionReason = Literal[
+    "no_supported_answer", "evidence_changed", "context_limit", "review_required"
+]
+"""Why Ask abstained, safely: never a client-supplied claim and never a hidden entry's presence."""
+
+
 class Answer(BaseModel):
-    reason: Literal["review_required"] | None = None
+    reason: AbstentionReason | None = None
     status: Literal["answered", "insufficient_evidence"]
     answer: str
     evidence: tuple[Evidence, ...] = ()
@@ -173,10 +179,16 @@ class AnswerService:
             if (intent is None or s == intent) and h.entry.section(s).open_question is not None
         )
 
-        def abstain(*, include_open: bool = True) -> Answer:
+        def abstain(
+            *, include_open: bool = True, reason: AbstentionReason = "no_supported_answer"
+        ) -> Answer:
+            if not include_open:
+                reason = "evidence_changed"
+            elif needs_review:
+                reason = "review_required"
             return Answer(
                 status="insufficient_evidence",
-                reason="review_required" if needs_review and include_open else None,
+                reason=reason,
                 answer=(
                     "No supported answer is available; matching permitted entries need review."
                     if needs_review and include_open
@@ -316,7 +328,7 @@ class AnswerService:
                 for index in range(len(hit.entry.steps.claims)):
                     item = all_evidence.get((hit.entry.id, "steps", index))
                     if item is None:
-                        return abstain()
+                        return abstain(reason="context_limit")
                     group.append(item)
             for item in group:
                 key = (item.entry_id, item.section, item.claim_index)

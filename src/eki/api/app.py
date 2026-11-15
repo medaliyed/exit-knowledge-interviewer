@@ -26,6 +26,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 from eki import __version__, access, accounts
 from eki.api import access_log
 from eki.api.accounts import install_accounts
+from eki.api.followup import install_followup
 from eki.api.maintenance import install_maintenance
 from eki.api.security import identity, install_security
 from eki.audit import AuditError, list_events
@@ -267,6 +268,7 @@ def create_app(
         lambda: tuple(getattr(get_authenticator(), "identities", ())),
         lambda: work_domains(configuration()),
     )
+    install_followup(app, database_dsn, lambda: work_domains(configuration()))
 
     def actor(request: Request, name: str) -> None:
         if name.strip() != identity(request).name:

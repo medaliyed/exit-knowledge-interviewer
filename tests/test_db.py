@@ -42,6 +42,8 @@ TABLES = {
     "handovers",
     "entry_flags",
     "flag_throttle",
+    "follow_up_gaps",
+    "follow_up_throttle",
 }
 MIGRATIONS = [
     "0001_init.sql",
@@ -59,6 +61,7 @@ MIGRATIONS = [
     "0013_maintenance.sql",
     "0014_feedback_decisions.sql",
     "0015_maintenance_index.sql",
+    "0016_follow_up_gaps.sql",
 ]
 
 

@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,8 +10,7 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from eki import access, maintenance
-from eki.accounts import Throttled
+from eki import access, maintenance, throttle
 from eki.audit import AuditDetails, append_event
 from eki.auth import Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
@@ -153,24 +152,7 @@ class FeedbackService:
                 raise NotFoundError("entry not found")
             if entry.version != expected_version:
                 raise ConflictError("entry changed; reopen before submitting feedback")
-            conn.execute(
-                "INSERT INTO flag_throttle(subject,window_at,count) VALUES(%s,%s,0) ON "
-                "CONFLICT(subject) DO NOTHING",
-                (principal.subject, now),
-            )
-            window = conn.execute(
-                "SELECT window_at,count FROM flag_throttle WHERE subject=%s FOR UPDATE",
-                (principal.subject,),
-            ).fetchone()
-            if window is None:
-                raise RuntimeError("missing throttle")
-            expired = now - window[0] >= timedelta(minutes=1)
-            if not expired and window[1] >= 10:
-                raise Throttled(max(1, int(60 - (now - window[0]).total_seconds())))
-            conn.execute(
-                "UPDATE flag_throttle SET window_at=%s,count=%s WHERE subject=%s",
-                (now if expired else window[0], 1 if expired else window[1] + 1, principal.subject),
-            )
+            throttle.take(conn, "flag_throttle", principal.subject, now)
             flag_id = uuid4()
             with conn.cursor(row_factory=dict_row) as cursor:
                 flag = cursor.execute(
