@@ -371,3 +371,30 @@ def test_cli_review_prompt_lists_every_action(
         "review unchanged, withdraw, reject, edit, triage, skip, or quit"
         in out.split("Choose ")[-1]
     )
+
+
+# --- H2: existing ownership paths need expected state once a run is owned ---
+
+
+def test_reassigning_an_owned_run_needs_expected_state(scratch: Scratch) -> None:
+    world = asyncio.run(search_world(scratch))
+    lee = Principal("lee", "Lee")
+    with scratch.connect() as conn:
+        with pytest.raises(ValueError, match="expected-owner"):
+            access.set_owner(conn, world.run_id, lee.subject, ADMIN, identities=(lee,))
+        assert access.readers(conn, world.run_id, ADMIN)["owner"] == OWNER.subject
+        revision = maintenance.state(conn, world.run_id, ADMIN)["run_revision"]
+        access.set_owner(
+            conn,
+            world.run_id,
+            lee.subject,
+            ADMIN,
+            expected_owner=OWNER.subject,
+            expected_revision=revision,
+            reason="Rotation",
+            identities=(lee,),
+        )
+        state = maintenance.state(conn, world.run_id, ADMIN)
+    assert state["owner_subject"] == lee.subject
+    assert state["maintenance_started_at"] is None, "plain reassignment keeps capture open"
+    assert state["history"][-1]["started_maintenance"] is False

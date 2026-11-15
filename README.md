@@ -162,6 +162,9 @@ uv run eki handover --run RUN_ID --to samir --expected-owner nadia \
 uv run eki review --run RUN_ID --due
 ```
 
+Reassigning an already-owned run with `eki access --owner` or `PUT /runs/{id}/owner`
+also needs `--expected-owner` and `--expected-run-revision` (or the matching JSON
+fields); a first assignment does not.
 The maintenance command shows the current run revision. Provision/register the
 successor before transfer. Review mutations in the CLI now require that
 reviewer's `EKI_API_TOKEN`; local operator inspection and account/ownership

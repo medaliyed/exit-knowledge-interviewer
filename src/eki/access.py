@@ -75,7 +75,11 @@ def set_owner(
         if expected_revision is None and (
             started or (identities is not None and owner is not None)
         ):
-            raise ValueError("maintenance transfer requires expected owner and run revision")
+            raise ValueError(
+                "this run already has an owner; reassignment requires the expected owner "
+                "and run revision (--expected-owner/--expected-run-revision, or "
+                "expected_owner_subject/expected_run_revision; see eki maintenance --run ID)"
+            )
         maintenance.transfer(
             conn,
             run_id,

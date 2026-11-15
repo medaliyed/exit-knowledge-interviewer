@@ -191,6 +191,11 @@ only. Admins can assign ownership and manage all runs. ACL administration:
 - Local operator: `eki access --run ID --owner nadia --readers platform finance`.
   `--readers` with no subjects revokes all readers; omit it to keep the list.
 - API admin: `PUT /runs/{id}/owner` with `{"subject":"nadia"}`.
+- Both forms assign a first owner as shown. Reassigning a run that already has
+  an owner (capture or maintenance) additionally requires the expected state:
+  `--expected-owner SUBJECT --expected-run-revision N [--reason TEXT]` or
+  `{"subject","expected_owner_subject","expected_run_revision","reason"}` (F21).
+  `eki maintenance --run ID` prints the current owner and run revision.
 - Owner/admin: `GET /runs/{id}/access` or `PUT /runs/{id}/access` with
   `{"readers":["platform","finance"]}` to replace the list.
 
