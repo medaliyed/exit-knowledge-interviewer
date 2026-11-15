@@ -31,6 +31,12 @@ class Span(_Model):
     since: date
     until: date
 
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.until < self.since:
+            raise ValueError("until must be on or after since")
+        return self
+
 
 class Script(_Model):
     """How the simulated expert answers: everything volunteered first, then follow-ups."""
@@ -119,6 +125,7 @@ class ScenarioResult(_Model):
     scenario: str
     passed: bool
     finished: bool
+    aborted: bool = False
     checks: tuple[Check, ...]
     questions: int
     transcript: tuple[TranscriptTurn, ...] = ()
