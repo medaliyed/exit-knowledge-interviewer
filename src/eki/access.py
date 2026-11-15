@@ -70,7 +70,9 @@ def set_owner(
 
     with conn.transaction():
         owner, started, revision, _ = maintenance.lock_run(conn, run_id)
-        if started and expected_revision is None:
+        if expected_revision is None and (
+            started or (identities is not None and owner is not None)
+        ):
             raise ValueError("maintenance transfer requires expected owner and run revision")
         maintenance.transfer(
             conn,

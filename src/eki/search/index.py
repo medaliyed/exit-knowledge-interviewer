@@ -60,6 +60,7 @@ def refresh(
             with audit_context(user_id=principal.subject, run_ids=(run_id,)):
                 vectors.extend(checked_vectors(embedder.embed(texts), len(texts)))
         with conn.transaction():
+            conn.execute("SELECT 1 FROM ingest_runs WHERE id=%s FOR UPDATE", (run_id,))
             # Short write locks serialize refreshes and keep approval, version and ACL
             # stable during insertion. Never hold these locks during provider latency.
             current = conn.execute(
@@ -72,7 +73,7 @@ def refresh(
                     "e.review_by >= %s) AND "
                 )
                 + sql.SQL(VISIBLE_RUN)
-                + sql.SQL(" FOR UPDATE OF e, r"),
+                + sql.SQL(" FOR UPDATE OF e"),
                 (entry_id, version, review_after, review_after, *visible_params(principal)),
             ).fetchone()
             if current is None:

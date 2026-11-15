@@ -193,6 +193,28 @@ class SearchService:
                 for r in rows
             ]
 
+    def has_overdue(self, principal: Principal, query: str) -> bool:
+        with psycopg.connect(self.dsn, autocommit=True) as conn:
+            return (
+                conn.execute(
+                    sql.SQL(
+                        "SELECT 1 FROM runbook_entries e JOIN sessions s ON s.id=e.session_id "
+                        "JOIN interview_plans p ON p.id=s.plan_id JOIN ingest_runs r ON "
+                        "r.id=p.run_id WHERE e.status='approved' AND e.review_by<%s AND "
+                        "to_tsvector('english',e.title||' '||e.content::text) @@ "
+                        "websearch_to_tsquery('english',%s) AND "
+                    )
+                    + sql.SQL(VISIBLE_RUN)
+                    + sql.SQL(" LIMIT 1"),
+                    (
+                        self.clock().astimezone(UTC).date(),
+                        self.clean_query(query),
+                        *visible_params(principal),
+                    ),
+                ).fetchone()
+                is not None
+            )
+
 
 def build_search(settings: Settings) -> SearchService:
     return SearchService(

@@ -29,7 +29,7 @@ from eki.api.accounts import install_accounts
 from eki.api.maintenance import install_maintenance
 from eki.api.security import identity, install_security
 from eki.audit import AuditError, list_events
-from eki.auth import Authenticator, ForbiddenError, TokenAuthenticator
+from eki.auth import AuthenticationError, Authenticator, ForbiddenError, TokenAuthenticator
 from eki.config import ConfigError, Settings, get_settings, work_domains
 from eki.graph.workflow import db
 from eki.ingest.redaction import redact
@@ -455,6 +455,7 @@ def create_app(
 
     app.add_exception_handler(AuditError, error(503))
     app.add_exception_handler(ForbiddenError, error(403))
+    app.add_exception_handler(AuthenticationError, error(401))
     app.add_exception_handler(NotFoundError, error(404))
     app.add_exception_handler(ConflictError, error(409))
     app.add_exception_handler(PlanFrozenError, error(409))

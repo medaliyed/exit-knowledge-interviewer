@@ -343,6 +343,8 @@ class RunbookService:
                 expected_maintenance_revision,
                 required=True,
             )
+            if entry.entry.missing_sections():
+                raise ValueError("entry has missing sections")
             validate_sources(conn, entry.session_id, entry.entry)
             review_metadata.reviewed(conn, entry_id, self._clean(by), self.clock(), review_by)
             store.add_decision(conn, str(entry_id), "review", self._clean(by), self.clock())

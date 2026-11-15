@@ -135,10 +135,12 @@ def install_security(
                         try:
                             access.require_manager(conn, run_id, principal)
                         except NotFoundError:
-                            if (
-                                parts[0] == "entries"
-                                and request.method == "GET"
-                                and (len(parts) == 2 or parts[2:] == ["markdown"])
+                            if parts[0] == "entries" and (
+                                (
+                                    request.method == "GET"
+                                    and (len(parts) == 2 or parts[2:] == ["markdown"])
+                                )
+                                or (request.method == "POST" and parts[2:] == ["flags"])
                             ):
                                 access.approved_entry(conn, resource_id, principal)
                                 return True

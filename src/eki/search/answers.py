@@ -45,6 +45,7 @@ class OpenQuestion(BaseModel):
 
 
 class Answer(BaseModel):
+    reason: Literal["review_required"] | None = None
     status: Literal["answered", "insufficient_evidence"]
     answer: str
     evidence: tuple[Evidence, ...] = ()
@@ -158,6 +159,7 @@ class AnswerService:
         mode: Literal["extractive", "model_selected"] = (
             "model_selected" if self.model else "extractive"
         )
+        needs_review = await asyncio.to_thread(self.search.has_overdue, principal, clean)
         intent = _intent(clean)
         opened = tuple(
             OpenQuestion(
@@ -174,8 +176,14 @@ class AnswerService:
         def abstain(*, include_open: bool = True) -> Answer:
             return Answer(
                 status="insufficient_evidence",
+                reason="review_required" if needs_review and include_open else None,
                 answer=(
-                    "The approved entries do not provide enough evidence to answer this question."
+                    "No supported answer is available; matching permitted entries need review."
+                    if needs_review and include_open
+                    else (
+                        "The approved entries do not provide enough evidence "
+                        "to answer this question."
+                    )
                 ),
                 open_questions=opened if include_open else (),
                 mode=mode,

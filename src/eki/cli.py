@@ -37,9 +37,16 @@ from eki.audit import (
     list_auth_events,
     list_events,
 )
-from eki.auth import AuthenticationError, Principal, TokenAuthenticator, acting_as
+from eki.auth import (
+    AuthenticationError,
+    Principal,
+    TokenAuthenticator,
+    acting_as,
+    current_principal,
+)
 from eki.config import ConfigError, get_settings, work_domains
 from eki.db import connect, migrate
+from eki.feedback import FeedbackService
 from eki.graph.workflow import setup_checkpoints
 from eki.ingest.embedding import HashingEmbedder
 from eki.ingest.index import index_run
@@ -612,6 +619,25 @@ def _review_entries(
                     books.approve(entry_id, by, **expected, review_by=review_by)
                     print("Approved.")
                     break
+                if action == "triage":
+                    principal = current_principal()
+                    if principal is None:
+                        raise AuthenticationError("review identity required")
+                    feedback = FeedbackService(books.dsn, books.work_email_domains)
+                    print(json.dumps(feedback.list(entry_id, principal), default=str))
+                    flag_id = UUID(input("Flag ID: ").strip())
+                    resolution = input(
+                        "Resolution (corrected, confirmed_current, dismissed): "
+                    ).strip()
+                    feedback.resolve(
+                        flag_id,
+                        principal,
+                        resolution=resolution,
+                        note=input("Private resolution reason: "),
+                        **expected,
+                    )
+                    print("Flag resolved.")
+                    continue
                 if action in ("review", "review unchanged"):
                     books.review(entry_id, by, **expected, review_by=review_by)
                     print("Reviewed; no content changes.")
