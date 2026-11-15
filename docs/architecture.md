@@ -313,3 +313,16 @@ succeed before a model or tool call is made (`src/eki/audit.py`).
   implemented with HTTP and client-logic coverage. Actual browser interaction
   and visual/accessibility verification remain pending because browser control
   was unavailable. Live provider validation remains deferred by user request.
+
+
+## Phase 8: maintenance after capture
+
+An explicit handover keeps the original expert/source identity while moving
+entry-review authority to the existing run owner subject. Capture then closes;
+maintenance edits create attributed human turns. Review dates and reader flags
+are live metadata, separate from publication/content version and embeddings.
+Q&A excludes overdue entries while search/export label them. New tables are
+`handovers`, `entry_flags` and `flag_throttle` (0013), with confirmation ordering
+(0014) and metadata-safe index invalidation (0015). Shared services enforce run,
+session, entry and flag locking; HTTP and CLI do not authorize by a display name
+in maintenance. See [the maintenance flow](flows/maintenance.md).

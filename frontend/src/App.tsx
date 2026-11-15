@@ -9,6 +9,7 @@ import { Plans, PlanReview } from './Plans';
 import { Interview } from './Interview';
 import { Entries, EntryView } from './Entries';
 import { Knowledge } from './Knowledge';
+import { Maintenance } from './Maintenance';
 import { AccountMenu, ChangePassword, SetPassword, SignIn, type Message } from './Auth';
 
 function queryClient() {
@@ -48,7 +49,7 @@ function Shell({ auth, runs, notify, drafts, signOut, changePassword }: { auth: 
   if (!run) return <Navigate to="/workspace" replace />;
   const base = `/workspace/${run.id}`;
   // An entry page belongs to the review tab for the owner and to approved knowledge for a reader.
-  const tab = location.pathname.startsWith(`${base}/plans`) ? 'plans'
+  const tab = location.pathname.startsWith(`${base}/maintenance`) ? 'maintenance' : location.pathname.startsWith(`${base}/plans`) ? 'plans'
     : location.pathname.startsWith(`${base}/review`) || (location.pathname.startsWith(`${base}/entries/`) && run.can_manage) ? 'review'
     : location.pathname.startsWith(`${base}/knowledge`) || location.pathname.startsWith(`${base}/entries/`) ? 'knowledge' : '';
   return <WorkspaceContext.Provider value={{ ...auth, run, notify, drafts }}>
@@ -63,18 +64,18 @@ function Shell({ auth, runs, notify, drafts, signOut, changePassword }: { auth: 
           const next = runs.find(item => item.id === event.target.value)!;
           navigateHandover(next);
         }}>{runs.map(item => <option value={item.id} key={item.id}>{item.expert_name} · {handoverPeriod(item)}</option>)}</select>
-        <nav className="handover-list">{runs.map(item => <Link key={item.id} to={`/workspace/${item.id}/${item.can_manage ? 'plans' : 'knowledge'}`} className="handover-link" aria-current={item.id === run.id ? 'page' : undefined}>
+        <nav className="handover-list">{runs.map(item => <Link key={item.id} to={`/workspace/${item.id}/${item.can_manage ? (item.maintenance_started_at ? 'maintenance' : 'plans') : 'knowledge'}`} className="handover-link" aria-current={item.id === run.id ? 'page' : undefined}>
           <strong>{item.expert_name}</strong><span>{handoverPeriod(item)}</span><span className="handover-role">{item.can_manage ? 'Your handover' : 'Reader'}</span>
         </Link>)}</nav><p className="sidebar-note">Keep the knowledge.<br />Honour the source.</p></aside>}
       <main id="main-content" className={interview ? 'interview-page' : 'workspace-main'} tabIndex={-1} ref={content}>
-        {!interview && <><div className="handover-heading"><p className="eyebrow">Handover</p><h1>{run.expert_name} <span className="handover-period">{handoverPeriod(run)}</span></h1></div>
-          <nav className="tabs" aria-label="Handover">{run.can_manage && <><Tab to={`${base}/plans`} active={tab === 'plans'}>Interview plans</Tab><Tab to={`${base}/review`} active={tab === 'review'}>Review entries</Tab></>}
+        {!interview && <><div className="handover-heading"><p className="eyebrow">Handover</p><h1>{run.expert_name} <span className="handover-period">{handoverPeriod(run)}</span></h1>{run.maintenance_started_at && <p className="small muted">Expert: {run.expert_name} · Maintained by: {run.owner_name ?? 'Unassigned'}</p>}</div>
+          <nav className="tabs" aria-label="Handover">{run.can_manage && <><Tab to={`${base}/plans`} active={tab === 'plans'}>Interview plans</Tab><Tab to={`${base}/review`} active={tab === 'review'}>Review entries</Tab><Tab to={`${base}/maintenance`} active={tab === 'maintenance'}>Maintenance</Tab></>}
             <Tab to={`${base}/knowledge`} active={tab === 'knowledge'}>Approved knowledge</Tab></nav></>}
         <Outlet key={location.pathname} />
       </main>
     </div>
   </WorkspaceContext.Provider>;
-  function navigateHandover(next: Run) { navigate(`/workspace/${next.id}/${next.can_manage ? 'plans' : 'knowledge'}`); }
+  function navigateHandover(next: Run) { navigate(`/workspace/${next.id}/${next.can_manage ? (next.maintenance_started_at ? 'maintenance' : 'plans') : 'knowledge'}`); }
 }
 
 function Tab({ to, active, children }: { to: string; active: boolean; children: ReactNode }) {
@@ -87,7 +88,7 @@ function ManagerOnly({ children, runs }: { children: ReactNode; runs: Run[] }) {
 function HandoverIndex({ runs }: { runs: Run[] }) {
   const { runId } = useParams();
   const run = runs.find(item => item.id === runId);
-  return <Navigate to={run?.can_manage ? 'plans' : 'knowledge'} replace />;
+  return <Navigate to={run?.can_manage ? (run.maintenance_started_at ? 'maintenance' : 'plans') : 'knowledge'} replace />;
 }
 function Authenticated({ auth, notify, drafts, signOut, changePassword }: { auth: Auth; notify: (text: string, error?: boolean) => void; drafts: Map<string, string>; signOut: () => void; changePassword: () => void }) {
   const runsQuery = useQuery({ queryKey: ['runs', auth.identity.subject], queryFn: () => auth.api.request<Run[]>('/runs') });
@@ -102,6 +103,7 @@ function Authenticated({ auth, notify, drafts, signOut, changePassword }: { auth
     <Route path="plans" element={<ManagerOnly runs={runs}><Plans /></ManagerOnly>} />
     <Route path="plans/:planId" element={<ManagerOnly runs={runs}><PlanReview /></ManagerOnly>} />
     <Route path="interview/:sessionId" element={<ManagerOnly runs={runs}><Interview /></ManagerOnly>} />
+    <Route path="maintenance" element={<ManagerOnly runs={runs}><Maintenance /></ManagerOnly>} />
     <Route path="review" element={<ManagerOnly runs={runs}><Entries /></ManagerOnly>} />
     <Route path="entries/:entryId" element={<EntryView />} />
     <Route path="knowledge" element={<Knowledge />} />

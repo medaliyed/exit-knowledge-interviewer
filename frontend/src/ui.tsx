@@ -57,7 +57,7 @@ export function Modal({ title, open, onClose, children }: {
 }
 
 export function Source({ citation, onClick }: { citation: Citation; onClick?: () => void }) {
-  const label = citation.kind === 'artifact' ? citation.artifact_id : `interview · turn ${citation.turn_index}`;
+  const label = citation.kind === 'artifact' ? citation.artifact_id : `${citation.author_name ? `Maintainer ${citation.author_name}` : 'interview'} · turn ${citation.turn_index}`;
   return onClick ? <button type="button" className="source" onClick={onClick}>{label}</button>
     : <span className="source source-reference">{label}</span>;
 }

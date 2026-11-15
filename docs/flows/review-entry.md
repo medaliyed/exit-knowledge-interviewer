@@ -80,7 +80,8 @@ sequenceDiagram
 (`src/eki/runbook/service.py`).
 
 **Edit** (`PATCH /entries/{id}`) replaces whole sections. The new text is
-redacted and stored as an expert turn of kind `edit`, the new claims cite that
+redacted and stored as an expert turn in capture, or an attributed maintainer turn in
+maintenance, of kind `edit`, the new claims cite that
 turn, and the entry returns to draft even if it was approved
 (`src/eki/runbook/service.py`). An edited claim is its own source, so the
 faithfulness check has nothing to report on it.
@@ -91,9 +92,9 @@ and download approved Markdown. Readers can read approved entries and citation
 references, without transcript expansion or review controls. See
 [browser-workspace.md](browser-workspace.md).
 
-**In the CLI** there is no token. `eki review` acts as the expert recorded on
-the run, or as `--review-as NAME`, and the same approval rules apply
-(`src/eki/cli.py`).
+**In the CLI**, review mutations require the registered reviewer's
+`EKI_API_TOKEN`. `--review-as` cannot impersonate another identity. Capture
+retains the expert-name check; maintenance uses the current owner subject.
 
 ## Failure modes
 
@@ -109,11 +110,12 @@ the run, or as `--review-as NAME`, and the same approval rules apply
 
 ## Notes
 
-- **Approval is tied to a display name, not to an account.** Both checks
-  compare names: the token's `name` against the request, and the request
-  against the run's `expert_name`. Any credential configured with the expert's
-  name can approve, and `entry_decisions` stores the name. The audit event
-  does record the token's stable subject.
+- **Capture and maintenance have different review authority.** Capture retains
+  its original expert check. After explicit handover, the current owner subject
+  authorizes review in the transaction. Successor edits are attributed
+  maintainer turns; historical expert answers stay unchanged. See
+  [maintenance.md](maintenance.md) for deadlines, unchanged review, withdrawal,
+  reader flags and expected version/revision fields.
 - **The faithfulness result is not stored.** It is recomputed on every read
   from the current transcript. Readers never receive it
   (`src/eki/api/app.py`).

@@ -8,7 +8,7 @@ for accepting it. The design prompt in
 **Status:** implemented with automated coverage, 2026-11-14; manual screen-reader
 walkthrough and real-provider validation remain pending.
 **Covers:** requirement F16 (browser workflow for plan review, interview, cited
-entry review and approval), F19 (email/password accounts and sessions), and the browser side of F10, F11, F12 and F14.
+entry review and approval), F19 (email/password accounts and sessions), F21 (successor maintenance, review dates and reader reports), and the browser side of F10, F11, F12 and F14.
 **Starts from:** the existing workspace in `src/eki/web/static/` (commit
 `d28c2b3`). It works end to end over HTTP but is a plain first version: one
 JavaScript file, minimal layout, and no visual or accessibility QA yet
@@ -320,3 +320,26 @@ placeholders after submission. Expiry/sign-out clears cached data, unsent drafts
 and outstanding requests while preserving the browser route for reauthentication.
 See `frontend/README.md` and `docs/flows/browser-workspace.md` for verification and
 remaining manual checks.
+
+
+## Phase 8 extension: maintenance
+
+Implemented 2026-11-15. **Maintenance** is an owner/admin tab with all/overdue/
+due-soon/flagged filters and paginated entry links. Run headers distinguish the
+original expert from the current maintainer. Admin handover names the current
+and destination owner, requires a reason and confirms capture closure before
+transfer. An admin who is not the current owner cannot review in maintenance.
+
+Entry pages show inclusive UTC review dates and distinguish original approval
+from last review. Approvals offer a next-review date; unchanged review and
+withdrawal are explicit dialogs. Source labels attribute maintainer edits.
+Readers see overdue and feedback labels, can submit a private report and check
+a safe receipt; owner/admin views show private triage and observed/current
+versions. Resolution never silently closes on an edit or review. Search/export
+keep overdue entries labelled; Ask excludes them with a review-needed explanation.
+
+The existing scope statement about owner assignment applies to initial ACL
+administration; explicit maintenance handover is now supported in the browser.
+Operational details: [maintenance flow](../flows/maintenance.md). Phase 8's
+browser acceptance includes keyboard forms, expected-revision payloads, private
+reader controls and automated WCAG A/AA checks at 360/768/1440 px.

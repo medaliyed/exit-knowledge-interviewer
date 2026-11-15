@@ -5,7 +5,8 @@ ingests their tickets, code history and explicitly selected emails, maps the gap
 asks about them, and turns the answers into a searchable, cited runbook. The
 design is a fixed LangGraph workflow with ONE agentic node (the interviewer):
 Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable
-runbook. The expert prunes the plan and approves every entry.
+runbook. The expert prunes the plan and approves initial entries; after an explicit
+maintenance handover the current owner reviews later entry changes.
 
 Full requirements (F1-F22), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
@@ -197,7 +198,8 @@ The CLI is a local operator tool using database credentials and the server's
 credential configuration. New search/ask/export commands additionally validate
 `EKI_API_TOKEN` against that registry. Untrusted readers should use the HTTP API;
 never distribute database credentials or the server's credential registry to them.
-Local ingest, interview, review and ACL administration retain operator access.
+Local ingest, interview, inspection and ACL administration retain operator access.
+Entry-review mutations require the registered reviewer's `EKI_API_TOKEN` (F21).
 
 ### Search and answer
 
@@ -532,13 +534,41 @@ The runtime never imports tests or reads the fixture answer key/expert script.
 No paid model run was performed as part of implementation.
 
 
-## Proposed Phase 8: knowledge maintenance (F21)
+## Phase 8: knowledge maintenance (F21)
 
-`docs/plans/phase-8.md` is a planning proposal, not an implemented capability.
-It covers explicit successor ownership after capture, subject-based maintenance
-review, attributed maintainer edits, review-by dates and reader flags with
-owner triage. Its defaults and Q&A freshness policy require phase approval
-before implementation. Current expert-name approval checks remain in force.
+Apply migrations 0013–0015. `eki handover` or admin `POST /runs/{id}/handover`
+transfers the existing owner subject and starts maintenance, with expected owner
+and run revision, an active destination and a redacted reason. Outstanding
+accepted messages/live capture block the transfer. Capture then closes; the
+current owner can edit/re-approve under their stable subject, with attributed
+maintainer turns. Admin inspection does not grant maintenance approval power.
+Existing ownership routes/commands share validation/history and expected-state
+checks for reassignment. Historical expert identity and approvals stay intact.
+
+Every approved entry has an inclusive UTC review date (90 days by default,
+explicit dates tomorrow through 365 days ahead), last review and reviewed
+version. Due soon means 14 days or fewer remain. Overdue approved entries stay
+searchable/readable/exportable with labels, while Q&A excludes them before
+provider work and rechecks after latency. Unchanged review renews metadata,
+not original approval/content version. Withdrawal returns an approved entry to
+draft explicitly. Review/flag metadata do not invalidate embeddings.
+
+Reader flags use a request UUID, expected approved version, redacted plain text
+and a durable ten-per-minute-per-subject limit. Own receipts stay safe while an
+entry is draft; owner/admin triage notes and other reporters remain private.
+Resolution is explicit: corrected requires a later approved version, confirmed
+current requires a review after the report, dismissal never renews a date.
+Neither handover nor review/approval automatically closes flags.
+
+`eki maintenance --run ID [--filter overdue|due_soon|flagged] [--offset N]`
+inspects state/queue locally. CLI entry review now requires `EKI_API_TOKEN`;
+`eki review --run ID --due`, `--review-by DATE` and unchanged/withdraw/triage
+choices use the same authority and optimistic revisions as HTTP. No model is
+required. Legacy approval dates are backfilled from actual approval plus 90
+days; old content may therefore be overdue immediately. Deploy the migrations
+before the updated API and review that queue. Details and route contracts:
+`docs/flows/maintenance.md`, `docs/plans/phase-8.md`.
+
 
 
 ## Proposed Phase 9: follow-up interviews (F22)
@@ -548,4 +578,4 @@ expert is reachable. Public open sections and explicitly saved unanswered Ask
 questions feed a reviewed plan, reusing the existing workflow with selected
 section scope and durable session-wide budgets. New answers produce private
 entry proposals and require explicit apply/re-approval with linked citations.
-This is planning only, separate from Phase 8's successor maintenance proposal.
+This is planning only, separate from Phase 8's implemented successor maintenance workflow.

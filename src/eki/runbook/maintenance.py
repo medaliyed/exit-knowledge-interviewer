@@ -30,7 +30,9 @@ def info(
         "SELECT e.status,e.maintenance_revision,e.review_by,e.last_reviewed_at,e."
         "last_reviewed_by_subject,e.last_reviewed_by_name,e.reviewed_version,r.ow"
         "ner_subject,a.name, (SELECT count(*) FROM entry_flags f WHERE "
-        "f.entry_id=e.id AND f.resolution IS NULL) FROM runbook_entries e JOIN "
+        "f.entry_id=e.id AND f.resolution IS "
+        "NULL),r.expert_name,r.maintenance_started_at FROM runbook_entries e JOIN"
+        " "
         "sessions s ON s.id=e.session_id JOIN interview_plans p ON p.id=s.plan_id"
         " JOIN ingest_runs r ON r.id=p.run_id LEFT JOIN accounts a ON "
         "a.subject=r.owner_subject WHERE e.id=%s",
@@ -38,7 +40,18 @@ def info(
     ).fetchone()
     if row is None:
         raise NotFoundError("entry not found")
+    principal = current_principal()
+    can_review = bool(
+        principal
+        and (
+            principal.subject == row[7]
+            if row[11]
+            else (principal.admin or principal.subject == row[7]) and principal.name == row[10]
+        )
+    )
     return {
+        "can_review": can_review,
+        "maintenance_started_at": None if row[11] is None else row[11].isoformat(),
         "maintenance_revision": row[1],
         "review_by": None if row[2] is None else row[2].isoformat(),
         "last_reviewed_at": None if row[3] is None else row[3].isoformat(),

@@ -130,6 +130,7 @@ test('editing an approved section returns to draft and requires a separate appro
   expect(mock.entry.status).toBe('draft');
   expect(mock.requests.filter(request => request.path.endsWith('/approve'))).toHaveLength(0);
   expect(mock.requests.find(request => request.method === 'PATCH')?.body).toEqual({
+    expected_version: 1,
     edited_by: expert,
     sections: { steps: { claims: ['Stop the billing worker after checking the queue.'], open_question: null } },
   });
@@ -150,7 +151,7 @@ test('rejecting an entry requires a reason and records the explicit decision', a
   await dialog.getByRole('button', { name: 'Reject entry', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText('Rejected: This synthetic procedure is outdated.', { exact: false })).toBeVisible();
-  expect(mock.requests.find(request => request.path.endsWith('/reject'))?.body).toEqual({ rejected_by: expert, reason: 'This synthetic procedure is outdated.' });
+  expect(mock.requests.find(request => request.path.endsWith('/reject'))?.body).toEqual({ expected_version: 1, rejected_by: expert, reason: 'This synthetic procedure is outdated.' });
 });
 
 test('approved knowledge searches, answers with cited evidence and downloads Markdown', async ({ page }) => {

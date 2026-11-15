@@ -334,6 +334,18 @@ class AnswerService:
             )
             for e in chosen
         ]
+        with psycopg.connect(self.search.dsn, autocommit=True) as conn:
+            live = []
+            for item in chosen:
+                try:
+                    current = approved_entry(conn, UUID(item.entry_id), principal)
+                except NotFoundError:
+                    return abstain(include_open=False)
+                metadata = info(conn, item.entry_id, self.search.clock())
+                if current.version != item.version or metadata["freshness"] == "overdue":
+                    return abstain(include_open=False)
+                live.append(item.model_copy(update={"maintenance": metadata}))
+            chosen = live
         return Answer(
             status="answered",
             answer="\n".join(f"{e.text} [{e.id}]" for e in chosen),

@@ -262,7 +262,10 @@ def create_app(
     install_accounts(app, database_dsn, configuration)
     install_browser(app, database_dsn)
     install_maintenance(
-        app, database_dsn, lambda: tuple(getattr(get_authenticator(), "identities", ()))
+        app,
+        database_dsn,
+        lambda: tuple(getattr(get_authenticator(), "identities", ())),
+        lambda: work_domains(configuration()),
     )
 
     def actor(request: Request, name: str) -> None:

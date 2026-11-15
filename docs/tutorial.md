@@ -442,7 +442,23 @@ f34c44fc-c203-573c-a712-65c8db67c7ec  draft     billing-batch run failed during 
 8a5c1706-f9b5-5d24-a99b-fb8349da10c2  draft     billing-batch
 ```
 
-Then go through them one by one:
+Before review, register your CLI identity and assign the run to it. If already
+configured, reuse your existing credential. Otherwise generate a random token
+with `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`, then put it
+in both `.env` values (never in source control):
+
+```bash
+EKI_API_TOKENS='[{"token":"PASTE_IT_HERE","subject":"nadia","name":"Nadia Ferrand"}]'
+EKI_API_TOKEN=PASTE_IT_HERE
+```
+
+For an unassigned run, `uv run eki access --run RUN_ID --owner nadia` assigns
+that registered subject. `uv run eki maintenance --run RUN_ID` shows ownership
+and revisions. Reassignment requires expected owner/revision; do not repeat an
+assignment that is already correct. Model configuration is unnecessary for
+review. `--review-as` cannot override your authenticated identity.
+
+Then go through entries one by one:
 
 ```bash
 uv run eki review --plan PLAN_ID
@@ -468,7 +484,7 @@ report-export (draft, version 1) [0fb71a2e-81f7-571e-8e85-4eee6a64445f]
     - Restarting during a running export duplicates rows. [interview 2cc79e68-..., turn 27]
   rationale:
     - The worker leaks connections after about a week. [interview 2cc79e68-..., turn 29]
-Approve, reject, edit, skip, or quit?
+Approve, review unchanged, withdraw, reject, edit, triage, skip, or quit?
 ```
 
 **How to read it.** Each line starting with `-` is a claim. The bracket after
@@ -481,7 +497,7 @@ You have five choices.
 **approve** publishes the entry.
 
 ```text
-Approve, reject, edit, skip, or quit? approve
+Approve, review unchanged, withdraw, reject, edit, triage, skip, or quit? approve
 Approved.
 ```
 
@@ -490,7 +506,7 @@ line, then for an optional open question. Press Enter on an empty line to
 finish. The entry is shown again and still needs approval.
 
 ```text
-Approve, reject, edit, skip, or quit? edit
+Approve, review unchanged, withdraw, reject, edit, triage, skip, or quit? edit
 Section: rollback
 Claim (blank to finish): Stop the export worker and restore last night's report from the archive.
 Claim (blank to finish):
@@ -502,7 +518,7 @@ Edited; approval is required.
 history and is excluded from search/export; an edit can return it to draft.
 
 ```text
-Approve, reject, edit, skip, or quit? reject
+Approve, review unchanged, withdraw, reject, edit, triage, skip, or quit? reject
 Reason: Same content as the previous entry.
 Rejected.
 ```
@@ -543,35 +559,18 @@ f34c44fc-c203-573c-a712-65c8db67c7ec  approved  billing-batch run failed during 
 
 ## Step 9: use the runbook
 
-Searching works on behalf of a person, so you first say who owns the run and
-give that person a token.
+Searching works on behalf of a registered person. The credential and ownership
+set up before review in Step 8 also authorize search, Ask and export.
 
-**9a. Make yourself the owner.**
+**9a. Check ownership.** `uv run eki maintenance --run RUN_ID` shows the owner.
+If already assigned to `nadia`, keep it. An administrator/local operator can
+assign an unowned run after the identity is registered; reassignments require
+its current owner and run revision. See [maintenance](flows/maintenance.md).
 
-```bash
-uv run eki access --run RUN_ID --owner nadia
-```
-
-```text
-{"owner": "nadia", "readers": []}
-```
-
-**9b. Make a token.**
-
-```bash
-python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
-```
-
-It prints a long random string. Open `.env`, find the two lines below and fill
-them in, using your string in both places:
-
-```bash
-EKI_API_TOKENS='[{"token":"PASTE_IT_HERE","subject":"nadia","name":"Nadia Ferrand"}]'
-EKI_API_TOKEN=PASTE_IT_HERE
-```
-
-Keep the single quotes around the first value. `subject` must be the owner you
-named in 9a. `name` must be the expert's name.
+**9b. Reuse your credential.** Keep the same `EKI_API_TOKENS` and `EKI_API_TOKEN`
+values from Step 8. If you are setting up search independently, generate and
+register the credential first, then assign ownership. In capture the identity's
+name must match the expert; in maintenance its subject must be the current owner.
 
 **9c. Search.**
 
@@ -859,3 +858,20 @@ runs are needed to follow the local defaults in this tutorial.
 - [flows/browser-workspace.md](flows/browser-workspace.md) covers the browser workflow and access rules.
 - [flows/](flows/index.md) shows what each command does inside, step by step.
 - [../README.md](../README.md) is the short reference for all commands.
+
+
+## After capture: maintain the handover
+
+Use the browser's **Maintenance** tab to review due/overdue entries or reader
+feedback. An admin can transfer responsibility to an active successor with a
+reason; this closes capture while preserving expert history, dates and reports.
+The successor edits and approves under their own identity. Entry approval sets
+a review-by date (90 days by default); **Reviewed; no changes needed** renews
+that date without rewriting the original approval or claims. **Withdraw**
+returns a suspect approved entry to draft until reapproval.
+
+Readers can **Report a problem** and check their safe receipt. Owner triage is
+private. A report is a request for review, not automatic withdrawal or proof of
+an error. Overdue knowledge stays labelled in search/export and is excluded
+from Ask. See [the maintenance guide](flows/maintenance.md) for migration,
+legacy-date backfill, CLI credentials and conflict recovery.

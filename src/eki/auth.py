@@ -100,6 +100,9 @@ def current_principal() -> Principal | None:
 def acting_as(principal: Principal) -> Iterator[None]:
     token = _current.set(principal)
     try:
-        yield
+        from eki.audit import audit_context
+
+        with audit_context(user_id=principal.subject):
+            yield
     finally:
         _current.reset(token)

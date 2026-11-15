@@ -5,7 +5,7 @@ from uuid import UUID
 import psycopg
 
 from eki.audit import AuditDetails, append_event
-from eki.auth import Principal
+from eki.auth import ForbiddenError, Principal
 from eki.errors import NotFoundError
 from eki.runbook.models import RunbookEntry
 from eki.runbook.store import StoredEntry
@@ -68,6 +68,8 @@ def set_owner(
 ) -> None:
     from eki import maintenance
 
+    if not principal.admin:
+        raise ForbiddenError("only an administrator can assign ownership")
     with conn.transaction():
         owner, started, revision, _ = maintenance.lock_run(conn, run_id)
         if expected_revision is None and (

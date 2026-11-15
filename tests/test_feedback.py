@@ -152,3 +152,31 @@ async def test_http_reader_receipt_and_owner_review_resolution(scratch: Scratch)
     receipt = client.get(f"/flags/{saved.json()['id']}", headers=reader)
     assert receipt.status_code == 200 and "Private triage" not in receipt.text
     assert receipt.json()["resolution"] == "confirmed_current"
+
+
+async def test_audit_failure_rolls_back_report_and_throttle(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eki import feedback
+    from eki.audit import AuditError
+
+    _, entry = await handover(scratch)
+    books = RunbookService(scratch.dsn)
+    before = books.metadata(entry)
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise AuditError("unavailable")
+
+    monkeypatch.setattr(feedback, "append_event", fail)
+    with pytest.raises(AuditError):
+        FeedbackService(scratch.dsn).create(
+            entry,
+            READER,
+            request_id=uuid4(),
+            expected_version=books.get(entry).version,
+            category="unclear",
+            description="Question",
+        )
+    assert books.metadata(entry) == before
+    with scratch.connect() as conn:
+        assert conn.execute("SELECT count(*) FROM flag_throttle").fetchone() == (0,)

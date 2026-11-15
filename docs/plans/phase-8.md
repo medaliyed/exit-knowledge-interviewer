@@ -1,8 +1,8 @@
 # Phase 8 PDR: knowledge maintenance after the expert leaves
 
-**Status:** implementation approved 2026-11-15 by the owner's request to
-continue Phase 8. Work is in progress through deliverables 8a–8d; verification
-and remaining acceptance will be recorded in Outcome.
+**Status:** implemented 2026-11-15, following the owner's request to continue
+Phase 8. Deliverables 8a–8d are complete; verification and rollout notes are
+recorded in Outcome.
 
 **Parent:** [Project PDR](../PDR.md), new requirement **F21**. Extends F10
 (review and approval), F11/F12 (retrieval and export), F13 (audit), F16 (browser
@@ -15,8 +15,9 @@ accountable owner. Original authorship and evidence remain visible.
 
 ## 1. Problem and verified baseline
 
-Today the product captures knowledge but does not provide its ongoing care.
-Changing the run owner does not transfer the ability to review its entries.
+Before this phase, the product captured knowledge without providing its ongoing
+care. Changing the run owner did not transfer the ability to review its entries.
+The table records the verified baseline used to scope this implementation.
 
 | Current behaviour | Consequence | Evidence |
 | --- | --- | --- |
@@ -267,8 +268,7 @@ credential satisfying the capture or maintenance authority rules. No command nee
 
 ## 8. Data and code impact
 
-Proposed schema additions, numbered after the migrations present when work
-starts:
+Implemented schema additions, introduced by migrations 0013–0015:
 
 - Run maintenance mode/start time, a run maintenance revision for transfer CAS,
   and handover history referencing the existing owner subject.
@@ -329,10 +329,10 @@ rollout where practical; deploy validators, read metadata and the Q&A freshness
 policy together so an old client cannot hide overdue state or bypass review
 rules. Explain the legacy-date/Q&A change in operator release instructions.
 
-## 11. Decisions to confirm when approving this PDR
+## 11. Approved product decisions
 
-The proposed defaults make the plan implementable without inventing policy
-later. Approval should explicitly cover:
+The owner approved implementation through the request to continue Phase 8 on
+2026-11-15. The implementation uses these PDR defaults:
 
 - A run-level owner, admin/operator-controlled transfer and explicit closure of
   capture work on entering maintenance.
@@ -345,6 +345,56 @@ later. Approval should explicitly cover:
 - Authenticated CLI review mutations, replacing the current token-free
   `eki review` behaviour while keeping trusted operator provisioning/transfer.
 
-Implementation approval and any later changes to these decisions will be
-recorded in Status. No runtime code, migration, account or ownership change is
-part of creating this proposal.
+Implementation and verification are recorded in Status and Outcome. No live
+account or production ownership change was made during implementation; database
+verification uses disposable schemas.
+
+## Outcome
+
+All four deliverables are implemented. Successor authority and attributed edits
+shipped in `eaf3e83` (8a), review dates and freshness policy in `1aa09d0` (8b),
+and private reader flags and owner triage in `240dba5` (8c). Deliverable 8d adds
+the browser maintenance workspace, admin handover confirmation, owner review and
+withdrawal controls, reader reports/receipts, private resolution forms, live
+freshness labels, operational documentation and final acceptance hardening.
+
+Authority uses the current owner's stable subject after handover. Historical
+expert answers and approvals retain their authorship; successor corrections
+create attributed maintainer sources. Tests cover disabled departing experts,
+disabled destinations, former owners, same-name subjects, stale revisions,
+pending accepted answers, audit rollback and preserved history across transfers.
+Review metadata and flags preserve existing embeddings; only publication or
+content changes invalidate the index. Q&A rechecks approval, access, version and
+UTC freshness after provider latency, including a midnight deadline boundary.
+
+Verification on 2026-11-15, with synthetic fixtures and scripted providers:
+
+| Check | Result |
+| --- | --- |
+| Full backend suite, including database, deterministic eval and red-team tests (`pytest -q --tb=short -m 'not infra and not live'`) | **755 passed, 11 deselected** |
+| Browser suite (`npm run test:e2e -- --workers=2`) | **39 passed** |
+| Frontend unit tests (`npm test`) | **11 passed** |
+| Frontend typecheck and production build | Passed; rebuilt assets are bundled with the API |
+| Ruff lint and format check | Passed; 268 files formatted |
+| Strict mypy | Passed; 184 source files |
+
+The browser suite covers successor review, explicit withdrawal, reader receipts,
+admin transfer confirmation and owner flag resolution. Automated accessibility
+checks pass at 360, 768 and 1440 pixels; the 360-pixel maintenance screenshot was
+also visually inspected. The broader project's manual screen-reader walkthrough
+remains pending. No paid model calls or live-provider/whole-stack infrastructure
+checks were performed; they are outside this offline acceptance run. Human-owned
+`evals/scenarios/` and `evals/golden/` remain unchanged.
+
+Before starting the updated API, run **`uv run eki migrate`**. Migration 0013 adds
+maintenance authority, review history/dates and flag storage; 0014 records the
+decision cursor used to require a new explicit review when resolving a flag as
+confirmed current; 0015 preserves indexes during metadata-only changes. Legacy
+approved entries receive deadlines derived from their original approval date
+plus 90 days, with unknown historical subjects left unknown. The backfill can
+make older entries immediately overdue and exclude them from Q&A until reviewed;
+they remain labelled in search and export. Inspect the maintenance queue after
+migration. Production databases were not migrated during implementation.
+
+See the [maintenance flow](../flows/maintenance.md) for routes, CLI usage and
+handover/review policy. Phase 9 follow-up interviews remain a separate proposal.

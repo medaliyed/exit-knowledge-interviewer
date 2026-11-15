@@ -133,7 +133,10 @@ async def test_selected_mail_to_approved_runbook_and_audited_access(scratch: Scr
     log = client.get(
         f"/runs/{run_id}/audit", headers=headers("owner"), params={"limit": 500}
     ).json()["events"]
-    assert log and {e["user_id"] for e in log} == {OWNER.subject}
+    assert log and {e["user_id"] for e in log} == {OWNER.subject, ADMIN.subject}
+    assert all(
+        e["details"]["operation"] == "handover" for e in log if e["user_id"] == ADMIN.subject
+    )
     assert {e["kind"] for e in log} >= {"model", "tool", "approval", "access"}
     assert any(e["details"]["operation"] == "list_messages" for e in log)
     assert any(e["details"]["operation"] == "approve" for e in log)

@@ -11,7 +11,8 @@ Design: a fixed LangGraph workflow with ONE agentic node (the interviewer).
 
 Flow: Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable runbook.
 
-The expert prunes the interview plan and approves every runbook entry.
+The expert prunes the interview plan and approves the initial runbook. After an
+explicit maintenance handover, the current owner reviews later entry changes.
 
 ## Requirements
 
@@ -26,7 +27,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F7  | Resumable interview sessions. Follow-ups until the topic template is complete: trigger, diagnosis, steps, rollback, contacts, pitfalls, rationale. |
 | F8  | Expert can skip a question, mark an answer confidential, or correct the agent. |
 | F9  | Runbook entries follow one template. Every procedural claim cites an artifact or an interview turn. Uncited claims block publication. |
-| F10 | Expert approves, edits or rejects each entry. Nothing is published without approval. |
+| F10 | The expert approves, edits or rejects entries during capture; after explicit maintenance handover the current owner reviews later changes. Nothing is published without approval. |
 | F11 | Hybrid search (keyword + vector) and Q&A over approved entries only, with citations and ACL filtering. |
 | F12 | Export approved entries as Markdown. |
 | F13 | Audit log of every model call, tool call and approval with run ID and user. |
@@ -37,7 +38,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F18 | Resumable plan generation that retains completed topics and retries unfinished work under a stable generation ID. Delivered: Phase 5e. |
 | F19 | Invited work-email/password accounts, bounded server-side browser sessions, one-time password links, local operator account management, CSRF protection, throttling and metadata-only authentication audit. Phase 6. |
 | F20 | Golden interview evaluations: strict scenario/golden files, isolated real-service runs, shared model-call budgets, deterministic scorecards and comparable redacted reports. Phase 7; paid evidence pending. |
-| F21 | Maintain knowledge after the expert leaves: explicit successor ownership and attributed re-approval, entry review-by dates, freshness across retrieval/export, and reader flags with owner triage. Proposed: Phase 8; not implemented. |
+| F21 | Maintain knowledge after the expert leaves: explicit successor ownership and attributed re-approval, entry review-by dates, freshness across retrieval/export, and reader flags with owner triage. Implemented: Phase 8. |
 | F22 | Focused follow-up interviews while the original expert is reachable: public open sections and explicitly saved unanswered Ask questions feed a reviewed, bounded second session, with cited proposals and explicit entry re-approval. Proposed: Phase 9; not implemented. |
 
 ## Stack
@@ -64,7 +65,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | 5 | Recovery and expert workflow | [Phase 5 PDR](plans/phase-5.md): reliable interview recovery, real-model validation, expert UI, semantic artifact retrieval and resumable plan drafting, in that order. |
 | 6 | Email/password accounts | [Phase 6 PDR](plans/phase-6.md): account provisioning, sessions/authentication, browser sign-in and operational documentation. |
 | 7 | Golden interview evals | [Phase 7 PDR](plans/phase-7.md): bounded real-model interviews, deterministic grading, saved reports and comparisons; owner-review drafts for G1–G8. |
-| 8 | Knowledge maintenance | [Phase 8 PDR](plans/phase-8.md): successor handover, review dates and reader flags. Proposed; implementation awaits approval. |
+| 8 | Knowledge maintenance | [Phase 8 PDR](plans/phase-8.md): successor handover, review dates and reader flags. Implemented. |
 | 9 | Follow-up interviews | [Phase 9 PDR](plans/phase-9.md): gap intake, focused sessions through the existing workflow, bounded usage and cited entry updates. Proposed; implementation awaits approval. |
 
 Each phase is planned separately in `docs/plans/phase-N.md` and needs human
@@ -89,7 +90,7 @@ line and, where there is one, their Outcome section.
 | 5 Recovery and expert workflow | [docs/plans/phase-5.md](plans/phase-5.md) | F14/F16/F17/F18 implemented; F15 live evidence and manual screen-reader validation pending |
 | 6 Email/password accounts | [docs/plans/phase-6.md](plans/phase-6.md) | F19 implemented 2026-11-15; manual browser pass and timing check pending |
 | 7 Golden interview evals | [docs/plans/phase-7.md](plans/phase-7.md) | F20 implemented 2026-11-15; draft adoption and paid model evidence pending |
-| 8 Knowledge maintenance | [docs/plans/phase-8.md](plans/phase-8.md) | F21 proposed 2026-11-15; planning only |
+| 8 Knowledge maintenance | [docs/plans/phase-8.md](plans/phase-8.md) | F21 implemented 2026-11-15; successor review, freshness and reader feedback |
 | 9 Follow-up interviews | [docs/plans/phase-9.md](plans/phase-9.md) | F22 proposed 2026-11-15; planning only |
 
 Added after the phases: synthesis keeps drafts the expert edited by hand
@@ -107,11 +108,6 @@ How it is built and how it behaves at runtime: `docs/architecture.md` and
 `docs/flows/`. How to run it: `README.md` and, for a first run, `docs/tutorial.md`.
 
 Still open:
-
-- Entry review still requires the original expert's name, even after ownership
-  transfer. Entries have no review-by dates or reader-report workflow.
-  [Phase 8](plans/phase-8.md) proposes the maintenance lifecycle; it is not yet
-  implemented.
 
 - Open sections and unanswered Ask questions do not feed a focused follow-up
   session today. [Phase 9](plans/phase-9.md) proposes that capture workflow while

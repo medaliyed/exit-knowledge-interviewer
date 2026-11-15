@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from eki import access
 from eki.api.security import identity
 from eki.graph.workflow import db
+from eki.runbook.maintenance import info
 
 ASSETS = Path(__file__).parent / "static"
 
@@ -52,8 +53,9 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
         def read() -> list[dict[str, Any]]:
             with psycopg.connect(dsn(), autocommit=True) as conn:
                 rows = conn.execute(
-                    "SELECT r.id, r.expert_name, r.since, r.until, r.status, r.owner_subject "
-                    "FROM ingest_runs r WHERE "
+                    "SELECT r.id, r.expert_name, r.since, r.until, r.status, r.owner_subject,"
+                    "r.maintenance_started_at,coalesce(a.name,r.owner_subject) "
+                    "FROM ingest_runs r LEFT JOIN accounts a ON a.subject=r.owner_subject WHERE "
                     + access.VISIBLE_RUN
                     + " ORDER BY r.started_at DESC, r.id LIMIT 200",
                     access.visible_params(principal),
@@ -66,6 +68,8 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
                     "until": r[3].isoformat(),
                     "status": r[4],
                     "can_manage": principal.admin or r[5] == principal.subject,
+                    "maintenance_started_at": None if r[6] is None else r[6].isoformat(),
+                    "owner_name": r[7],
                 }
                 for r in rows
             ]
@@ -104,9 +108,15 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
                     + " ORDER BY e.title, e.id LIMIT 200",
                     (run_id, *access.visible_params(principal)),
                 ).fetchall()
-            return [
-                {"id": str(r[0]), "title": r[1], "version": r[2], "status": "approved"}
-                for r in rows
-            ]
+                return [
+                    {
+                        "id": str(r[0]),
+                        "title": r[1],
+                        "version": r[2],
+                        "status": "approved",
+                        **info(conn, r[0]),
+                    }
+                    for r in rows
+                ]
 
         return await db(read)

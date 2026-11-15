@@ -58,6 +58,7 @@ MIGRATIONS = [
     "0012_accounts.sql",
     "0013_maintenance.sql",
     "0014_feedback_decisions.sql",
+    "0015_maintenance_index.sql",
 ]
 
 

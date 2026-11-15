@@ -71,7 +71,7 @@ export function Plans() {
 
   if (plans.isPending || generations.isPending) return <Loading />;
   return <div className="stack page-content">
-    <div className="page-heading"><div><p className="eyebrow">Prepare the conversation</p><h1>Interview plans</h1><p className="page-intro">A plan is the list of topics the interviewer will ask you about. You review and approve it before the conversation starts.</p></div><Button variant="primary" disabled={working} onClick={() => void draft(crypto.randomUUID(), false)}>{working ? 'Drafting…' : 'Draft a new plan'}</Button></div>
+    <div className="page-heading"><div><p className="eyebrow">Prepare the conversation</p><h1>Interview plans</h1><p className="page-intro">A plan is the list of topics the interviewer will ask you about. You review and approve it before the conversation starts.</p></div><Button variant="primary" disabled={working || Boolean(run.maintenance_started_at)} onClick={() => void draft(crypto.randomUUID(), false)}>{working ? 'Drafting…' : 'Draft a new plan'}</Button></div>
     {(plans.error || generations.error) && <Notice error>{message(plans.error ?? generations.error)} <Button variant="quiet" onClick={() => { void plans.refetch(); void generations.refetch(); }}>Try again</Button></Notice>}
     {error && <Notice error>{error}<p className="small">Saved topics are kept. If the inputs or configuration changed, draft a new plan.</p></Notice>}
     {activeId && <section className="card stack" aria-label="Drafting progress" aria-live="polite">
@@ -108,7 +108,7 @@ export function PlanReview() {
   const generations = useQuery({ queryKey: ['generations', run.id], queryFn: () => api.request<Generation[]>(`/runs/${run.id}/generations`) });
   const summaries = useQuery({ queryKey: ['plans', run.id], queryFn: () => api.request<PlanSummary[]>(`/runs/${run.id}/plans`) });
   const plan = planQuery.data;
-  const editable = plan?.status === 'draft';
+  const editable = !run.maintenance_started_at && plan?.status === 'draft';
   const partial = generations.data?.some(item => item.id === planId && item.status !== 'completed');
   const ownName = identity.name.trim() === run.expert_name.trim();
 

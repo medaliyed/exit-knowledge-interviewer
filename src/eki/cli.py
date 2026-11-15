@@ -141,6 +141,7 @@ def _parser() -> argparse.ArgumentParser:
     review.add_argument("--review-by", type=date.fromisoformat)
     upkeep = commands.add_parser("maintenance", help="inspect the maintenance queue")
     upkeep.add_argument("--run", type=UUID, required=True)
+    upkeep.add_argument("--offset", type=int, default=0)
     upkeep.add_argument(
         "--filter", choices=("all", "overdue", "due_soon", "flagged"), default="all"
     )
@@ -840,14 +841,19 @@ def _main(argv: list[str] | None = None) -> int:
                 )
                 return 0
             if arguments.command == "maintenance":
+                operator = Principal("local-operator", "Local operator", True)
                 print(
                     json.dumps(
-                        maintenance.queue(
-                            conn,
-                            arguments.run,
-                            Principal("local-operator", "Local operator", True),
-                            filter=arguments.filter,
-                        ),
+                        {
+                            "run": maintenance.state(conn, arguments.run, operator),
+                            **maintenance.queue(
+                                conn,
+                                arguments.run,
+                                operator,
+                                filter=arguments.filter,
+                                offset=arguments.offset,
+                            ),
+                        },
                         default=str,
                     )
                 )

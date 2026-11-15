@@ -142,6 +142,34 @@ Bearer tokens continue to serve the CLI and automation. Cookie-authenticated
 mutations require an `Origin` matching `EKI_PUBLIC_ORIGIN`. The routes are listed
 in [CLAUDE.md](CLAUDE.md) and their behaviour in [docs/flows/](docs/flows/index.md).
 
+## Maintaining entries after handover
+
+Phase 8 keeps knowledge reviewable after the original expert leaves. Apply
+`uv run eki migrate` before starting the updated API. An administrator can use
+the **Maintenance** tab to transfer responsibility to an active successor; the
+successor can edit and re-approve entries under their own identity. Original
+answers and approvals retain their attribution.
+
+Entries have review-by dates, due-soon/overdue labels and private reader reports.
+Unchanged review renews the date without rewriting content. Overdue approved
+entries remain readable, searchable and exportable, while Ask excludes them.
+A reader report does not automatically change publication or renew a date.
+
+```bash
+uv run eki maintenance --run RUN_ID --filter overdue
+uv run eki handover --run RUN_ID --to samir --expected-owner nadia \
+  --expected-run-revision REVISION --reason "Expert departure"
+uv run eki review --run RUN_ID --due
+```
+
+The maintenance command shows the current run revision. Provision/register the
+successor before transfer. Review mutations in the CLI now require that
+reviewer's `EKI_API_TOKEN`; local operator inspection and account/ownership
+commands retain their existing trust model. See the
+[maintenance guide](docs/flows/maintenance.md) for retries, flags and rollout.
+Legacy review dates are backfilled from approval time plus 90 days, so some
+older entries become overdue as soon as the migration is applied.
+
 ## Without a provider key
 
 The whole pipeline is exercised by tests that use scripted model doubles and a
@@ -204,6 +232,7 @@ model-aware artifact retrieval and resumable plan generation. The redesigned
 workspace follows the supplied HTML prototype and UI PDR, with automated browser
 workflow, accessibility and responsive-layout checks. Phase 6 adds invited
 email/password accounts, persistent browser sessions and operator account management.
+Phase 8 adds successor handover, review dates and private reader-feedback triage.
 Phase 7 adds golden interview grading, bounded runs and report comparison, with
 eight scenario/golden drafts awaiting owner adoption. Real-provider validation
 remains deferred by user request; manual screen-reader validation is still pending.

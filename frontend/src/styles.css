@@ -320,3 +320,9 @@ ol.answer-statements { list-style:decimal; padding-left:24px; }
   .site-header .account-menu { margin-left: auto; }
   .site-header .account-menu summary { font-size: 12px; max-width: 220px; }
 }
+
+.review-metadata { margin-block: .35rem; gap: .35rem; }
+.maintenance-controls { padding-block: 1rem; border-block: 1px solid var(--line, #dedbd3); }
+.maintenance-controls .card { overflow-wrap: anywhere; }
+.maintenance-controls .toolbar, .page-actions .toolbar { flex-wrap: wrap; }
+.review-metadata .inline { flex-wrap: wrap; }

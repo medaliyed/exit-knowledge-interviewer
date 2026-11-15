@@ -195,6 +195,7 @@ function InterviewSession() {
     setCorrection(drafts.get(`correction:${sessionId}:${value}`) || (turn?.confidential ? '' : turn?.text || ''));
   };
 
+  if (run.maintenance_started_at) return <div className="page-content stack"><h1>Capture is closed</h1><Notice>This handover is in maintenance. The saved interview remains available as source history; the current owner maintains its entries.</Notice><Link className="btn" to={`${base}/maintenance`}>Open maintenance</Link></div>;
   return <div className="interview-view">
     <div className="interview-layout">
       <aside className="interview-topic">

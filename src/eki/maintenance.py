@@ -8,7 +8,7 @@ from uuid import UUID
 import psycopg
 
 from eki.audit import AuditDetails, append_event
-from eki.auth import AuthenticationError, ForbiddenError, Principal, current_principal
+from eki.auth import AuthenticationError, ForbiddenError, Principal, acting_as, current_principal
 from eki.errors import ConflictError, NotFoundError
 from eki.ingest.redaction import redact
 
@@ -86,7 +86,7 @@ def transfer(
     if not subject.strip() or len(subject) > 200 or not reason.strip() or len(reason) > 2000:
         raise ValueError("a valid owner and reason are required")
     now = now or datetime.now(UTC)
-    with conn.transaction():
+    with acting_as(actor), conn.transaction():
         active(conn, actor)
         available = conn.execute(
             "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", (f"capture:{run_id}",)
@@ -151,7 +151,21 @@ def state(conn: psycopg.Connection, run_id: UUID, principal: Principal) -> dict[
         " FROM handovers WHERE run_id=%s ORDER BY id",
         (run_id,),
     ).fetchall()
+    today = datetime.now(UTC).date()
+    counts = conn.execute(
+        "SELECT count(*) FILTER(WHERE e.status='draft'),count(*) FILTER(WHERE "
+        "e.status='approved' AND e.review_by<%s),coalesce(sum((SELECT count(*) "
+        "FROM entry_flags f WHERE f.entry_id=e.id AND f.resolution IS NULL)),0) "
+        "FROM runbook_entries e JOIN sessions s ON s.id=e.session_id JOIN "
+        "interview_plans p ON p.id=s.plan_id WHERE p.run_id=%s",
+        (today, run_id),
+    ).fetchone()
     return {
+        "summary": {
+            "drafts": counts[0] if counts else 0,
+            "overdue": counts[1] if counts else 0,
+            "open_flags": int(counts[2]) if counts else 0,
+        },
         "owner_subject": row[0],
         "maintenance_started_at": row[1],
         "run_revision": row[2],
@@ -198,7 +212,7 @@ def queue(
         or offset < 0
     ):
         raise ValueError("invalid maintenance filter or page")
-    today = (now or datetime.now(UTC)).date()
+    today = (now or datetime.now(UTC)).astimezone(UTC).date()
     rows = conn.execute(
         "SELECT e.id,e.session_id,e.title,e.status,e.version,(SELECT "
         "min(f.created_at) FROM entry_flags f WHERE f.entry_id=e.id AND "

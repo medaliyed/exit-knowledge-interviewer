@@ -13,7 +13,7 @@ from psycopg.rows import dict_row
 from eki import access, maintenance
 from eki.accounts import Throttled
 from eki.audit import AuditDetails, append_event
-from eki.auth import Principal
+from eki.auth import Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
 from eki.ingest.redaction import redact
 from eki.runbook import store
@@ -120,7 +120,7 @@ class FeedbackService:
             raise ValueError("invalid feedback")
         clean = str(redact(description.strip(), work_email_domains=self.domains).text)
         now = self.clock()
-        with self._connect() as conn, conn.transaction():
+        with acting_as(principal), self._connect() as conn, conn.transaction():
             run = access.resource_run(conn, "entries", entry_id)
             if run is None:
                 raise NotFoundError("entry not found")
@@ -224,7 +224,7 @@ class FeedbackService:
         ):
             raise ValueError("resolution needs a valid action and reason")
         clean = redact(note.strip(), work_email_domains=self.domains).text
-        with self._connect() as conn, conn.transaction():
+        with acting_as(principal), self._connect() as conn, conn.transaction():
             flag, run, _ = self._flag(conn, flag_id, principal)
             owner, _, _, _ = maintenance.lock_run(conn, run)
             maintenance.active(conn, principal)

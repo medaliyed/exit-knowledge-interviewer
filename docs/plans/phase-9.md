@@ -6,8 +6,8 @@ implementation has not started. This document proposes behaviour and defaults.
 **Parent:** [Project PDR](../PDR.md), new requirement **F22**. Reuses F6–F10
 (plan, interview, confidentiality, citations and approval), F14/F18 (durable
 messages and plan recovery), F13 (audit), F16/F19 (browser and identity), and
-F20's budget/usage concepts. [Phase 8](phase-8.md) is a separate proposal for
-maintenance after departure; it is not an implementation dependency.
+F20's budget/usage concepts. [Phase 8](phase-8.md) implements maintenance after departure; this follow-up
+proposal respects its capture boundary and reviewer authority.
 
 **Goal:** while the original expert is still reachable, turn remaining open
 sections and reader questions that Ask could not answer into a short, explicitly
