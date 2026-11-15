@@ -65,6 +65,11 @@ class TokenAuthenticator:
                 "EKI_API_TOKENS must be valid credential JSON with unique tokens"
             ) from error
 
+    @property
+    def identities(self) -> tuple[Principal, ...]:
+        """Unique public identities for consistency checks; never expose credentials."""
+        return tuple(dict.fromkeys(identity for _, identity in self._credentials))
+
     def authenticate(self, authorization: str | None) -> Principal:
         scheme, _, token = (authorization or "").partition(" ")
         if scheme.lower() != "bearer" or not token or token.strip() != token:

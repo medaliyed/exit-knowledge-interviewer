@@ -46,8 +46,21 @@ Operation = Literal[
     "get_path_activity",
     "list_messages",
     "get_message",
+    "sign_in",
+    "sign_out",
+    "session_expired",
+    "password_set",
+    "password_changed",
+    "link_created",
+    "account_created",
+    "account_updated",
+    "account_disabled",
+    "account_enabled",
+    "sessions_revoked",
 ]
-Kind = Literal["model", "tool", "approval", "review", "access", "ingest", "delivery", "generation"]
+Kind = Literal[
+    "model", "tool", "approval", "review", "access", "ingest", "delivery", "generation", "auth"
+]
 Phase = Literal["started", "completed", "failed", "refused", "skipped"]
 
 
@@ -186,6 +199,34 @@ def list_events(
             "details": r[9],
         }
         for r in rows
+    ]
+
+
+def list_auth_events(
+    conn: psycopg.Connection, *, after: int = 0, limit: int = 100
+) -> list[dict[str, object]]:
+    """Run-less authentication history, for the trusted local operator only."""
+    if after < 0 or not 1 <= limit <= 500:
+        raise ValueError("audit pagination requires after >= 0 and limit between 1 and 500")
+    rows = conn.execute(
+        "SELECT id, event_id, at, correlation_id, call_id, run_id, user_id, kind, phase, details "
+        "FROM audit_events WHERE kind = 'auth' AND run_id IS NULL AND id > %s ORDER BY id LIMIT %s",
+        (after, limit),
+    ).fetchall()
+    return [
+        {
+            "id": row[0],
+            "event_id": str(row[1]),
+            "at": row[2].isoformat(),
+            "correlation_id": str(row[3]),
+            "call_id": None if row[4] is None else str(row[4]),
+            "run_id": None,
+            "user_id": row[6],
+            "kind": row[7],
+            "phase": row[8],
+            "details": row[9],
+        }
+        for row in rows
     ]
 
 

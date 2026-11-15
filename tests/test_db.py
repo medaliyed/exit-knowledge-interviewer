@@ -28,6 +28,10 @@ TABLES = {
     "open_items",
     "runbook_entries",
     "entry_decisions",
+    "accounts",
+    "auth_sessions",
+    "auth_links",
+    "auth_throttle",
     "run_readers",
     "runbook_index",
     "audit_events",
@@ -48,6 +52,7 @@ MIGRATIONS = [
     "0009_delivery.sql",
     "0010_artifact_model.sql",
     "0011_generation.sql",
+    "0012_accounts.sql",
 ]
 
 

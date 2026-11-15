@@ -27,13 +27,14 @@ from uuid import UUID, uuid4
 
 import psycopg
 
-from eki import access
+from eki import access, accounts
 from eki.audit import (
     AuditDetails,
     AuditError,
     AuditRecorder,
     append_event,
     audit_context,
+    list_auth_events,
     list_events,
 )
 from eki.auth import AuthenticationError, Principal, TokenAuthenticator
@@ -134,6 +135,33 @@ def _parser() -> argparse.ArgumentParser:
     permissions.add_argument(
         "--readers", nargs="*", default=None, help="replace reader subjects; empty revokes all"
     )
+    users = commands.add_parser("users", help="manage browser accounts (local operator)")
+    user_commands = users.add_subparsers(dest="user_command", required=True)
+    add_user = user_commands.add_parser(
+        "add", help="create an account and print its invitation link"
+    )
+    add_user.add_argument("--email", required=True)
+    add_user.add_argument("--name", required=True)
+    add_user.add_argument("--subject", required=True, help="stable ACL identity; cannot be changed")
+    add_user.add_argument("--admin", action="store_true")
+    add_user.add_argument("--allow-external-domain", action="store_true")
+    update_user = user_commands.add_parser(
+        "update", help="change an account's email or display name"
+    )
+    update_user.add_argument(
+        "--email", required=True, help="current email used to find the account"
+    )
+    update_user.add_argument("--new-email")
+    update_user.add_argument("--name")
+    update_user.add_argument("--allow-external-domain", action="store_true")
+    for command, help_text in (
+        ("reset-password", "print a single-use reset link"),
+        ("disable", "disable an account and revoke all sessions"),
+        ("enable", "enable an account"),
+        ("revoke-sessions", "sign the account out on every device"),
+    ):
+        user_commands.add_parser(command, help=help_text).add_argument("--email", required=True)
+    user_commands.add_parser("list", help="list accounts and their sign-in status")
     search = commands.add_parser("search", help="search accessible approved runbook entries")
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=5)
@@ -149,9 +177,13 @@ def _parser() -> argparse.ArgumentParser:
         "--output", type=Path, help="new file; existing files are never overwritten"
     )
     audit = commands.add_parser(
-        "audit", help="read a run's metadata-only audit log (local operator)"
+        "audit", help="read a run's or authentication metadata-only audit log (local operator)"
     )
-    audit.add_argument("--run", type=UUID, required=True)
+    audit_scope = audit.add_mutually_exclusive_group(required=True)
+    audit_scope.add_argument("--run", type=UUID)
+    audit_scope.add_argument(
+        "--auth", action="store_true", help="list run-less authentication events"
+    )
     audit.add_argument("--after", type=int, default=0)
     audit.add_argument("--limit", type=int, default=100)
     return parser
@@ -160,6 +192,77 @@ def _parser() -> argparse.ArgumentParser:
 def _fail(message: str, code: int = FAILURE) -> int:
     print(f"eki: {message}", file=sys.stderr)
     return code
+
+
+def _users(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
+    settings = get_settings()
+    command = arguments.user_command
+    if command == "list":
+        print("Email\tSubject\tName\tAdmin\tDisabled\tLast sign-in")
+        for account in accounts.list_accounts(conn):
+            last_sign_in = (
+                account.last_sign_in_at.isoformat() if account.last_sign_in_at else "never"
+            )
+            print(
+                f"{account.email}\t{account.subject}\t{account.name}\t"
+                f"{str(account.admin).lower()}\t{str(account.disabled).lower()}\t{last_sign_in}"
+            )
+        return 0
+    if command == "update":
+        if arguments.new_email is None and arguments.name is None:
+            raise ValueError("supply --new-email or --name to update an account")
+        account = accounts.update_account(
+            conn,
+            arguments.email,
+            new_email=arguments.new_email,
+            name=arguments.name,
+            work_domains=work_domains(settings),
+            allow_external_domain=arguments.allow_external_domain,
+            bearer_identities=TokenAuthenticator(settings.api_tokens.get_secret_value()).identities,
+        )
+        print(f"Account {account.subject} updated.")
+        return 0
+    if command in ("add", "reset-password"):
+        if not settings.public_origin:
+            raise ConfigError("set EKI_PUBLIC_ORIGIN before creating an invitation or reset link")
+        now = datetime.now(UTC)
+        # Account creation and its invitation either both commit or neither does.
+        with conn.transaction():
+            if command == "add":
+                account = accounts.create_account(
+                    conn,
+                    email=arguments.email,
+                    name=arguments.name,
+                    subject=arguments.subject,
+                    admin=arguments.admin,
+                    allow_external_domain=arguments.allow_external_domain,
+                    work_domains=work_domains(settings),
+                    bearer_identities=list(
+                        TokenAuthenticator(settings.api_tokens.get_secret_value()).identities
+                    ),
+                    now=now,
+                )
+            else:
+                account = accounts.get_account(conn, arguments.email)
+            purpose: accounts.Purpose = "invite" if command == "add" else "reset"
+            token = accounts.create_link(conn, account.id, purpose, now=now)
+        # Do not print a usable link until the transaction has committed.
+        conn.commit()
+        print(
+            "Invitation link (valid for 72 hours):"
+            if command == "add"
+            else "Reset link (valid for 1 hour):"
+        )
+        print(f"{settings.public_origin.rstrip('/')}/workspace/set-password#token={token}")
+        return 0
+    if command in ("disable", "enable"):
+        account = accounts.set_disabled(conn, arguments.email, command == "disable")
+        print(f"Account {account.subject} {'disabled' if account.disabled else 'enabled'}.")
+        return 0
+    account = accounts.get_account(conn, arguments.email)
+    count = accounts.revoke_sessions(conn, account.id)
+    print(f"Revoked {count} session(s) for {account.subject}.")
+    return 0
 
 
 def _migrate(conn: psycopg.Connection) -> int:
@@ -602,10 +705,14 @@ def _main(argv: list[str] | None = None) -> int:
         if arguments.command in ("plan", "interview"):
             return _interview_commands(arguments)
         with connect(get_settings()) as conn:
+            if arguments.command == "users":
+                return _users(conn, arguments)
             if arguments.command == "audit":
                 print(
                     json.dumps(
-                        list_events(
+                        list_auth_events(conn, after=arguments.after, limit=arguments.limit)
+                        if arguments.auth
+                        else list_events(
                             conn, arguments.run, after=arguments.after, limit=arguments.limit
                         )
                     )

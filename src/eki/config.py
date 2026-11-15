@@ -8,8 +8,9 @@ Every value comes from an ``EKI_``-prefixed environment variable (or the local
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,10 @@ class Settings(BaseSettings):
     api_token: SecretStr | None = None
 
     env: Literal["dev", "test", "prod"] = "dev"
+    public_origin: str = "http://localhost:8000"
+    session_cookie_secure: bool = True
+    session_idle_hours: float = Field(default=8, gt=0, le=168)
+    session_max_days: float = Field(default=7, gt=0, le=365)
     database_url: SecretStr
     langfuse_host: str = "http://localhost:3000"
     langfuse_public_key: str | None = None
@@ -47,6 +52,29 @@ class Settings(BaseSettings):
     model_interviewer: str | None = None
     model_drafter: str | None = None
     model_timeout_seconds: float = 60.0
+
+    @model_validator(mode="after")
+    def validate_session_configuration(self) -> "Settings":
+        origin = urlsplit(self.public_origin)
+        try:
+            port = origin.port
+        except ValueError:
+            raise ValueError("EKI_PUBLIC_ORIGIN must be a valid HTTP origin") from None
+        if (
+            origin.scheme not in ("http", "https")
+            or not origin.hostname
+            or origin.username is not None
+            or origin.password is not None
+            or origin.path not in ("", "/")
+            or origin.query
+            or origin.fragment
+            or (port is not None and not 1 <= port <= 65535)
+        ):
+            raise ValueError("EKI_PUBLIC_ORIGIN must be a valid HTTP origin")
+        self.public_origin = self.public_origin.rstrip("/")
+        if self.env == "prod" and (not self.session_cookie_secure or origin.scheme != "https"):
+            raise ValueError("production sessions require HTTPS and secure cookies")
+        return self
 
 
 class ConfigError(Exception):

@@ -11,6 +11,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DATABASE_URL = "postgresql://someuser:s3cr3t-pw@dbhost:5432/eki"
 EKI_VARIABLES = (
     "EKI_ENV",
+    "EKI_PUBLIC_ORIGIN",
+    "EKI_SESSION_COOKIE_SECURE",
+    "EKI_SESSION_IDLE_HOURS",
+    "EKI_SESSION_MAX_DAYS",
     "EKI_API_TOKENS",
     "EKI_API_TOKEN",
     "EKI_MODEL_EMBEDDING",
@@ -99,3 +103,34 @@ def test_work_domains_are_split_and_normalised(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("EKI_DATABASE_URL", DATABASE_URL)
     monkeypatch.setenv("EKI_WORK_EMAIL_DOMAINS", "Example.com, corp.test ,")
     assert work_domains(settings_without_dotenv()) == {"example.com", "corp.test"}
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "",
+        "//host",
+        "ftp://host",
+        "https://user:pw@host",
+        "https://host/path",
+        "https://host?token=x",
+        "https://host#token=x",
+        "http://host:bad",
+    ],
+)
+def test_session_origin_must_be_a_bare_http_origin(origin: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, database_url=DATABASE_URL, public_origin=origin)
+
+
+def test_production_requires_https_and_secure_cookies() -> None:
+    for values in (
+        {"public_origin": "http://host"},
+        {"public_origin": "https://host", "session_cookie_secure": False},
+    ):
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None, database_url=DATABASE_URL, env="prod", **values)
+    settings = Settings(
+        _env_file=None, database_url=DATABASE_URL, env="prod", public_origin="https://host/"
+    )
+    assert settings.public_origin == "https://host"
