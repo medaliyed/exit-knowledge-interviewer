@@ -15,7 +15,7 @@ connector to a live mailbox, Git host or issue tracker.
 | --- | --- |
 | [docs/tutorial.md](docs/tutorial.md) | **Start here.** Your first run, step by step, with the output to expect |
 | [docs/ui/ui-pdr.md](docs/ui/ui-pdr.md) | What the browser workspace must do: users, screens, states, constraints, acceptance criteria |
-| [docs/PDR.md](docs/PDR.md) | Requirements F1 to F18, stack, phases, current status |
+| [docs/PDR.md](docs/PDR.md) | Requirements F1 to F19, stack, phases, current status |
 | [docs/architecture.md](docs/architecture.md) | Pipeline, components, workflow graph, data model, with diagrams |
 | [Browser workspace](docs/flows/browser-workspace.md) | Sign in, review plans, interview, recover saved work and approve entries |
 | [docs/flows/](docs/flows/index.md) | Runtime flows, recovery boundaries and known gaps |
@@ -115,20 +115,31 @@ retrieval. Existing runs keep their saved model; use
 uv run uvicorn eki.api.app:app --reload     # http://localhost:8000/docs
 ```
 
-Open `http://localhost:8000/` for the expert workspace. Sign in with an existing
-API token to review plans, answer questions, review and approve cited entries,
-search and export. Tokens stay in tab memory; after a refresh, sign in again
-and reopen the saved conversation. Assign the run to the token's `subject`
-with `eki access`, and ingest/map the synthetic sources with the CLI before
-drafting the first plan. The [browser walkthrough](docs/tutorial.md#optional-the-browser-workspace)
-covers setup, permissions and recovery.
+Set `EKI_PUBLIC_ORIGIN=http://localhost:8000` in `.env` (use your HTTPS origin
+in production), apply migrations, and create an invited account:
+
+```bash
+uv run eki users add --email nadia.ferrand@example.com --name "Nadia Ferrand" --subject nadia
+uv run eki access --run RUN_ID --owner nadia
+```
+
+Open the printed invitation link, set a password, then use email and password
+at `http://localhost:8000/`. The server keeps a bounded session in an HttpOnly
+cookie, so reloading reopens saved work at the current URL. Unsent answers remain
+in tab memory. Ingest/map the synthetic sources with the CLI before drafting
+the first plan. The [sign-in flow](docs/flows/sign-in.md) covers invitations,
+password resets, session revocation and configuration; the
+[browser walkthrough](docs/tutorial.md#optional-the-browser-workspace) covers
+the full workflow. Accounts do not send email; operators hand over printed links.
 
 The redesigned workspace follows the HTML prototype and UI PDR with React,
 TypeScript and Vite. Its production assets are included, so running the API is
 enough to use it. For frontend development, run `npm ci` and `npm run dev` in
 `frontend/`; see [frontend/README.md](frontend/README.md) for build and browser tests.
 
-Every data route needs `Authorization: Bearer <token>`. The routes are listed
+Data routes accept a browser session cookie or `Authorization: Bearer <token>`.
+Bearer tokens continue to serve the CLI and automation. Cookie-authenticated
+mutations require an `Origin` matching `EKI_PUBLIC_ORIGIN`. The routes are listed
 in [CLAUDE.md](CLAUDE.md) and their behaviour in [docs/flows/](docs/flows/index.md).
 
 ## Without a provider key
@@ -169,7 +180,9 @@ Phases 0–4 and the Phase 5 code deliverables are implemented with synthetic
 acceptance coverage: durable message recovery, an expert browser workspace,
 model-aware artifact retrieval and resumable plan generation. The redesigned
 workspace follows the supplied HTML prototype and UI PDR, with automated browser
-workflow, accessibility and responsive-layout checks. Real-provider validation
+workflow, accessibility and responsive-layout checks. Phase 6 adds invited
+email/password accounts, persistent browser sessions and operator account management.
+Real-provider validation
 remains deferred by user request; manual screen-reader validation is still pending.
 Source connectors remain synthetic. The
 [Phase 5 PDR](docs/plans/phase-5.md) records evidence and remaining acceptance

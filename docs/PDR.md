@@ -35,6 +35,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F16 | An authenticated browser workflow for plan review, interview chat, cited entry review and approval. Implemented: Phase 5c; visual browser QA pending. |
 | F17 | Optional semantic retrieval over source artifacts, with matching document/query model identities and an offline fallback. Implemented: Phase 5d; real-model quality pending. |
 | F18 | Resumable plan generation that retains completed topics and retries unfinished work under a stable generation ID. Delivered: Phase 5e. |
+| F19 | Invited work-email/password accounts, bounded server-side browser sessions, one-time password links, local operator account management, CSRF protection, throttling and metadata-only authentication audit. Phase 6. |
 
 ## Stack
 
@@ -58,6 +59,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | 3 | Runbook | Synthesis with citations, approval flow, hybrid search, export. |
 | 4 | Harden | Mail connector, red-team suite, evals in CI, audit log. |
 | 5 | Recovery and expert workflow | [Phase 5 PDR](plans/phase-5.md): reliable interview recovery, real-model validation, expert UI, semantic artifact retrieval and resumable plan drafting, in that order. |
+| 6 | Email/password accounts | [Phase 6 PDR](plans/phase-6.md): account provisioning, sessions/authentication, browser sign-in and operational documentation. |
 
 Each phase is planned separately in `docs/plans/phase-N.md` and needs human
 approval before implementation starts. The hard rules that apply to every
@@ -78,7 +80,8 @@ line and, where there is one, their Outcome section.
 | 2 Interview | `docs/plans/phase-2.md` | F6, F7, F8 |
 | 3 Runbook | `docs/plans/phase-3.md`, `docs/plans/phase-3b.md` | F9, F10, F11, F12 |
 | 4 Harden | `docs/plans/phase-4.md` | F3, F13, red-team and quality gate |
-| 5 Recovery and expert workflow | [docs/plans/phase-5.md](plans/phase-5.md) | F14/F16/F17/F18 implemented; F15 live evidence and browser acceptance pending |
+| 5 Recovery and expert workflow | [docs/plans/phase-5.md](plans/phase-5.md) | F14/F16/F17/F18 implemented; F15 live evidence and manual screen-reader validation pending |
+| 6 Email/password accounts | [docs/plans/phase-6.md](plans/phase-6.md) | F19 implemented 2026-11-15; manual browser pass and timing check pending |
 
 Added after the phases: synthesis keeps drafts the expert edited by hand
 (F10), review lists claims that say more than the answer they cite (F9), and

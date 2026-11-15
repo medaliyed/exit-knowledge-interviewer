@@ -673,9 +673,17 @@ session.
 ## Optional: the browser workspace
 
 You can use the browser for steps 6–9 after ingesting and mapping the run with
-the CLI. Complete [step 9a and 9b](#step-9-use-the-runbook) first: assign this
-run to your token's `subject` and register its token in `.env`. The token's
-`name` must match the run's expert for approvals.
+the CLI. Complete [step 9a](#step-9-use-the-runbook) first: assign this run to
+`nadia`. Then set `EKI_PUBLIC_ORIGIN=http://localhost:8000` in `.env` and create
+an account with the same subject and expert name:
+
+```bash
+uv run eki users add --email nadia.ferrand@example.com --name "Nadia Ferrand" --subject nadia
+```
+
+The command prints a single-use invitation link valid for 72 hours. The operator
+hands it over directly; the application sends no email. If you already configured
+a bearer identity for Nadia in step 9b, keep the same name, subject and admin flag.
 
 Start the server in a second terminal:
 
@@ -683,10 +691,18 @@ Start the server in a second terminal:
 uv run uvicorn eki.api.app:app --reload
 ```
 
-Open <http://localhost:8000/>, enter the access token from `EKI_API_TOKEN`, and
-choose **Open workspace**. Restart the server after changing token registration
-or model settings. The browser keeps the token only in tab memory; after a
-refresh, sign in again and select the same handover.
+Open the printed invitation link and choose a password of 12–128 characters.
+Avoid common passwords and your name or email address. The link signs you in
+when the password is set. Later, open <http://localhost:8000/> and sign in with
+your email and password. A reload restores your session and current URL. Unsent
+text is still lost on reload, so heed the leave-page warning.
+
+Use the account menu to change your password or sign out. For a forgotten
+password, ask the operator to run `uv run eki users reset-password --email nadia.ferrand@example.com`;
+the printed reset link lasts one hour. A password change signs out other devices.
+Account enable/disable and session revocation need no server restart. Restart
+after changing origin, token registration or model settings. See
+[the sign-in flow](flows/sign-in.md) for production configuration and troubleshooting.
 
 | What to do | In the workspace |
 | --- | --- |
@@ -702,10 +718,10 @@ Only submitted messages acknowledged as saved, or found through their receipt,
 are durable. Unsubmitted text remains in the current tab. Owners/admins can
 manage interviews and review drafts; readers see approved knowledge only.
 An empty workspace usually means no run has been assigned/shared with the
-token's `subject`. Navigation lists show at most 200 records.
+account's `subject`. Navigation lists show at most 200 records.
 
-The implementation has HTTP and client-logic test coverage. Visual browser and
-accessibility QA remain pending because browser control was unavailable. See
+The implementation has HTTP, client and automated browser/accessibility coverage.
+A manual screen-reader walkthrough and real-provider validation remain pending. See
 [the browser flow](flows/browser-workspace.md) for permissions and endpoint details.
 
 ## Optional: the web API
@@ -750,7 +766,9 @@ about how well a real model asks questions.
 | `eki: valid EKI_API_TOKEN credentials are required` | Step 9b is not done, or the two token values differ | Fix the two lines in `.env` |
 | `generation inputs or configuration changed; start a new generation` | The saved draft used different source/mapping, prompt, model or drafting settings | Run `eki plan --run RUN_ID` without a resume flag to start a new generation |
 | `message differs from saved submission; resume it first` | A retry changed a saved message | Resume the existing receipt, then use an explicit correction to change its answer |
-| The browser shows no handovers | The token subject has no accessible run | Check `eki access --run RUN_ID --owner SUBJECT` and token registration; restart the API after changing `.env` |
+| The browser shows no handovers | The account subject has no accessible run | Check `eki access --run RUN_ID --owner SUBJECT` and `eki users list` |
+| Browser sign-in fails with an origin error | `EKI_PUBLIC_ORIGIN` differs from the visible browser origin | Set the exact scheme, host and port, then restart the API |
+| An invitation or reset link is invalid | It expired, was used, or was replaced | Ask the operator for `eki users reset-password --email ...` |
 | `only a draft can be approved or rejected; edit it first` | The entry is already approved or rejected | Edit it to return it to draft before another review decision |
 | Search finds nothing | No entry is approved yet, or step 9a named a different owner than `subject` in 9b | Approve an entry; make the two names match |
 | `Review refused: check the name, section and content.` | A part name was mistyped in `edit`, or the edit left a part empty | Use one of the seven part names; give at least one claim or an open question |
@@ -793,7 +811,7 @@ On reconnect, the CLI finds saved messages and offers `/retry` or `/quit`.
 Choose `/retry` to continue processing the saved answer without retyping it.
 The HTTP API and browser workspace expose the same delivery status and resume
 operations. To use the browser, start the API and open `http://localhost:8000/`;
-sign in with the token configured in step 9.
+sign in with the invited account configured in the browser section above.
 
 ## Optional semantic retrieval
 

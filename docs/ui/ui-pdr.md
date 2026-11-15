@@ -8,7 +8,7 @@ for accepting it. The design prompt in
 **Status:** implemented with automated coverage, 2026-11-14; manual screen-reader
 walkthrough and real-provider validation remain pending.
 **Covers:** requirement F16 (browser workflow for plan review, interview, cited
-entry review and approval), and the browser side of F10, F11, F12 and F14.
+entry review and approval), F19 (email/password accounts and sessions), and the browser side of F10, F11, F12 and F14.
 **Starts from:** the existing workspace in `src/eki/web/static/` (commit
 `d28c2b3`). It works end to end over HTTP but is a plain first version: one
 JavaScript file, minimal layout, and no visual or accessibility QA yet
@@ -59,7 +59,7 @@ and readers. These stay CLI steps done once by an operator (§9).
 
 ```mermaid
 flowchart LR
-    signin[Sign in<br/>access token] --> home[Handovers list]
+    signin[Sign in<br/>email and password] --> home[Handovers list]
     home --> handover[Handover]
     handover --> plans[Interview plans]
     handover --> review[Review entries]
@@ -84,10 +84,18 @@ API calls are in §8.
 
 ### 5.1 Sign in
 
-- **Purpose:** open the workspace with an access token.
-- **Content:** one password-style field, one button, a line explaining that the
-  token stays in this tab only and a refresh needs it again.
-- **States:** empty; submitting; wrong token (401); server not configured (503).
+- **Purpose:** open the workspace with a work email and password.
+- **Content:** labelled Email (`autocomplete=username`) and Password
+  (`autocomplete=current-password`) fields, show/hide control and **Sign in**.
+  Help: "Forgot your password? Ask the person who invited you for a reset link."
+- **States:** empty; submitting; incorrect credentials (401); throttled (429,
+  with retry minutes); server not configured (503); network failure. Failed
+  attempts retain the email and clear/focus the password.
+- Invitation/reset links open `/workspace/set-password#token=...`. Read the
+  fragment once and immediately remove it from history. Label two password
+  fields with `autocomplete=new-password`; validate mismatch/length locally
+  and common/identifying passwords on the server. Expired/used/unknown links
+  show the same generic message. Setting a password signs the person in.
 
 ### 5.2 Handovers list (sidebar or home)
 
@@ -184,10 +192,13 @@ API calls are in §8.
 
 ### 5.8 Global
 
-- Header with signed-in name and **Sign out**.
+- Header account menu with signed-in name, **Change password** and **Sign out**.
+  Changing a password requires the current password, keeps this session and
+  signs out other devices. Signing out preserves the unsent-answer confirmation.
 - A live status region for notices.
-- An error state for session expiry (token rejected mid-use) that returns to
-  sign-in without losing the place where possible.
+- On load, restore `GET /auth/session` and keep the current route. A 401 during
+  use clears caches/drafts, aborts requests and asks the person to sign in again
+  at the same route. Unsent text remains in tab memory; retain the leave-page warning.
 
 ## 6. Content and tone
 
@@ -204,8 +215,8 @@ API calls are in §8.
 
 | Rule | Why | Design consequence |
 | --- | --- | --- |
-| The token lives only in tab memory | No credential in storage | Refresh shows sign-in; say this on the sign-in screen |
-| No answer, query or token in a URL | URLs reach server logs | Search and ask are forms, never shareable query links |
+| Bounded server-side session in an HttpOnly cookie | Reloads retain sign-in without exposing credentials to scripts | Restore the session on load; no credential in localStorage, sessionStorage or IndexedDB |
+| No answer, query or credential in a request URL | URLs reach server logs | Search and ask use forms; one-time link tokens use fragments, scrubbed immediately |
 | Confidential text is never displayed after sending | Privacy rule of the project | Transcript shows "[confidential]" in place of the text |
 | Readers never see drafts, transcripts or review history | Access rule | Reader layout has no such areas |
 | Each submission has a stable ID; retries reuse it | No duplicate answers | While sending, disable the input; on a lost response, check the saved state before offering a retry |
@@ -215,11 +226,12 @@ API calls are in §8.
 
 ## 8. Data available (existing API)
 
-All routes need `Authorization: Bearer <token>` and are same-origin.
+Data routes accept the session cookie or `Authorization: Bearer <token>` and are same-origin. Cookie-authenticated mutations require the configured `Origin`.
 
 | Screen | Calls |
 | --- | --- |
-| Sign in, header | `GET /runbook/identity` → subject, name, admin |
+| Sign in, header | `POST /auth/login`; `GET /auth/session` → subject, name, admin, email; `POST /auth/logout` |
+| Set/change password | `POST /auth/setup-password`; `POST /auth/password` |
 | Handovers | `GET /runs` → id, expert name, since, until, status, can manage |
 | Plans | `GET /runs/{id}/plans`; `POST /runs/{id}/plan`; `GET /runs/{id}/generations`, `.../{generation_id}`, `POST .../resume` |
 | Plan review | `GET /plans/{id}`; `PATCH /plans/{id}` (remove, add, order); `POST /plans/{id}/approve` |
@@ -235,14 +247,15 @@ Interview stream events: `delivery`, `topic`, `note`, `open`, `corrected`,
 
 - Ingesting sources, mapping gaps, assigning owners and readers, reading the
   audit log: CLI only.
-- User accounts, passwords or single sign-on: identity is a bearer token.
+- Self-registration, outgoing email, MFA and single sign-on. Accounts are invited and managed by a trusted local operator.
 - Real-time collaboration, notifications, mobile apps.
 - Showing raw source artifacts (tickets, commits) beyond the quotes in the plan.
 
 ## 10. Technical constraints
 
-- **Same-origin static files** served by the API at `/`: HTML, CSS and plain
-  JavaScript. No build step today; adding a framework or any new dependency
+- **Same-origin static files** served by the API at `/`: the React/TypeScript
+  frontend is built with Vite and its production files ship with Python. Adding
+  any new dependency
   needs the owner's approval (project rule).
 - **Content Security Policy** allows scripts only from the same origin. No CDN
   scripts, no external fonts, no analytics. Fonts: system stack, or files served
@@ -266,7 +279,7 @@ Interview stream events: `delivery`, `topic`, `note`, `open`, `corrected`,
    the same question in at most three clicks, and no answer is lost or
    duplicated.
 3. Every claim on screen shows its source within one interaction.
-4. A reader signed in with a reader token sees no interview or review area and
+4. A reader signed in with a reader account sees no interview or review area and
    cannot reach one by URL.
 5. Confidential answer text never appears anywhere after it is sent.
 6. Keyboard-only and screen-reader walkthroughs of 1 succeed; automated

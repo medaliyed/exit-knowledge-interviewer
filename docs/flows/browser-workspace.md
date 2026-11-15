@@ -23,19 +23,20 @@ the API.
 
 1. Run `uv sync` and `uv run eki migrate`. Ingest the selected synthetic sources,
    then run `uv run eki map --run RUN_ID`.
-2. Assign the run to the intended token subject, for example
+2. Assign the run to the intended account subject, for example
    `uv run eki access --run RUN_ID --owner nadia`.
-3. Register a generated access token in `EKI_API_TOKENS`; the owner's record
-   needs `subject: "nadia"` and the run expert's name for approvals. The
-   [tutorial](../tutorial.md#step-9-use-the-runbook) shows the complete setup.
-4. Start `uv run uvicorn eki.api.app:app --reload`. Restart the server after
-   changing token registration or model configuration.
-5. Open `/`, enter that registered access token, and choose **Open workspace**.
-   Select the handover in the sidebar.
+3. Set `EKI_PUBLIC_ORIGIN` to the browser's origin and create an account with
+   `uv run eki users add --email nadia.ferrand@example.com --name "Nadia Ferrand" --subject nadia`.
+   Use the same subject/name as an existing bearer identity when migrating it.
+4. Start `uv run uvicorn eki.api.app:app --reload`. Restart after changing
+   origin, token registration or model configuration; account changes are immediate.
+5. Open the printed invitation link, set a password, and select the handover.
+   Later visits to `/` use email and password. See [sign in](sign-in.md).
 
-The token stays in tab memory. Refreshing requires sign-in again, followed by
-selecting the same handover and conversation. Saved work comes from the server;
-unsent answers are not persisted across a page reload.
+A server-side session is restored through `GET /auth/session` after a reload,
+keeping the current URL. Saved work comes from the server; unsent answers stay
+in tab memory and are not persisted across a page reload. The browser warns
+before leaving with an unsent answer and confirms before signing out.
 
 ## Walk through the workspace
 
@@ -114,13 +115,13 @@ Navigation metadata comes from `GET /runbook/identity`, `GET /runs`,
 management routes enforce owner/admin access; approved entry/search/export routes
 apply reader ACLs. The UI relies on those server checks.
 
-An empty workspace means no runs are accessible to the token subject, or none
+An empty workspace means no runs are accessible to the account subject, or none
 have been ingested. A reader's workspace intentionally has only **Approved
-knowledge**. HTTP plan and entry approvals require the token's `name` to match
-the run expert, including for an admin. There is no separate user-account/login
-service.
+knowledge**. HTTP plan and entry approvals require the signed-in `name` to match
+the run expert, including for an admin. Accounts and bearer identities share
+stable subjects, and every request rechecks session/account validity.
 
-Browser downloads fetch approved Markdown with the bearer header before creating
+Browser downloads fetch approved Markdown with the session cookie before creating
 a local download. Answer text, credentials and queries are not placed in URLs
 or browser persistent storage. Source/model text is rendered as text nodes;
 the shell sets a Content Security Policy restricting scripts to its own origin.

@@ -9,6 +9,7 @@ For the static picture (pipeline, components, workflow graph, data model) see
 
 | Flow | Trigger | In one line |
 | --- | --- | --- |
+| [Email/password sign in](sign-in.md) | Invitation link or `/auth/login` | Set a password, restore a bounded session, change a password or revoke access. |
 | [Expert browser workspace](browser-workspace.md) | `/` on the FastAPI server | Sign in, review a plan, interview, resume saved work and use approved knowledge through the authenticated API. |
 | [Ingest one expert's work](ingest.md) | `eki ingest` | Read sources through read-only MCP servers, redact twice, store and index a run atomically. |
 | [Draft an interview plan](draft-plan.md) | `eki plan`, `POST /runs/{id}/plan` | Pick the highest-gap topics and have a model draft questions that must quote an artifact. |
@@ -36,7 +37,7 @@ These are single-component operations. A sentence is enough.
 | `PATCH /entries/{id}`, `POST /entries/{id}/reject` | Variants of the review flow, described in [review-entry.md](review-entry.md). |
 | `eki export`, `GET /entries/{id}/markdown`, `GET /runbook/export` | Renders approved, permitted entries as Markdown. One read, no model. |
 | `eki access`, `/runs/{id}/owner`, `/runs/{id}/access` | Sets a run's owner and readers, with an audit event in the same transaction. |
-| `eki audit`, `GET /runs/{id}/audit` | Pages through a run's audit events by ascending ID. |
+| `eki audit`, `GET /runs/{id}/audit` | Pages through a run's audit events by ascending ID; local `eki audit --auth` lists run-less authentication events. |
 | `eki reindex-artifacts --run ID` | Atomically replaces a run's artifact vectors/model identity; described in [ingest.md](ingest.md). |
 | `GET /healthz` | Returns `{"status": "ok"}`. No authentication, no database. |
 
@@ -59,6 +60,6 @@ Things the flow pages flag. Each is cited on its page.
   were traced by reading the code and are exercised by tests with scripted
   model doubles and the synthetic corpus.
 
-- **Visual browser QA remains pending.** The implemented UI has HTTP and
-  client-logic coverage; browser interaction/layout/accessibility checks could
-  not run. ([browser-workspace.md](browser-workspace.md))
+- **Manual screen-reader validation remains pending.** Automated browser
+  interaction, responsive-layout and accessibility checks cover the workspace.
+  ([browser-workspace.md](browser-workspace.md))

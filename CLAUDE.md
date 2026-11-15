@@ -7,7 +7,7 @@ design is a fixed LangGraph workflow with ONE agentic node (the interviewer):
 Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable
 runbook. The expert prunes the plan and approves every entry.
 
-Full requirements (F1-F18), stack and phases: `docs/PDR.md`.
+Full requirements (F1-F19), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
 Architecture and diagrams: `docs/architecture.md`. Runtime flows, one page
 each with a sequence diagram: `docs/flows/`. How to run it: `README.md`;
@@ -48,6 +48,10 @@ uv run eki ask "How do I roll back reconciliation?" --json
 uv run eki export --run ID --output runbook.md               # new file only
 uv run eki ingest --since D --until D --mail-folder Inbox --mail-folder Sent
 uv run eki audit --run ID --after 0 --limit 100
+uv run eki users add --email nadia.ferrand@example.com --name "Nadia Ferrand" --subject nadia
+uv run eki users reset-password --email nadia.ferrand@example.com
+uv run eki users list
+uv run eki audit --auth --after 0 --limit 100
 uv run python evals/run.py --junit reports/quality.xml         # deterministic quality/privacy gate
 uv run pytest -m live -s -rs tests/test_live_retrieval.py       # explicit opt-in provider checks
 ```
@@ -159,10 +163,10 @@ Existing runs are unassigned and admin-only until explicitly assigned an owner.
 New runs are also unassigned until a local operator or API admin assigns them.
 No default bearer credential grants access.
 
-All data endpoints now require `Authorization: Bearer <token>`.
-`/healthz`, API documentation and the OpenAPI schema remain public. The docs'
-Authorize button supports bearer credentials. Responses use `private, no-store`
-and vary by Authorization. Missing/bad credentials return 401; invalid server
+All data endpoints require a browser session cookie or `Authorization: Bearer <token>`.
+`/healthz`, static browser pages, API documentation and the OpenAPI schema remain public.
+The docs' Authorize button supports bearer credentials. Responses use `private, no-store`
+and vary by Authorization and Cookie. Missing/bad credentials return 401; invalid server
 authentication configuration returns 503. Inaccessible
 resources return 404. Reader identities cannot access sessions, plans, drafts,
 review history or review operations through the earlier routes.
@@ -380,7 +384,7 @@ a persisted reply may still run and be billed again. See
 ### Expert browser workspace (F16)
 
 Open `/` on the FastAPI server. Static HTML/CSS/JavaScript under `eki.web.static`
-uses the same-origin authenticated API; bearer credentials stay in memory.
+uses the same-origin authenticated API; browser accounts use HttpOnly session cookies.
 Navigation endpoints are `GET /runs`, `GET /runs/{id}/plans`,
 `GET /runbook/identity` and `GET /runbook/entries?run_id=...`. Run listings apply
 live ACLs; plan/session/review access stays owner/admin-only. Readers browse
@@ -392,8 +396,9 @@ chat, confidential/skip/correct controls, saved-message resume, cited review and
 editing, rejection, approval, search, Q&A and Markdown downloads. Text is rendered
 as text nodes and the shell sets a restrictive Content Security Policy.
 `tests/test_browser.py` covers static serving, access boundaries and the complete
-synthetic workflow via HTTP. Browser visual QA is currently unavailable because
-the computer-use browser host is unavailable and native fallback timed out.
+synthetic workflow via HTTP. Automated browser interaction, responsive layout
+and accessibility checks cover the React workspace; a manual screen-reader
+walkthrough and real-provider acceptance remain pending.
 
 
 ### Semantic artifact retrieval (F17)
@@ -443,3 +448,50 @@ using Node's built-in runner and no packages. It checks stable submission IDs,
 fragmented SSE, early disconnects and retryable failures; it does not replace
 real-browser visual/accessibility QA. New browser submissions keep their IDs
 across transport retries and query the receipt when acknowledgement is lost.
+
+## Phase 6: browser accounts and sessions (F19)
+
+Apply migration `0012_accounts.sql`. Browser users sign in with email/password;
+CLI and automation keep bearer tokens. Set `EKI_PUBLIC_ORIGIN` to the exact
+browser origin (development default `http://localhost:8000`; production requires
+HTTPS). `EKI_SESSION_IDLE_HOURS=8` and `EKI_SESSION_MAX_DAYS=7` bound sessions.
+Secure mode uses `__Host-eki_session` with HttpOnly, Secure, SameSite=Strict,
+Path=/ and no Domain. Development-only `EKI_SESSION_COOKIE_SECURE=false` uses
+`eki_session`; production refuses insecure cookies.
+
+Operator commands are `eki users add`, `update`, `reset-password`, `disable`,
+`enable`, `revoke-sessions` and `list`. `add` requires `--email`, `--name` and `--subject`,
+and accepts `--admin` and `--allow-external-domain`. `update --email CURRENT`
+accepts `--new-email` and/or `--name`, with the same domain/bearer checks and
+existing approval consistency; subject/admin cannot be changed. Other mutations
+take `--email`. Invitation links last 72 hours; reset links last one hour. They use
+URL fragments and are handed over by the operator; no mail is sent. A new link
+supersedes earlier unused links. Subjects remain stable and share bearer ACLs.
+Conflicting account/bearer names or admin flags are refused.
+
+Authentication API:
+
+- `POST /auth/login`: `{email,password}` returns identity and session cookie.
+- `GET /auth/session`: restores identity from a cookie or bearer header.
+- `POST /auth/setup-password`: `{token,new_password}` consumes a one-time link,
+  revokes previous sessions, sets a password and signs in.
+- `POST /auth/password`: `{current_password,new_password}` changes the password,
+  revokes other sessions and keeps this one. Wrong current passwords return
+  `current_password_incorrect` without expiring the current session.
+- `POST /auth/logout`: revokes the session and clears the cookie.
+
+Passwords are held as `SecretStr` at the HTTP boundary. They use salted scrypt
+with stored parameters and local common-password/identity checks; no new hashing
+dependency is introduced. Auth errors never echo submitted values. Cookie
+mutations, login, setup and logout require the exact configured Origin;
+bearer data requests remain exempt and a present bearer header takes precedence.
+Data responses vary by Cookie and Authorization and remain private/no-store.
+Account disable/revocation takes effect on the next request without a restart.
+
+`eki audit --auth` lists run-less metadata-only authentication events. Audit
+records exclude email addresses, IPs, passwords and raw credentials. Throttle
+rows retain email hashes/client keys only briefly and are pruned after 24 hours.
+The browser restores sessions on reload, retains the current route after expiry,
+and clears cached data/drafts on sign-out or expiry. Unsent text remains in tab
+memory and still requires the existing leave-page and sign-out confirmations.
+See `docs/flows/sign-in.md` for setup and recovery.
