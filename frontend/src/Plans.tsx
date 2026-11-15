@@ -98,11 +98,12 @@ export function PlanReview() {
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Topic | null>(null);
   const alive = useRef(true);
   const currentPlan = useRef(planId);
   currentPlan.current = planId;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => { setBusy(false); setError(''); setApproveOpen(false); setLabel(''); setNote(''); setDragging(null); }, [planId]);
+  useEffect(() => { setBusy(false); setError(''); setApproveOpen(false); setLabel(''); setNote(''); setDragging(null); setRemoving(null); }, [planId]);
   const planQuery = useQuery({ queryKey: ['plan', planId], queryFn: () => api.request<Plan>(`/plans/${planId}`) });
   const generations = useQuery({ queryKey: ['generations', run.id], queryFn: () => api.request<Generation[]>(`/runs/${run.id}/generations`) });
   const summaries = useQuery({ queryKey: ['plans', run.id], queryFn: () => api.request<PlanSummary[]>(`/runs/${run.id}/plans`) });
@@ -137,6 +138,11 @@ export function PlanReview() {
     if (!label.trim() || !note.trim()) return;
     if (await edit({ add: [{ label: label.trim(), note: note.trim() }] }, 'Topic added to the plan.')) { setLabel(''); setNote(''); }
   }
+  async function remove() {
+    if (!removing || busy) return;
+    const topic = removing;
+    if (await edit({ remove: [topic.topic_id] }, `“${topic.label}” removed from the plan.`)) setRemoving(null);
+  }
   async function approve() {
     if (!plan || partial || !plan.topics.length || busy) return;
     setBusy(true); setError('');
@@ -169,7 +175,7 @@ export function PlanReview() {
       <div className="stack grow"><div className="inline"><span className="eyebrow">Topic {index + 1}</span>{topic.origin === 'contradiction' && <><Badge status="rejected">Sources contradict each other</Badge>{index === 0 && <Badge>Asked first</Badge>}</>}{topic.origin === 'expert' && <Badge>Added by you</Badge>}</div><div><h2>{topic.label}</h2><p className="small muted">{topic.kind}{topic.system && ` · ${topic.system}`}</p></div>
         {topic.origin === 'expert' ? <blockquote className="quote"><span className="source-label">Your note</span>{topic.reason}</blockquote> : <p className="small">{topic.score !== null && <strong>Risk {topic.score.toFixed(1)} of 100: </strong>}{topic.reason}</p>}
         <Questions topic={topic} />
-        {editable && <div><Button variant="quiet" disabled={busy} onClick={() => void edit({ remove: [topic.topic_id] }, 'Topic removed from the plan.')}>Remove topic</Button></div>}
+        {editable && <div><Button variant="quiet" disabled={busy} onClick={() => setRemoving(topic)}>Remove topic</Button></div>}
       </div>
     </li>)}</ol>
     {editable && <><form className="card stack add-topic" onSubmit={event => void add(event)}><h2>Add a topic</h2><div className="form-field"><label htmlFor="topic-name">Topic name</label><input id="topic-name" required value={label} disabled={busy} onChange={event => setLabel(event.target.value)} /></div><div className="form-field"><label htmlFor="topic-note">A note in your own words</label><textarea id="topic-note" required value={note} disabled={busy} onChange={event => setNote(event.target.value)} aria-describedby="topic-note-help" /><p className="field-help" id="topic-note-help">What should the interviewer know before asking? A sentence is enough.</p></div><div><Button type="submit" disabled={busy || !label.trim() || !note.trim()}>Add topic</Button></div></form>
@@ -177,6 +183,11 @@ export function PlanReview() {
       <div className="page-actions"><p className="muted">Approving freezes the plan and opens the interview. Topics cannot be changed afterwards.</p><Button variant="primary" disabled={busy || partial || !plan.topics.length || generations.isPending || generations.isError} onClick={() => setApproveOpen(true)}>Approve plan</Button></div>
       {generations.isError && <Notice error>Drafting status could not be checked. <Button variant="quiet" onClick={() => void generations.refetch()}>Check again</Button></Notice>}
     </>}
+    <Modal title="Remove this topic?" open={removing !== null} onClose={() => { if (!busy) setRemoving(null); }}>
+      {removing && <><p><strong>{removing.label}</strong> will be taken out of the plan{removing.questions.length ? `, together with its ${removing.questions.length} drafted ${removing.questions.length === 1 ? 'question' : 'questions'}` : ''}. The interviewer will not ask about it.</p>
+        <p className="small muted">If you add the topic again later, it starts without drafted questions.</p>
+        <div className="toolbar"><Button variant="primary" disabled={busy} onClick={() => setRemoving(null)}>Keep topic</Button><Button variant="danger" disabled={busy} onClick={() => void remove()}>{busy ? 'Removing…' : 'Remove topic'}</Button></div></>}
+    </Modal>
     <Modal title="Approve this plan?" open={approveOpen} onClose={() => { if (!busy) setApproveOpen(false); }}><p>Approving starts the interview. The plan cannot be changed afterwards.</p><p className="small muted">{plan.topics.length} topics, starting with {plan.topics[0]?.label}.</p>{!ownName && <Notice error>Your signed-in name must match {run.expert_name} to approve.</Notice>}<div className="toolbar"><Button disabled={busy} onClick={() => setApproveOpen(false)}>Keep editing</Button><Button variant="primary" disabled={busy} onClick={() => void approve()}>{busy ? 'Opening interview…' : 'Approve and start'}</Button></div></Modal>
   </div>;
 }

@@ -37,7 +37,8 @@ Browser tests use a synthetic stateful API double and the installed Google
 Chrome on a development machine. In CI, install Playwright Chromium first:
 `npx playwright install --with-deps chromium`. Tests cover routing, confidential
 answers, interruption recovery, explicit publication, search/export, keyboard
-reordering, and automated accessibility/layout checks at 360, 768 and 1440 px.
+reordering, unsent-answer warnings, confirmations before destructive actions,
+and automated accessibility/layout checks at 360, 768 and 1440 px.
 They supplement the Python HTTP/database tests; they do not validate a live model.
 
 To check the committed production build under FastAPI's real Content Security

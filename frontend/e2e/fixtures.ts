@@ -92,6 +92,8 @@ export async function mockWorkspace(page: Page, options: MockOptions = {}) {
     if (path === `/plans/${ids.plan}` && method === 'PATCH') {
       const order = body?.order as string[] | undefined;
       if (order) plan.topics = order.map(id => plan.topics.find(topic => topic.topic_id === id)!);
+      const remove = body?.remove as string[] | undefined;
+      if (remove) plan.topics = plan.topics.filter(topic => !remove.includes(topic.topic_id));
       return json(route, plan);
     }
     if (path === `/plans/${ids.plan}/approve`) {

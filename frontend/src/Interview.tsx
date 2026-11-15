@@ -242,6 +242,7 @@ function InterviewSession() {
       </section>
 
       <aside className="interview-transcript" aria-label="Conversation so far">
+        {!session.turns.some(turn => turn.ordinal !== session.waiting?.turn) && <div className="transcript-empty"><p className="eyebrow">Conversation so far</p><p className="muted">Your answers will appear here as the conversation goes on, with what the interviewer noted from each one.</p></div>}
         {topicGroups.map(group => {
           const turns = session.turns.filter(turn => turn.topic_id === group.topic_id && turn.ordinal !== session.waiting?.turn);
           if (!turns.length) return null;

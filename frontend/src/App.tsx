@@ -1,10 +1,10 @@
 import { Component, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { ApiClient, ApiError } from './api';
 import type { Identity, Run } from './types';
 import { WorkspaceContext } from './workspace';
-import { Button, Empty, Loading, Notice } from './ui';
+import { Button, Empty, Loading, Modal, Notice } from './ui';
 import { Plans, PlanReview } from './Plans';
 import { Interview } from './Interview';
 import { Entries, EntryView } from './Entries';
@@ -18,8 +18,13 @@ function queryClient() {
 }
 type Auth = { api: ApiClient; identity: Identity; client: QueryClient };
 type Message = { text: string; error: boolean };
+const NOTICE_LIFETIME_MS = 6000;
 const period = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
 export function handoverPeriod(run: Run) { return `${period(run.since)} – ${period(run.until)}`; }
+// Only interview text is worth a warning; search and ask boxes are cheap to retype.
+export function hasUnsentAnswer(drafts: Map<string, string>) {
+  return [...drafts].some(([key, value]) => /^(answer|correction):/.test(key) && value.trim() !== '');
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
   state = { error: false };
@@ -79,6 +84,10 @@ function Shell({ auth, runs, notify, drafts, signOut }: { auth: Auth; runs: Run[
   useEffect(() => { content.current?.focus({ preventScroll: true }); }, [location.pathname]);
   if (!run) return <Navigate to="/workspace" replace />;
   const base = `/workspace/${run.id}`;
+  // An entry page belongs to the review tab for the owner and to approved knowledge for a reader.
+  const tab = location.pathname.startsWith(`${base}/plans`) ? 'plans'
+    : location.pathname.startsWith(`${base}/review`) || (location.pathname.startsWith(`${base}/entries/`) && run.can_manage) ? 'review'
+    : location.pathname.startsWith(`${base}/knowledge`) || location.pathname.startsWith(`${base}/entries/`) ? 'knowledge' : '';
   return <WorkspaceContext.Provider value={{ ...auth, run, notify, drafts }}>
     <header className="site-header"><Link to={base} className="wordmark" aria-label="eki handover home">eki</Link>
       {interview ? <><span className="header-context">Interview · {run.expert_name}</span><span className="header-spacer" />
@@ -95,9 +104,9 @@ function Shell({ auth, runs, notify, drafts, signOut }: { auth: Auth; runs: Run[
           <strong>{item.expert_name}</strong><span>{handoverPeriod(item)}</span><span className="handover-role">{item.can_manage ? 'Your handover' : 'Reader'}</span>
         </Link>)}</nav><p className="sidebar-note">Keep the knowledge.<br />Honour the source.</p></aside>}
       <main id="main-content" className={interview ? 'interview-page' : 'workspace-main'} tabIndex={-1} ref={content}>
-        {!interview && <><div className="handover-heading"><p className="eyebrow">Handover</p><h1>{run.expert_name} <span>· {handoverPeriod(run)}</span></h1></div>
-          <nav className="tabs" aria-label="Handover">{run.can_manage && <><NavLink to={`${base}/plans`}>Interview plans</NavLink><NavLink to={`${base}/review`}>Review entries</NavLink></>}
-            <NavLink to={`${base}/knowledge`}>Approved knowledge</NavLink></nav></>}
+        {!interview && <><div className="handover-heading"><p className="eyebrow">Handover</p><h1>{run.expert_name} <span className="handover-period">{handoverPeriod(run)}</span></h1></div>
+          <nav className="tabs" aria-label="Handover">{run.can_manage && <><Tab to={`${base}/plans`} active={tab === 'plans'}>Interview plans</Tab><Tab to={`${base}/review`} active={tab === 'review'}>Review entries</Tab></>}
+            <Tab to={`${base}/knowledge`} active={tab === 'knowledge'}>Approved knowledge</Tab></nav></>}
         <Outlet key={location.pathname} />
       </main>
     </div>
@@ -105,6 +114,9 @@ function Shell({ auth, runs, notify, drafts, signOut }: { auth: Auth; runs: Run[
   function navigateHandover(next: Run) { navigate(`/workspace/${next.id}/${next.can_manage ? 'plans' : 'knowledge'}`); }
 }
 
+function Tab({ to, active, children }: { to: string; active: boolean; children: ReactNode }) {
+  return <Link to={to} className={active ? 'active' : undefined} aria-current={active ? 'page' : undefined}>{children}</Link>;
+}
 function ManagerOnly({ children, runs }: { children: ReactNode; runs: Run[] }) {
   const { runId } = useParams();
   return runs.find(run => run.id === runId)?.can_manage ? children : <Navigate to={`/workspace/${runId}/knowledge`} replace />;
@@ -140,15 +152,33 @@ export function App() {
   const previousSubject = useRef('');
   const [message, setMessage] = useState<Message>({ text: '', error: false });
   const drafts = useRef(new Map<string, string>());
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const notify = (text: string, error = false) => setMessage({ text, error });
+  // Good news clears itself; a problem stays until it is read and dismissed.
+  useEffect(() => {
+    if (!message.text || message.error) return;
+    const timer = setTimeout(() => setMessage({ text: '', error: false }), NOTICE_LIFETIME_MS);
+    return () => clearTimeout(timer);
+  }, [message]);
+  // Drafts live only in this tab, so a refresh or close would lose an unsent answer.
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!hasUnsentAnswer(drafts.current)) return;
+      event.preventDefault();
+      event.returnValue = ''; // older browsers only honour the legacy return value
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
   const endSession = (expired = false) => {
     const previous = currentAuth.current; currentAuth.current = null;
     previous?.api.destroy(); void previous?.client.cancelQueries(); previous?.client.clear();
     // An expired identity also invalidates uncertainty metadata in the API client.
     // Keep the route, but never resurrect a possibly accepted private payload.
     drafts.current.clear();
-    setAuth(null); notify(expired ? 'Your token is no longer accepted. Sign in again to reopen your saved work.' : '', expired);
+    setAuth(null); setSignOutOpen(false); notify(expired ? 'Your token is no longer accepted. Sign in again to reopen your saved work.' : '', expired);
   };
+  const requestSignOut = () => { if (hasUnsentAnswer(drafts.current)) setSignOutOpen(true); else endSession(); };
   async function signIn(token: string) {
     let api: ApiClient;
     api = new ApiClient(token, () => { if (currentAuth.current?.api === api) endSession(true); });
@@ -162,8 +192,12 @@ export function App() {
   }
   useEffect(() => () => { currentAuth.current?.api.destroy(); }, []);
   return <ErrorBoundary><BrowserRouter><a className="skip-link" href="#main-content">Skip to main content</a>
-    {auth ? <QueryClientProvider client={auth.client}><Authenticated auth={auth} notify={notify} drafts={drafts.current} signOut={() => endSession()} />
+    {auth ? <QueryClientProvider client={auth.client}><Authenticated auth={auth} notify={notify} drafts={drafts.current} signOut={requestSignOut} />
       <div className={`global-notice ${message.error ? 'global-error' : ''}`} role={message.error ? 'alert' : 'status'} aria-live="polite">{message.text && <><span>{message.text}</span><button aria-label="Dismiss notice" onClick={() => notify('')}>×</button></>}</div>
+      <Modal title="Sign out with an unsent answer?" open={signOutOpen} onClose={() => setSignOutOpen(false)}>
+        <p>You have typed an answer that has not been sent. Signing out discards it. Submitted answers are already saved.</p>
+        <div className="toolbar"><Button variant="primary" onClick={() => setSignOutOpen(false)}>Keep writing</Button><Button variant="danger" onClick={() => endSession()}>Sign out and discard</Button></div>
+      </Modal>
     </QueryClientProvider> : <SignIn onSignIn={signIn} message={message} />}
   </BrowserRouter></ErrorBoundary>;
 }
