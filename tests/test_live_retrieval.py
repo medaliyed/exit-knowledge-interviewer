@@ -5,8 +5,6 @@ Provider credentials must be explicitly exported to the test process; a .env
 entry alone is not treated as consent for paid test calls.
 """
 
-import os
-
 import pytest
 from pydantic import SecretStr
 
@@ -14,6 +12,7 @@ from eki.config import Settings, get_settings
 from eki.search.answers import build_answers
 from eki.search.service import build_search
 from tests.conftest import Scratch
+from tests.live_support import has_provider_key
 from tests.search_support import READER, search_world
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
@@ -24,16 +23,7 @@ def live_settings(scratch: Scratch, role: str) -> Settings:
     model = settings.model_embedding if role == "embedding" else settings.model_answerer
     if not model:
         pytest.skip(f"EKI_MODEL_{role.upper()} is not configured; no provider call made")
-    keys = (
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "GEMINI_API_KEY",
-        "MISTRAL_API_KEY",
-        "AZURE_API_KEY",
-        "COHERE_API_KEY",
-        "AWS_SECRET_ACCESS_KEY",
-    )
-    if not any(os.environ.get(key) for key in keys):
+    if not has_provider_key():
         pytest.skip("no explicit provider credential in environment; no provider call made")
     # All application/audit data stays in the disposable schema, including provider audits.
     return settings.model_copy(

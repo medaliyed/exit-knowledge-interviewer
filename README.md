@@ -39,7 +39,7 @@ uv sync
 uv run eki migrate
 ```
 
-In `.env`, set the provider key (for example `ANTHROPIC_API_KEY`) and check
+In `.env`, set the provider key (for example `GROQ_API_KEY`) and check
 `EKI_MODEL_DRAFTER` and `EKI_MODEL_INTERVIEWER`. The `eki` command reads `.env`
 by itself; there is no need to export it.
 
@@ -159,7 +159,7 @@ names set and the provider key exported to the shell, not only present in
 `.env`:
 
 ```bash
-export ANTHROPIC_API_KEY=...
+export GROQ_API_KEY=...
 uv run pytest -m live -s -rs
 ```
 

@@ -57,15 +57,15 @@ cp .env.example .env
 
 Open `.env` in an editor:
 
-1. Find the line `ANTHROPIC_API_KEY=` and paste your key after the `=`.
+1. Find the line `GROQ_API_KEY=` and paste your key after the `=`.
    If you use another provider, add its key under its own name (for example
    `OPENAI_API_KEY=...`) and change the two model lines below to that
    provider's model names.
 2. Check these two lines. They name the model for each role:
 
    ```bash
-   EKI_MODEL_INTERVIEWER=anthropic/claude-opus-5-5
-   EKI_MODEL_DRAFTER=anthropic/claude-opus-5-5
+   EKI_MODEL_INTERVIEWER=groq/openai/gpt-oss-120b
+   EKI_MODEL_DRAFTER=groq/openai/gpt-oss-120b
    ```
 
 3. Replace the placeholder secrets, following the comments in `.env.example`.

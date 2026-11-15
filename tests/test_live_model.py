@@ -1,14 +1,13 @@
 """Opt-in check of a REAL model: ``uv run pytest -m live -s``.
 
 Needs ``EKI_MODEL_INTERVIEWER``, ``EKI_MODEL_DRAFTER`` and the provider key (for
-example ``ANTHROPIC_API_KEY``) in the environment, plus Postgres. It costs
+example ``GROQ_API_KEY``) in the environment, plus Postgres. It costs
 money and is never run in CI. The simulated expert answers for three planted
 gaps only, and the test checks the three behaviours a scripted fake cannot
 show: a follow-up on G3's missing rollback, G7 left open instead of invented,
 and the G1 contradiction put to the expert.
 """
 
-import os
 from uuid import UUID
 
 import pytest
@@ -24,11 +23,11 @@ from eki.llm.litellm_model import LiteLLMModel
 from eki.mapping.store import save_mapping
 from tests.conftest import Scratch
 from tests.fakes import RecordingTracer, SimulatedExpert, expert_answers
+from tests.live_support import has_provider_key
 from tests.test_phase1_acceptance import run_pipeline
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 GAPS = ("G1", "G3", "G7")
-PROVIDER_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "MISTRAL_API_KEY")
 
 
 def real_models() -> tuple[LiteLLMModel, LiteLLMModel]:
@@ -37,7 +36,7 @@ def real_models() -> tuple[LiteLLMModel, LiteLLMModel]:
         names = model_name(settings, "drafter"), model_name(settings, "interviewer")
     except ConfigError as missing:
         pytest.skip(str(missing))
-    if not any(os.environ.get(key) for key in PROVIDER_KEYS):
+    if not has_provider_key():
         pytest.skip("no provider key in the environment")
     domains = work_domains(settings)
     timeout = settings.model_timeout_seconds

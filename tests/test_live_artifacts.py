@@ -1,7 +1,5 @@
 """F17: opt-in real artifact paraphrase checks; never run by default or CI."""
 
-import os
-
 import pytest
 from pydantic import SecretStr
 
@@ -13,6 +11,7 @@ from eki.ingest.redaction import RedactedText
 from eki.ingest.semantic import configured
 from tests import builders
 from tests.conftest import Scratch
+from tests.live_support import has_provider_key
 
 pytestmark = pytest.mark.live
 
@@ -22,17 +21,7 @@ def test_live_artifact_paraphrases(scratch: Scratch, attempt: int) -> None:
     settings = get_settings()
     if not settings.model_artifact_embedding:
         pytest.skip("EKI_MODEL_ARTIFACT_EMBEDDING is not configured; no provider call made")
-    if not any(
-        os.environ.get(k)
-        for k in (
-            "ANTHROPIC_API_KEY",
-            "OPENAI_API_KEY",
-            "GEMINI_API_KEY",
-            "MISTRAL_API_KEY",
-            "AZURE_API_KEY",
-            "COHERE_API_KEY",
-        )
-    ):
+    if not has_provider_key():
         pytest.skip("no explicit provider credential in environment; no provider call made")
     settings = settings.model_copy(update={"database_url": SecretStr(scratch.dsn)})
     artifacts = [

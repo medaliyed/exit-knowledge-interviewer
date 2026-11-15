@@ -1,7 +1,7 @@
 """``ChatModel`` backed by LiteLLM, so the provider is a matter of configuration.
 
 LiteLLM reads the provider key from the provider's usual environment variable
-(for example ``ANTHROPIC_API_KEY``); this module never sees it.
+(for example ``GROQ_API_KEY``); this module never sees it.
 """
 
 import json
