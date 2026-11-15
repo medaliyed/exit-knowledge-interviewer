@@ -9,6 +9,7 @@ export const ids = {
 };
 export const workspace = `/workspace/${ids.run}`;
 export const expert = 'Nadia Ferrand';
+export const password = 'correct horse battery staple 42';
 const at = '2026-11-14T10:00:00+00:00';
 const cite = { kind: 'interview_turn' as const, session_id: ids.session, turn_index: 2 };
 const firstQuestion = 'What starts the month-end reconciliation?';
@@ -58,6 +59,10 @@ export async function mockWorkspace(page: Page, options: MockOptions = {}) {
       open_question: null,
     }])) as Record<SectionName, Section>,
   };
+  let signedIn: 'owner' | 'reader' | null = null;
+  let currentPassword = password;
+  let linkUsed = false;
+  let failures = 0;
   let pending: Receipt[] = [];
   const summary = () => ({ id: entry.id, topic_id: entry.topic_id, title: entry.title, status: entry.status, version: entry.version, edited: entry.edited, unsupported_count: 0, claim_count: 7, open_question_count: 0 });
   const json = (route: Route, value: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
@@ -76,14 +81,34 @@ export async function mockWorkspace(page: Page, options: MockOptions = {}) {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
-    if (!/^\/(runs|plans|sessions|entries|runbook)(\/|$)/.test(path)) return route.continue();
+    if (!/^\/(auth|runs|plans|sessions|entries|runbook)(\/|$)/.test(path)) return route.continue();
     const method = request.method();
     const body = request.postDataJSON() as Record<string, unknown> | null;
     requests.push({ method, path, body });
+    const identity = (reader: boolean) => ({ subject: reader ? 'reader' : 'owner', name: reader ? 'Ari Martin' : expert, admin: false, email: reader ? 'reader@example.com' : 'nadia.ferrand@example.com' });
+    if (path === '/auth/login') {
+      if (failures >= 5) return route.fulfill({ status: 429, contentType: 'application/json', headers: { 'Retry-After': '120' }, body: JSON.stringify({ detail: 'Too many attempts', code: 'throttled' }) });
+      if (!['nadia.ferrand@example.com', 'reader@example.com'].includes(String(body?.email)) || body?.password !== currentPassword) {
+        failures++; return json(route, { detail: 'Email or password is incorrect', code: 'invalid_credentials' }, 401);
+      }
+      signedIn = body.email === 'reader@example.com' ? 'reader' : 'owner'; failures = 0;
+      return json(route, identity(signedIn === 'reader'));
+    }
+    if (path === '/auth/setup-password') {
+      if (body?.token !== 'valid-invitation' || linkUsed) return json(route, { detail: 'This link is no longer valid. Ask the person who invited you for a new one.', code: 'invalid_link' }, 400);
+      if (body?.new_password === 'password1234') return json(route, { detail: 'Choose a password that is not common.', code: 'weak_password' }, 400);
+      currentPassword = String(body?.new_password); signedIn = 'owner'; linkUsed = true;
+      return json(route, identity(false));
+    }
+    if (path === '/auth/logout') { signedIn = null; return route.fulfill({ status: 204 }); }
     const token = request.headers().authorization;
-    const reader = token === 'Bearer reader-token';
-    if (token !== 'Bearer owner-token' && !reader) return json(route, { detail: 'valid bearer credentials required' }, 401);
-    if (path === '/runbook/identity') return json(route, { subject: reader ? 'reader' : 'owner', name: reader ? 'Ari Martin' : expert, admin: false });
+    const reader = token === 'Bearer reader-token' || (!token && signedIn === 'reader');
+    if (token ? token !== 'Bearer owner-token' && !reader : !signedIn) return json(route, { detail: 'Your session has ended', code: 'session_expired' }, 401);
+    if (path === '/runbook/identity' || path === '/auth/session') return json(route, identity(reader));
+    if (path === '/auth/password') {
+      if (body?.current_password !== currentPassword) return json(route, { detail: 'Current password is incorrect.', code: 'current_password_incorrect' }, 400);
+      currentPassword = String(body?.new_password); return route.fulfill({ status: 204 });
+    }
     if (path === '/runs') return json(route, [{ id: ids.run, expert_name: expert, since: '2024-11-01', until: '2026-10-31', status: 'completed', can_manage: !reader }]);
     if (reader && /^\/(plans|sessions)\//.test(path)) return json(route, { detail: 'resource not found' }, 404);
     if (path === `/runs/${ids.run}/plans`) return json(route, [{ id: ids.plan, status: plan.status, session_id: sessionExists ? ids.session : null }]);
@@ -155,12 +180,17 @@ export async function mockWorkspace(page: Page, options: MockOptions = {}) {
     if (path === '/runbook/export' || path.endsWith('/markdown')) return route.fulfill({ status: 200, contentType: 'text/markdown', headers: { 'Content-Disposition': 'attachment; filename="eki-runbook.md"' }, body: `# ${entry.title}\n\n${entry.steps.claims[0].text}\n` });
     return json(route, { detail: 'Synthetic endpoint not implemented' }, 404);
   });
-  return { requests, plan, session, entry };
+  return { requests, plan, session, entry, expireSession: () => { signedIn = null; } };
 }
 
 export async function signIn(page: Page, path = `${workspace}/plans`, token = 'owner-token') {
   await page.goto(path);
-  await page.getByLabel('Access token', { exact: true }).fill(token);
-  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByLabel('Email', { exact: true }).fill(token === 'reader-token' ? 'reader@example.com' : 'nadia.ferrand@example.com');
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toHaveCount(0);
+}
+
+export async function openAccountMenu(page: Page) {
+  await page.locator('.account-menu > summary').click();
 }

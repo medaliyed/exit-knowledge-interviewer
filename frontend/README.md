@@ -17,7 +17,11 @@ npm run dev
 
 Run FastAPI separately on `127.0.0.1:8000` using the repository's documented setup.
 The Vite server at `http://127.0.0.1:5173` proxies the existing API paths to it.
-Sign in with a registered synthetic-workspace token. No provider is called merely
+Set `EKI_PUBLIC_ORIGIN=http://127.0.0.1:5173` on the API for Vite development
+and `EKI_SESSION_COOKIE_SECURE=false` only for local HTTP development. The proxy
+preserves the browser Origin so the backend can verify it. Create a synthetic
+account with `eki users add`, open its invitation link on the Vite origin, and
+sign in with email and password. No provider is called merely
 by opening the UI; drafting and interviewing use the backend's configured model.
 
 ## Build and verify
@@ -48,8 +52,13 @@ The suite rejects policy violations, including when a dialog opens. Optional
 
 ## Data and recovery
 
-Tokens, unsent drafts and caches live in tab memory. A reload requires sign-in.
-Signing out clears them and aborts outstanding requests. No persistent browser
+The server keeps sessions behind an HttpOnly cookie; a reload restores sign-in
+and the current route until the session expires. Unsent drafts and caches live
+only in tab memory, so reloading still discards unsent text after a leave-page
+warning. Signing out revokes the server session, clears drafts and caches, and
+aborts outstanding requests. Invitation/reset tokens are read from the URL
+fragment and immediately removed from the address bar. The account menu offers
+password changes, which keep this device signed in and revoke other sessions. No persistent browser
 storage, analytics, external font, or CDN script is used. Source/model text is
 rendered as React text, not interpreted as markup.
 

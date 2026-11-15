@@ -306,3 +306,17 @@ ol.answer-statements { list-style:decimal; padding-left:24px; }
   .global-notice { top:12px; right:12px; max-width:calc(100% - 24px); font-size:14px; }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation: none !important; scroll-behavior: auto !important; } }
+
+.password-field { display: flex; align-items: center; gap: 8px; }
+.password-field input { flex: 1; }
+.password-field .btn { flex-shrink: 0; padding-inline: 10px; }
+.password-checklist { padding-left: 0; list-style: none; font-size: 14px; color: var(--muted-text); display: grid; gap: 7px; }
+.account-menu { position: relative; min-width: 0; max-width: 100%; }
+.account-menu summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; border-radius: 8px; padding: 8px; }
+.account-menu summary strong { overflow-wrap: anywhere; }
+.account-actions { position: absolute; right: 0; top: calc(100% + 8px); z-index: 65; display: grid; gap: 6px; min-width: 190px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--sheet); box-shadow: 0 6px 28px #243b3920; }
+.account-actions .btn { justify-content: flex-start; }
+@media (max-width: 600px) {
+  .site-header .account-menu { margin-left: auto; }
+  .site-header .account-menu summary { font-size: 12px; max-width: 220px; }
+}

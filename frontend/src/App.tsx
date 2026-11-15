@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Component, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { ApiClient, ApiError } from './api';
@@ -9,6 +9,7 @@ import { Plans, PlanReview } from './Plans';
 import { Interview } from './Interview';
 import { Entries, EntryView } from './Entries';
 import { Knowledge } from './Knowledge';
+import { AccountMenu, ChangePassword, SetPassword, SignIn, type Message } from './Auth';
 
 function queryClient() {
   return new QueryClient({ defaultOptions: { queries: {
@@ -17,7 +18,6 @@ function queryClient() {
   }, mutations: { retry: false } } });
 }
 type Auth = { api: ApiClient; identity: Identity; client: QueryClient };
-type Message = { text: string; error: boolean };
 const NOTICE_LIFETIME_MS = 6000;
 const period = (value: string) => new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
 export function handoverPeriod(run: Run) { return `${period(run.since)} – ${period(run.until)}`; }
@@ -37,44 +37,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: boolean 
   }
 }
 
-function SignIn({ onSignIn, message }: { onSignIn: (token: string) => Promise<void>; message: Message }) {
-  const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
-    try { await onSignIn(token.trim()); setToken(''); }
-    catch (err) { setError(err instanceof ApiError && err.status === 401 ? 'This access token was not accepted. Check it and try again.'
-      : err instanceof ApiError && err.status === 503 ? 'Sign-in is not configured on this server. Ask the person who prepared your handover.'
-      : 'The workspace could not be reached. Your token has not been saved. Try again.'); }
-    finally { setBusy(false); }
-  }
-  return <><header className="site-header"><Link to="/" className="wordmark">eki</Link><span className="brand-subtitle">Exit-Knowledge Interviewer</span></header>
-    <main id="main-content" className="welcome">
-      <section className="welcome-story"><p className="eyebrow">Keep the knowledge. Honour the source.</p>
-        <h1>A thoughtful handover.<br />A lasting reference.</h1>
-        <ol className="welcome-steps">{[
-          ['Make a plan', 'eki reads the selected tickets, code history and emails, and drafts the topics only you know. You decide what stays.'],
-          ['Have the conversation', 'One question at a time, over as many sittings as you like. Submitted answers are saved.'],
-          ['Make it yours', 'Read each runbook entry, correct it, and approve it. Nothing is published without you.'],
-        ].map(([title, detail], index) => <li key={title}><span className="step-number">{index + 1}</span><div><h2>{title}</h2><p>{detail}</p></div></li>)}</ol>
-      </section>
-      <section className="sheet login-card" id="login" aria-labelledby="signin-title">
-        <p className="eyebrow">Your knowledge, in good hands</p><h2 id="signin-title">Sign in</h2>
-        <form onSubmit={submit} className="stack">
-          <div className="form-field"><label htmlFor="access-token">Access token</label>
-            <input id="access-token" type="password" required autoComplete="off" spellCheck={false} value={token}
-              onChange={event => setToken(event.target.value)} disabled={busy} aria-describedby="token-help" aria-invalid={!!error} />
-            <p className="field-help" id="token-help">The token stays in this tab only. After a refresh you sign in again.</p></div>
-          {(error || message.text) && <Notice error={!!error || message.error}>{error || message.text}</Notice>}
-          <Button variant="primary" type="submit" disabled={busy}>{busy ? 'Opening workspace…' : 'Open workspace'}<span aria-hidden="true">↗</span></Button>
-        </form>
-        <p className="login-footnote">A saved conversation is ready whenever you are.</p>
-      </section>
-    </main><footer className="site-footer">A thoughtful handover. A lasting reference.</footer></>;
-}
-
-function Shell({ auth, runs, notify, drafts, signOut }: { auth: Auth; runs: Run[]; notify: (text: string, error?: boolean) => void; drafts: Map<string, string>; signOut: () => void }) {
+function Shell({ auth, runs, notify, drafts, signOut, changePassword }: { auth: Auth; runs: Run[]; notify: (text: string, error?: boolean) => void; drafts: Map<string, string>; signOut: () => void; changePassword: () => void }) {
   const { runId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -91,8 +54,8 @@ function Shell({ auth, runs, notify, drafts, signOut }: { auth: Auth; runs: Run[
   return <WorkspaceContext.Provider value={{ ...auth, run, notify, drafts }}>
     <header className="site-header"><Link to={base} className="wordmark" aria-label="eki handover home">eki</Link>
       {interview ? <><span className="header-context">Interview · {run.expert_name}</span><span className="header-spacer" />
-        <span className="header-note">Submitted answers are saved. Send your draft before leaving.</span><Link className="btn" to={`${base}/plans`}>Leave for now</Link><Button variant="quiet" onClick={signOut}>Sign out</Button></>
-        : <><span className="header-spacer" /><span className="identity">Signed in as <strong>{auth.identity.name}</strong></span><Button variant="quiet" onClick={signOut}>Sign out</Button></>}
+        <span className="header-note">Submitted answers are saved. Send your draft before leaving.</span><Link className="btn" to={`${base}/plans`}>Leave for now</Link><AccountMenu identity={auth.identity} signOut={signOut} changePassword={changePassword} /></>
+        : <><span className="header-spacer" /><AccountMenu identity={auth.identity} signOut={signOut} changePassword={changePassword} /></>}
     </header>
     <div className={interview ? 'interview-shell' : 'workspace-shell'}>
       {!interview && <aside className="handover-sidebar" aria-label="Handovers"><h2 className="eyebrow">Handovers</h2>
@@ -126,15 +89,15 @@ function HandoverIndex({ runs }: { runs: Run[] }) {
   const run = runs.find(item => item.id === runId);
   return <Navigate to={run?.can_manage ? 'plans' : 'knowledge'} replace />;
 }
-function Authenticated({ auth, notify, drafts, signOut }: { auth: Auth; notify: (text: string, error?: boolean) => void; drafts: Map<string, string>; signOut: () => void }) {
+function Authenticated({ auth, notify, drafts, signOut, changePassword }: { auth: Auth; notify: (text: string, error?: boolean) => void; drafts: Map<string, string>; signOut: () => void; changePassword: () => void }) {
   const runsQuery = useQuery({ queryKey: ['runs', auth.identity.subject], queryFn: () => auth.api.request<Run[]>('/runs') });
   if (runsQuery.isPending) return <main className="standalone"><Loading /></main>;
   if (runsQuery.isError) return <main className="standalone"><Notice error>Handovers could not load. Your saved work has not changed.</Notice><Button onClick={() => runsQuery.refetch()}>Try again</Button><Button variant="quiet" onClick={signOut}>Sign out</Button></main>;
   const runs = runsQuery.data;
-  if (!runs.length) return <><header className="site-header"><span className="wordmark">eki</span><span className="header-spacer" /><span>{auth.identity.name}</span><Button variant="quiet" onClick={signOut}>Sign out</Button></header>
-    <main id="main-content" className="standalone"><Empty title="No handover is available yet"><p>None has been shared with you, or your handover is still being prepared. Ask the person who gave you your token.</p></Empty></main></>;
+  if (!runs.length) return <><header className="site-header"><span className="wordmark">eki</span><span className="header-spacer" /><AccountMenu identity={auth.identity} signOut={signOut} changePassword={changePassword} /></header>
+    <main id="main-content" className="standalone"><Empty title="No handover is available yet"><p>None has been shared with you, or your handover is still being prepared. Ask the person who invited you.</p></Empty></main></>;
   const first = runs[0];
-  return <Routes><Route path="/workspace/:runId" element={<Shell {...{ auth, runs, notify, drafts, signOut }} />}>
+  return <Routes><Route path="/workspace/:runId" element={<Shell {...{ auth, runs, notify, drafts, signOut, changePassword }} />}>
     <Route index element={<HandoverIndex runs={runs} />} />
     <Route path="plans" element={<ManagerOnly runs={runs}><Plans /></ManagerOnly>} />
     <Route path="plans/:planId" element={<ManagerOnly runs={runs}><PlanReview /></ManagerOnly>} />
@@ -147,7 +110,27 @@ function Authenticated({ auth, notify, drafts, signOut }: { auth: Auth; notify: 
 }
 
 export function App() {
+  // Capture the fragment before the layout effect scrubs it, including StrictMode's initial render.
+  const [setupToken, setSetupToken] = useState<string | null>(() => window.location.pathname === '/workspace/set-password'
+    ? new URLSearchParams(window.location.hash.slice(1)).get('token') ?? '' : null);
+  const setupPage = useRef(setupToken !== null);
+  const [restoring, setRestoring] = useState(!setupPage.current);
   const [auth, setAuth] = useState<Auth | null>(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  useLayoutEffect(() => {
+    if (setupPage.current) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+  }, []);
+  useEffect(() => {
+    const captureLink = () => {
+      if (window.location.pathname !== '/workspace/set-password' || !window.location.hash) return;
+      const token = new URLSearchParams(window.location.hash.slice(1)).get('token') ?? '';
+      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+      setSetupToken(token); setRestoring(false);
+    };
+    window.addEventListener('hashchange', captureLink);
+    return () => window.removeEventListener('hashchange', captureLink);
+  }, []);
   const currentAuth = useRef<Auth | null>(null);
   const previousSubject = useRef('');
   const [message, setMessage] = useState<Message>({ text: '', error: false });
@@ -176,28 +159,67 @@ export function App() {
     // An expired identity also invalidates uncertainty metadata in the API client.
     // Keep the route, but never resurrect a possibly accepted private payload.
     drafts.current.clear();
-    setAuth(null); setSignOutOpen(false); notify(expired ? 'Your token is no longer accepted. Sign in again to reopen your saved work.' : '', expired);
+    setAuth(null); setPasswordOpen(false); setSignOutOpen(false); notify(expired ? 'Your session has ended. Sign in again to reopen your saved work.' : '', expired);
   };
-  const requestSignOut = () => { if (hasUnsentAnswer(drafts.current)) setSignOutOpen(true); else endSession(); };
-  async function signIn(token: string) {
-    let api: ApiClient;
-    api = new ApiClient(token, () => { if (currentAuth.current?.api === api) endSession(true); });
-    try {
-      const identity = await api.request<Identity>('/runbook/identity');
-      if (previousSubject.current !== identity.subject) drafts.current.clear();
-      previousSubject.current = identity.subject;
-      const next = { api, identity, client: queryClient() };
-      currentAuth.current = next; setAuth(next); notify('');
-    } catch (error) { api.destroy(); throw error; }
+  async function signOut() {
+    if (signingOut) return;
+    const active = currentAuth.current;
+    if (!active) return;
+    setSigningOut(true);
+    try { await active.api.request<void>('/auth/logout', 'POST'); endSession(); }
+    catch (error) {
+      if (error instanceof ApiError && error.status === 401) endSession();
+      else notify('Sign-out could not finish. Try again.', true);
+    } finally { setSigningOut(false); }
   }
+  const requestSignOut = () => { if (hasUnsentAnswer(drafts.current)) setSignOutOpen(true); else void signOut(); };
+  function establish(api: ApiClient, identity: Identity) {
+    const previous = currentAuth.current;
+    if (previous && previous.api !== api) {
+      previous.api.destroy(); void previous.client.cancelQueries(); previous.client.clear();
+      drafts.current.clear(); setPasswordOpen(false); setSignOutOpen(false);
+    }
+    if (previousSubject.current !== identity.subject) drafts.current.clear();
+    previousSubject.current = identity.subject;
+    const next = { api, identity, client: queryClient() };
+    currentAuth.current = next; setAuth(next); setSetupToken(null); notify('');
+  }
+  function sessionClient() {
+    const api: ApiClient = new ApiClient(null, () => { if (currentAuth.current?.api === api) endSession(true); });
+    return api;
+  }
+  async function signIn(email: string, password: string) {
+    const api = sessionClient();
+    try { establish(api, await api.request<Identity>('/auth/login', 'POST', { email, password })); }
+    catch (error) { api.destroy(); throw error; }
+  }
+  async function setupPassword(token: string, password: string) {
+    const api = sessionClient();
+    try { establish(api, await api.request<Identity>('/auth/setup-password', 'POST', { token, new_password: password })); }
+    catch (error) { api.destroy(); throw error; }
+  }
+  useEffect(() => {
+    if (setupPage.current) return;
+    let mounted = true;
+    const api = sessionClient();
+    void api.request<Identity>('/auth/session').then(identity => {
+      if (mounted) establish(api, identity);
+    }).catch(error => {
+      if (mounted && !(error instanceof ApiError && error.status === 401)) notify('Your session could not be restored. Sign in to reopen your saved work.', true);
+    }).finally(() => { if (mounted) setRestoring(false); });
+    return () => { mounted = false; if (currentAuth.current?.api !== api) api.destroy(); };
+  }, []);
   useEffect(() => () => { currentAuth.current?.api.destroy(); }, []);
   return <ErrorBoundary><BrowserRouter><a className="skip-link" href="#main-content">Skip to main content</a>
-    {auth ? <QueryClientProvider client={auth.client}><Authenticated auth={auth} notify={notify} drafts={drafts.current} signOut={requestSignOut} />
+    {setupToken !== null ? <SetPassword key={setupToken} token={setupToken} onComplete={setupPassword} onReturn={() => setSetupToken(null)} /> : restoring ? <main id="main-content" className="standalone"><Loading /></main> : auth ? <QueryClientProvider client={auth.client}><Authenticated auth={auth} notify={notify} drafts={drafts.current} signOut={requestSignOut} changePassword={() => setPasswordOpen(true)} />
       <div className={`global-notice ${message.error ? 'global-error' : ''}`} role={message.error ? 'alert' : 'status'} aria-live="polite">{message.text && <><span>{message.text}</span><button aria-label="Dismiss notice" onClick={() => notify('')}>×</button></>}</div>
       <Modal title="Sign out with an unsent answer?" open={signOutOpen} onClose={() => setSignOutOpen(false)}>
         <p>You have typed an answer that has not been sent. Signing out discards it. Submitted answers are already saved.</p>
-        <div className="toolbar"><Button variant="primary" onClick={() => setSignOutOpen(false)}>Keep writing</Button><Button variant="danger" onClick={() => endSession()}>Sign out and discard</Button></div>
+        <div className="toolbar"><Button variant="primary" onClick={() => setSignOutOpen(false)}>Keep writing</Button><Button variant="danger" disabled={signingOut} onClick={() => void signOut()}>{signingOut ? 'Signing out…' : 'Sign out and discard'}</Button></div>
       </Modal>
+      {passwordOpen && <ChangePassword api={auth.api} onClose={() => setPasswordOpen(false)} onSuccess={() => {
+        setPasswordOpen(false); notify('Password changed. Other devices have been signed out.');
+      }} />}
     </QueryClientProvider> : <SignIn onSignIn={signIn} message={message} />}
   </BrowserRouter></ErrorBoundary>;
 }

@@ -1,4 +1,4 @@
-export interface Identity { subject: string; name: string; admin: boolean }
+export interface Identity { subject: string; name: string; admin: boolean; email?: string }
 export interface Run { id: string; expert_name: string; since: string; until: string; status: string; can_manage: boolean }
 export const sections = ['trigger', 'diagnosis', 'steps', 'rollback', 'contacts', 'pitfalls', 'rationale'] as const;
 export type SectionName = typeof sections[number];

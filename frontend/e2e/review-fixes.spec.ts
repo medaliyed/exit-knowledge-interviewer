@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { ids, mockWorkspace, signIn, workspace } from './fixtures';
+import { ids, mockWorkspace, openAccountMenu, signIn, workspace } from './fixtures';
 
 // Does the page object to being unloaded right now? Dispatching a cancelable
 // beforeunload event mirrors what the browser does on refresh or tab close.
@@ -32,12 +32,14 @@ test('signing out with an unsent answer asks first and keeps the draft when decl
   await signIn(page, `${workspace}/interview/${ids.session}`);
   const answer = page.getByRole('textbox', { name: 'Your answer', exact: true });
   await answer.fill('Unsent synthetic text.');
+  await openAccountMenu(page);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Sign out with an unsent answer?' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Keep writing' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(answer).toHaveValue('Unsent synthetic text.');
+  await openAccountMenu(page);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Sign out and discard' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
@@ -79,6 +81,7 @@ test('an entry page highlights the tab it belongs to', async ({ page }) => {
   await mockWorkspace(page, { approvedPlan: true, approvedEntry: true });
   await signIn(page, `${workspace}/entries/${ids.entry}`);
   await expect(page.locator('.tabs a.active')).toHaveText('Review entries');
+  await openAccountMenu(page);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await signIn(page, `${workspace}/entries/${ids.entry}`, 'reader-token');
   await expect(page.locator('.tabs a.active')).toHaveText('Approved knowledge');

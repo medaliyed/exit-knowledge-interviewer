@@ -90,3 +90,29 @@ describe('authenticated API transport', () => {
     await expect(client.request('/runs')).rejects.toThrow(/session changed/i);
   });
 });
+
+describe('cookie session transport', () => {
+  it('sends same-origin cookies without a bearer header for JSON and SSE', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response('{"subject":"owner"}'))
+      .mockResolvedValueOnce(eventStream(['data: {"type":"done"}\n\n']));
+    vi.stubGlobal('fetch', fetch);
+    const client = new ApiClient(null, vi.fn());
+    await client.request('/auth/session');
+    await client.stream('/sessions/example/resume');
+    for (const [, options] of fetch.mock.calls) {
+      expect(options.credentials).toBe('same-origin');
+      expect(new Headers(options.headers).has('Authorization')).toBe(false);
+    }
+  });
+
+  it('accepts empty 204 responses when logging out or changing a password', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    await expect(new ApiClient(null, vi.fn()).request('/auth/logout', 'POST')).resolves.toBeUndefined();
+  });
+
+  it('retains throttling delay without retaining the submitted password', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"detail":"Too many attempts","code":"throttled"}', { status: 429, headers: { 'Retry-After': '120' } })));
+    await expect(new ApiClient(null, vi.fn()).request('/auth/login', 'POST', { email: 'n@example.com', password: 'private phrase 432' }))
+      .rejects.toMatchObject({ status: 429, code: 'throttled', retryAfter: 120, message: 'Too many attempts' });
+  });
+});

@@ -1,20 +1,20 @@
 import type { StreamEvent } from './types';
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public code?: string) {
+  constructor(public status: number, message: string, public code?: string, public retryAfter?: number) {
     super(message);
     this.name = 'ApiError';
   }
 }
 
-/** The token and logical submission identifiers live only in this tab's memory. */
+/** Browser sessions use an HttpOnly cookie. Optional bearer credentials stay in memory. */
 export class ApiClient {
   private controllers = new Set<AbortController>();
   private responseControllers = new WeakMap<Response, AbortController>();
   private messages = new Map<string, { fingerprint: string; id: string; unconfirmed: boolean }>();
   private destroyed = false;
 
-  constructor(private token: string, private onUnauthorized: () => void) {}
+  constructor(private token: string | null, private onUnauthorized: () => void) {}
 
   messageId(scope: string, payload: unknown): string {
     const fingerprint = JSON.stringify(payload);
@@ -59,15 +59,18 @@ export class ApiClient {
     const controller = new AbortController();
     this.controllers.add(controller);
     const headers = new Headers(options.headers);
-    headers.set('Authorization', `Bearer ${this.token}`);
+    if (this.token) headers.set('Authorization', `Bearer ${this.token}`);
+    else headers.delete('Authorization');
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
     try {
-      const response = await fetch(path, { ...options, headers, signal: controller.signal, cache: 'no-store' });
+      const response = await fetch(path, { ...options, headers, signal: controller.signal, cache: 'no-store', credentials: 'same-origin' });
       if (this.destroyed) throw new Error('The workspace session changed. Sign in again.');
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         if (response.status === 401) this.onUnauthorized();
-        throw new ApiError(response.status, typeof body.detail === 'string' ? body.detail : `The request could not finish (${response.status}).`, body.code);
+        const retryAfter = Number(response.headers.get('Retry-After'));
+        throw new ApiError(response.status, typeof body.detail === 'string' ? body.detail : `The request could not finish (${response.status}).`, body.code,
+          Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
       }
       this.responseControllers.set(response, controller);
       return response;
@@ -80,7 +83,7 @@ export class ApiClient {
   async request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
     const response = await this.response(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     try {
-      const value = await response.json();
+      const value = response.status === 204 ? undefined : await response.json();
       if (this.destroyed) throw new Error('The workspace session changed. Sign in again.');
       return value as T;
     } finally { this.release(response); }

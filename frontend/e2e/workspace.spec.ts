@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { expert, ids, mockWorkspace, signIn, workspace } from './fixtures';
+import { expert, ids, mockWorkspace, openAccountMenu, password, signIn, workspace } from './fixtures';
 
 const policyConsoleErrors = new WeakMap<Page, string[]>();
 type PolicyWindow = Window & { __ekiPolicyViolations?: string[] };
@@ -25,21 +25,25 @@ test.afterEach(async ({ page }) => {
   expect(await page.evaluate(() => (window as PolicyWindow).__ekiPolicyViolations ?? []), 'The production policy must allow all UI behavior').toEqual([]);
 });
 
-test('sign-in rejects an invalid token and accepts an authorized identity without browser storage', async ({ page }) => {
+test('sign-in rejects incorrect credentials and accepts an authorized identity without browser storage', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/');
-  await page.getByLabel('Access token', { exact: true }).fill('invalid-token');
-  await page.getByRole('button', { name: 'Open workspace' }).click();
-  await expect(page.getByRole('alert')).toContainText('This access token was not accepted');
-  await page.getByLabel('Access token', { exact: true }).fill('owner-token');
-  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByLabel('Email', { exact: true }).fill('nadia.ferrand@example.com');
+  await page.getByLabel('Password', { exact: true }).fill('incorrect-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Email or password is incorrect.');
+  await page.getByLabel('Email', { exact: true }).fill('nadia.ferrand@example.com');
+    await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Interview plans', exact: true })).toBeVisible();
   await expect(page.getByText(`Signed in as ${expert}`)).toBeVisible();
   expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length }))).toEqual({ local: 0, session: 0 });
+  await openAccountMenu(page);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
-  await page.getByLabel('Access token', { exact: true }).fill('reader-token');
-  await page.getByRole('button', { name: 'Open workspace' }).click();
+  await page.getByLabel('Email', { exact: true }).fill('reader@example.com');
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page).toHaveURL(`${workspace}/knowledge`);
   await expect(page.getByRole('link', { name: 'Interview plans', exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Review entries', exact: true })).toHaveCount(0);
@@ -184,8 +188,9 @@ for (const width of [360, 768, 1440]) {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
     await check();
-    await page.getByLabel('Access token', { exact: true }).fill('owner-token');
-    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByLabel('Email', { exact: true }).fill('nadia.ferrand@example.com');
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Interview plans', exact: true })).toBeVisible();
     await check();
     await page.getByRole('link', { name: /Continue interview/ }).click();
