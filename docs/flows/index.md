@@ -51,6 +51,11 @@ Things the flow pages flag. Each is cited on its page.
   reader flags are absent. [Phase 8](../plans/phase-8.md) proposes successor
   maintenance and freshness, pending implementation approval.
   ([review-entry.md](review-entry.md))
+- **Open questions do not lead to a focused follow-up session.** Ask also
+  retains no unanswered-question backlog. [Phase 9](../plans/phase-9.md) proposes
+  explicit gap intake and a second interview through the existing workflow,
+  pending implementation approval.
+  ([interview-turn.md](interview-turn.md), [search-and-ask.md](search-and-ask.md))
 - **Real-provider calls interrupted before their result is persisted may repeat**
   on recovery. Accepted messages and stored replies survive.
   ([message-delivery.md](message-delivery.md))

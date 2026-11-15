@@ -7,7 +7,7 @@ design is a fixed LangGraph workflow with ONE agentic node (the interviewer):
 Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable
 runbook. The expert prunes the plan and approves every entry.
 
-Full requirements (F1-F21), stack and phases: `docs/PDR.md`.
+Full requirements (F1-F22), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
 Architecture and diagrams: `docs/architecture.md`. Runtime flows, one page
 each with a sequence diagram: `docs/flows/`. How to run it: `README.md`;
@@ -539,3 +539,13 @@ It covers explicit successor ownership after capture, subject-based maintenance
 review, attributed maintainer edits, review-by dates and reader flags with
 owner triage. Its defaults and Q&A freshness policy require phase approval
 before implementation. Current expert-name approval checks remain in force.
+
+
+## Proposed Phase 9: follow-up interviews (F22)
+
+`docs/plans/phase-9.md` proposes a focused second interview while the original
+expert is reachable. Public open sections and explicitly saved unanswered Ask
+questions feed a reviewed plan, reusing the existing workflow with selected
+section scope and durable session-wide budgets. New answers produce private
+entry proposals and require explicit apply/re-approval with linked citations.
+This is planning only, separate from Phase 8's successor maintenance proposal.

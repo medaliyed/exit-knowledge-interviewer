@@ -76,6 +76,8 @@ again, retaining Nadia's original source history and Samir's maintenance history
 - Live-source change detection, automatic withdrawal on a flag, restoring old
   published versions during edits, or an archive of all historical entry bodies.
 - Reopening the interview or rewriting the original expert's answers after handover.
+  Follow-ups before departure are proposed separately in [Phase 9](phase-9.md);
+  its active sessions and accepted messages must settle before handover.
 
 ## 4. Proposed product decisions
 
