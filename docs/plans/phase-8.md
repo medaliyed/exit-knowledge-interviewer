@@ -396,5 +396,25 @@ make older entries immediately overdue and exclude them from Q&A until reviewed;
 they remain labelled in search and export. Inspect the maintenance queue after
 migration. Production databases were not migrated during implementation.
 
+### Post-implementation review fixes (2026-11-16)
+
+A review against this PDR found no authority or privacy defects, but tightened
+four behaviours and closed acceptance-test gaps (`tests/test_maintenance_gaps.py`):
+
+- **Corrected** now also requires an `edit`/`correction` decision recorded after
+  the report; withdrawing and re-approving unchanged content no longer qualifies.
+- The queue orders and filters by review date only for approved entries, so a
+  withdrawn entry's stale date cannot sort it ahead of current work. A combined
+  `due` filter (overdue or due soon) backs `eki review --run ID --due`, which now
+  includes due-soon entries and reads every queue page.
+- `maintenance.state()` accepts an injected clock for its overdue summary.
+- The CLI review prompt lists every action; the admin handover dialog shows the
+  current and destination owner before commit.
+
+New tests cover an unassigned run entering maintenance (A12/C7), CLI refusal for
+the former owner, a non-owner admin and a same-name subject (A2/H5), invalid
+and oversized reports over service and HTTP (A8), receipt revocation (A9), and
+racing review/withdraw and duplicate flag resolutions committing once (A11).
+
 See the [maintenance flow](../flows/maintenance.md) for routes, CLI usage and
 handover/review policy. Phase 9 follow-up interviews remain a separate proposal.

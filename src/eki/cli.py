@@ -143,7 +143,7 @@ def _parser() -> argparse.ArgumentParser:
     upkeep.add_argument("--run", type=UUID, required=True)
     upkeep.add_argument("--offset", type=int, default=0)
     upkeep.add_argument(
-        "--filter", choices=("all", "overdue", "due_soon", "flagged"), default="all"
+        "--filter", choices=("all", "overdue", "due_soon", "due", "flagged"), default="all"
     )
     review.add_argument("--review-as", help="reviewer's name (default: the run's expert)")
     handover = commands.add_parser("handover", help="transfer a run into maintenance")
@@ -668,7 +668,10 @@ def _review_entries(
                     )
                     print("Edited; approval is required.")
                     continue
-                print("Choose approve, reject, edit, skip, or quit.")
+                print(
+                    "Choose approve, review unchanged, withdraw, reject, edit, triage, skip, "
+                    "or quit."
+                )
             except (EOFError, KeyboardInterrupt):
                 print(f"Stopped. Continue with: eki review --plan {plan}")
                 return 0
@@ -694,14 +697,20 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
             "Bearer " + credential.get_secret_value()
         )
         with acting_as(principal), audit_context(user_id=principal.subject):
+            selected: list[dict[str, Any]] = []
+            offset: int | None = 0
             with books._connect() as conn:
-                selected = maintenance.queue(
-                    conn,
-                    arguments.run,
-                    principal,
-                    filter="overdue" if arguments.due else "all",
-                    limit=100,
-                )["entries"]
+                while offset is not None:
+                    page = maintenance.queue(
+                        conn,
+                        arguments.run,
+                        principal,
+                        filter="due" if arguments.due else "all",
+                        limit=100,
+                        offset=offset,
+                    )
+                    selected.extend(page["entries"])
+                    offset = page["next_offset"]
             for sid in dict.fromkeys(e["session_id"] for e in selected):
                 with books._connect() as conn:
                     session_row = interviews.load_session(conn, UUID(sid))

@@ -133,7 +133,9 @@ def transfer(
     return state(conn, run_id, actor)
 
 
-def state(conn: psycopg.Connection, run_id: UUID, principal: Principal) -> dict[str, Any]:
+def state(
+    conn: psycopg.Connection, run_id: UUID, principal: Principal, *, now: datetime | None = None
+) -> dict[str, Any]:
     from eki.access import require_manager
 
     require_manager(conn, run_id, principal)
@@ -151,7 +153,7 @@ def state(conn: psycopg.Connection, run_id: UUID, principal: Principal) -> dict[
         " FROM handovers WHERE run_id=%s ORDER BY id",
         (run_id,),
     ).fetchall()
-    today = datetime.now(UTC).date()
+    today = (now or datetime.now(UTC)).astimezone(UTC).date()
     counts = conn.execute(
         "SELECT count(*) FILTER(WHERE e.status='draft'),count(*) FILTER(WHERE "
         "e.status='approved' AND e.review_by<%s),coalesce(sum((SELECT count(*) "
@@ -207,27 +209,27 @@ def queue(
     active(conn, principal)
     require_manager(conn, run_id, principal)
     if (
-        filter not in ("all", "overdue", "due_soon", "flagged")
+        filter not in ("all", "overdue", "due_soon", "due", "flagged")
         or not 1 <= limit <= 100
         or offset < 0
     ):
         raise ValueError("invalid maintenance filter or page")
     today = (now or datetime.now(UTC)).astimezone(UTC).date()
+    # A withdrawn or rejected entry keeps its old review_by; only approved entries are due.
     rows = conn.execute(
-        "SELECT e.id,e.session_id,e.title,e.status,e.version,(SELECT "
-        "min(f.created_at) FROM entry_flags f WHERE f.entry_id=e.id AND "
-        "f.resolution IS NULL) AS oldest_flag FROM runbook_entries e JOIN "
-        "sessions s ON s.id=e.session_id JOIN interview_plans p ON p.id=s.plan_id"
-        " WHERE p.run_id=%s AND (%s='all' OR (%s='flagged' AND EXISTS(SELECT 1 "
-        "FROM entry_flags f WHERE f.entry_id=e.id AND f.resolution IS NULL)) OR "
-        "(e.status='approved' AND ((%s='overdue' AND e.review_by<%s) OR "
-        "(%s='due_soon' AND e.review_by BETWEEN %s AND %s::date+14)))) ORDER BY "
-        "CASE WHEN e.status='approved' AND e.review_by<%s THEN 0 WHEN "
-        "EXISTS(SELECT 1 FROM entry_flags f WHERE f.entry_id=e.id AND "
-        "f.resolution IS NULL) THEN 1 ELSE 2 END, CASE WHEN e.review_by<%s THEN "
-        "e.review_by END,oldest_flag NULLS LAST,e.review_by NULLS LAST,e.id LIMIT"
-        " %s OFFSET %s",
-        (run_id, filter, filter, filter, today, filter, today, today, today, today, limit, offset),
+        "WITH q AS (SELECT e.id,e.session_id,e.title,e.status,e.version,CASE WHEN "
+        "e.status='approved' THEN e.review_by END AS due,(SELECT min(f.created_at) "
+        "FROM entry_flags f WHERE f.entry_id=e.id AND f.resolution IS NULL) AS "
+        "oldest_flag FROM runbook_entries e JOIN sessions s ON s.id=e.session_id "
+        "JOIN interview_plans p ON p.id=s.plan_id WHERE p.run_id=%(run)s) "
+        "SELECT id,session_id,title,status,version FROM q WHERE %(f)s='all' OR "
+        "(%(f)s='flagged' AND oldest_flag IS NOT NULL) OR (%(f)s IN ('overdue','due')"
+        " AND due<%(today)s) OR (%(f)s IN ('due_soon','due') AND due BETWEEN "
+        "%(today)s AND %(today)s::date+14) ORDER BY CASE WHEN due<%(today)s THEN 0 "
+        "WHEN oldest_flag IS NOT NULL THEN 1 ELSE 2 END,CASE WHEN due<%(today)s "
+        "THEN due END,oldest_flag NULLS LAST,due NULLS LAST,id LIMIT %(limit)s "
+        "OFFSET %(offset)s",
+        {"run": run_id, "f": filter, "today": today, "limit": limit, "offset": offset},
     ).fetchall()
     return {
         "entries": [

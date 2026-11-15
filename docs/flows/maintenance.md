@@ -100,7 +100,9 @@ other reporters or interview content. Owner/admin triage views remain private.
 
 The owner resolves reports explicitly:
 
-- **Corrected:** requires a later approved content version.
+- **Corrected:** requires a content edit (or transcript correction) recorded after
+  the report, then a later approved version. Withdrawing and re-approving
+  unchanged content raises the version but does not count as a correction.
 - **Confirmed current:** requires an unchanged review of this approved version
   performed after the report. A decision cursor enforces order even when two
   events have the same timestamp.
@@ -121,7 +123,8 @@ uv run eki maintenance --run RUN_ID --filter flagged --offset 50
 uv run eki handover --run RUN_ID --to samir \
   --expected-owner nadia --expected-run-revision REVISION --reason "Expert departure"
 # For an unassigned run, use --unassigned instead of --expected-owner.
-uv run eki review --run RUN_ID --due                    # requires the reviewer's EKI_API_TOKEN
+uv run eki maintenance --run RUN_ID --filter due        # overdue or due within 14 days
+uv run eki review --run RUN_ID --due                    # overdue + due soon; requires the reviewer's EKI_API_TOKEN
 uv run eki review --plan PLAN_ID --review-by 2027-02-01  # choose an appropriate future date
 ```
 

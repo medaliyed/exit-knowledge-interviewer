@@ -556,13 +556,15 @@ draft explicitly. Review/flag metadata do not invalidate embeddings.
 Reader flags use a request UUID, expected approved version, redacted plain text
 and a durable ten-per-minute-per-subject limit. Own receipts stay safe while an
 entry is draft; owner/admin triage notes and other reporters remain private.
-Resolution is explicit: corrected requires a later approved version, confirmed
+Resolution is explicit: corrected requires a content edit after the report and
+a later approved version (withdraw/re-approve alone does not count), confirmed
 current requires a review after the report, dismissal never renews a date.
 Neither handover nor review/approval automatically closes flags.
 
-`eki maintenance --run ID [--filter overdue|due_soon|flagged] [--offset N]`
-inspects state/queue locally. CLI entry review now requires `EKI_API_TOKEN`;
-`eki review --run ID --due`, `--review-by DATE` and unchanged/withdraw/triage
+`eki maintenance --run ID [--filter overdue|due_soon|due|flagged] [--offset N]`
+inspects state/queue locally (`due` = overdue or due soon; review dates order
+approved entries only). CLI entry review now requires `EKI_API_TOKEN`;
+`eki review --run ID --due` (overdue and due soon, all pages), `--review-by DATE` and unchanged/withdraw/triage
 choices use the same authority and optimistic revisions as HTTP. No model is
 required. Legacy approval dates are backfilled from actual approval plus 90
 days; old content may therefore be overdue immediately. Deploy the migrations

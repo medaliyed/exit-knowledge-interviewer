@@ -102,7 +102,9 @@ test('administrator reviews a concrete handover before committing it', async ({ 
   await page.goto(`${workspace}/maintenance`);
   await page.getByRole('button', { name: 'Transfer responsibility' }).click();
   const dialog = page.getByRole('dialog', { name: 'Transfer responsibility?' });
+  await expect(dialog.getByText('a new owner (enter a subject below)', { exact: false })).toBeVisible();
   await dialog.getByLabel('New owner subject').fill('lee'); await dialog.getByLabel('Reason for transfer').fill('Owner rotation');
+  await expect(dialog.getByText(/^From .+ to lee\.$/)).toBeVisible();
   expect(mock.requests.filter(item => item.path.endsWith('/handover'))).toHaveLength(0);
   await dialog.getByRole('button', { name: 'Transfer and start maintenance' }).click();
   await expect(dialog).toHaveCount(0); await expect(page.getByText('Current owner: lee.', { exact: false })).toBeVisible();

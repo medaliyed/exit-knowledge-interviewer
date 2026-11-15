@@ -252,8 +252,18 @@ class FeedbackService:
                 raise ConflictError("flag has already been resolved")
             if resolution != "dismissed" and entry.entry.status != "approved":
                 raise ConflictError("approve the reviewed entry before resolving this flag")
-            if resolution == "corrected" and entry.version <= flag["observed_version"]:
-                raise ConflictError("correction requires a later approved entry version")
+            if resolution == "corrected":
+                # Withdrawing and re-approving bumps the version without changing content;
+                # a correction must follow a content edit made after this report.
+                edited = conn.execute(
+                    "SELECT 1 FROM entry_decisions WHERE entry_id=%s AND action IN "
+                    "('edit','correction') AND id>%s",
+                    (entry.entry.id, flag["decision_cursor"]),
+                ).fetchone()
+                if entry.version <= flag["observed_version"] or not edited:
+                    raise ConflictError(
+                        "correction requires an edit after this report and a later approved version"
+                    )
             if resolution == "confirmed_current":
                 reviewed = conn.execute(
                     "SELECT 1 FROM entry_decisions WHERE entry_id=%s AND action='review' AND "
