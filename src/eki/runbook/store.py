@@ -9,10 +9,11 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from eki.audit import AuditDetails, append_event
+from eki.auth import current_principal
 from eki.ingest.redaction import RedactedText
 from eki.runbook.models import RunbookEntry
 
-DecisionAction = Literal["approve", "reject", "edit", "correction"]
+DecisionAction = Literal["approve", "reject", "edit", "correction", "review", "withdraw"]
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,8 @@ class Decision:
     who: str
     at: datetime
     reason: str | None
+    actor_subject: str | None = None
+    version: int | None = None
 
 
 def save_entry(
@@ -117,15 +120,26 @@ def add_decision(
             AuditDetails(operation=action, target_id=UUID(entry_id), version=row[1]),
             run_id=row[0],
         )
+    principal = current_principal()
     conn.execute(
-        "INSERT INTO entry_decisions (entry_id, action, who, at, reason) VALUES (%s,%s,%s,%s,%s)",
-        (entry_id, action, who, at, reason),
+        "INSERT INTO entry_decisions (entry_id, action, who, at, "
+        "reason,actor_subject,version) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        (
+            entry_id,
+            action,
+            who,
+            at,
+            reason,
+            None if principal is None else principal.subject,
+            None if row is None else row[1],
+        ),
     )
 
 
 def decisions(conn: psycopg.Connection, entry_id: str) -> tuple[Decision, ...]:
     rows = conn.execute(
-        "SELECT action, who, at, reason FROM entry_decisions WHERE entry_id = %s ORDER BY id",
+        "SELECT action, who, at, reason, actor_subject, version FROM "
+        "entry_decisions WHERE entry_id = %s ORDER BY id",
         (entry_id,),
     ).fetchall()
     return tuple(Decision(*row) for row in rows)

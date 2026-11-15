@@ -3,6 +3,9 @@
 import hashlib
 import hmac
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -82,3 +85,21 @@ class TokenAuthenticator:
         if found is None:
             raise AuthenticationError("valid bearer credentials required")
         return found
+
+
+# Request-local identity also reaches shared services and asyncio.to_thread calls.
+
+_current: ContextVar[Principal | None] = ContextVar("eki_principal", default=None)
+
+
+def current_principal() -> Principal | None:
+    return _current.get()
+
+
+@contextmanager
+def acting_as(principal: Principal) -> Iterator[None]:
+    token = _current.set(principal)
+    try:
+        yield
+    finally:
+        _current.reset(token)

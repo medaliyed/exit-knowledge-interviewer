@@ -94,7 +94,7 @@ def _sources(claim_citations: Sequence[object], turns: dict[int, Turn]) -> list[
         if not isinstance(citation, InterviewTurnCitation):
             return None
         turn = turns.get(citation.turn_index)
-        if turn is None or turn.confidential or turn.speaker != "expert":
+        if turn is None or turn.confidential or turn.speaker not in ("expert", "maintainer"):
             return None
         texts.append(turn.text)
         asked = turns.get(turn.answers) if turn.answers is not None else None

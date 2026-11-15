@@ -5,7 +5,7 @@ from uuid import UUID
 import psycopg
 
 from eki.audit import AuditDetails, append_event
-from eki.auth import ForbiddenError, Principal
+from eki.auth import Principal
 from eki.errors import NotFoundError
 from eki.runbook.models import RunbookEntry
 from eki.runbook.store import StoredEntry
@@ -55,20 +55,34 @@ def approved_entry(conn: psycopg.Connection, entry_id: UUID, principal: Principa
     return StoredEntry(RunbookEntry.model_validate(row[0]), row[1], row[2], None)
 
 
-def set_owner(conn: psycopg.Connection, run_id: UUID, subject: str, principal: Principal) -> None:
-    if not principal.admin:
-        raise ForbiddenError("only an administrator can assign ownership")
-    if not subject.strip() or len(subject) > 200:
-        raise ValueError("invalid subject")
+def set_owner(
+    conn: psycopg.Connection,
+    run_id: UUID,
+    subject: str,
+    principal: Principal,
+    *,
+    expected_owner: str | None = None,
+    expected_revision: int | None = None,
+    reason: str = "Owner assignment",
+    identities: tuple[Principal, ...] | None = None,
+) -> None:
+    from eki import maintenance
+
     with conn.transaction():
-        row = conn.execute(
-            "UPDATE ingest_runs SET owner_subject = %s WHERE id = %s RETURNING id",
-            (subject.strip(), run_id),
-        ).fetchone()
-        if row is None:
-            raise NotFoundError("run not found")
-        append_event(
-            conn, "access", "completed", AuditDetails(operation="set_owner"), run_id=run_id
+        owner, started, revision, _ = maintenance.lock_run(conn, run_id)
+        if started and expected_revision is None:
+            raise ValueError("maintenance transfer requires expected owner and run revision")
+        maintenance.transfer(
+            conn,
+            run_id,
+            subject,
+            principal,
+            expected_owner=owner if expected_revision is None else expected_owner,
+            expected_revision=revision if expected_revision is None else expected_revision,
+            reason=reason,
+            identities=identities
+            if identities is not None
+            else (() if started else (Principal(subject, subject),)),
         )
 
 

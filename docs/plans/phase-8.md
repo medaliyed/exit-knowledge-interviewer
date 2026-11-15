@@ -1,8 +1,8 @@
 # Phase 8 PDR: knowledge maintenance after the expert leaves
 
-**Status:** proposed 2026-11-15, at the owner's request. Planning only;
-implementation has not started. Defaults and behaviour below are proposals for
-approval, not descriptions of the current product.
+**Status:** implementation approved 2026-11-15 by the owner's request to
+continue Phase 8. Work is in progress through deliverables 8a–8d; verification
+and remaining acceptance will be recorded in Outcome.
 
 **Parent:** [Project PDR](../PDR.md), new requirement **F21**. Extends F10
 (review and approval), F11/F12 (retrieval and export), F13 (audit), F16 (browser

@@ -95,10 +95,12 @@ class Session(_Model):
 
 
 class Turn(_Model):
+    author_subject: str | None = None
+    author_name: str | None = None
     ordinal: int
     """Position in the session's transcript, from 1."""
     topic_id: str | None
-    speaker: Literal["interviewer", "expert"]
+    speaker: Literal["interviewer", "expert", "maintainer"]
     kind: Literal["question", "answer", "skip", "correction", "edit"]
     text: RedactedText
     confidential: bool = False
@@ -111,6 +113,13 @@ class Turn(_Model):
 
     @model_validator(mode="after")
     def _check(self) -> Self:
+        if self.speaker == "maintainer" and (
+            self.kind != "edit"
+            or self.confidential
+            or not self.author_subject
+            or not self.author_name
+        ):
+            raise ValueError("maintainer edits need attributed public provenance")
         if self.speaker == "interviewer" and (self.kind != "question" or self.confidential):
             raise ValueError("the interviewer only asks questions, and never confidentially")
         if self.speaker == "expert" and self.kind == "question":

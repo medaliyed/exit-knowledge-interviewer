@@ -25,6 +25,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 from eki import __version__, access, accounts
 from eki.api import access_log
 from eki.api.accounts import install_accounts
+from eki.api.maintenance import install_maintenance
 from eki.api.security import identity, install_security
 from eki.audit import AuditError, list_events
 from eki.auth import Authenticator, ForbiddenError, TokenAuthenticator
@@ -127,6 +128,9 @@ class Readers(_Body):
 
 class Owner(_Body):
     subject: str
+    expected_owner_subject: str | None = None
+    expected_run_revision: int | None = None
+    reason: str = "Owner assignment"
 
 
 class EntryEdit(_Body):
@@ -243,6 +247,9 @@ def create_app(
     install_security(app, get_authenticator, database_dsn, configuration)
     install_accounts(app, database_dsn, configuration)
     install_browser(app, database_dsn)
+    install_maintenance(
+        app, database_dsn, lambda: tuple(getattr(get_authenticator(), "identities", ()))
+    )
 
     def actor(request: Request, name: str) -> None:
         if name.strip() != identity(request).name:
@@ -567,7 +574,16 @@ def create_app(
     ) -> dict[str, object]:
         def work() -> dict[str, object]:
             with books._connect() as conn:
-                access.set_owner(conn, run_id, body.subject, identity(request))
+                access.set_owner(
+                    conn,
+                    run_id,
+                    body.subject,
+                    identity(request),
+                    expected_owner=body.expected_owner_subject,
+                    expected_revision=body.expected_run_revision,
+                    reason=body.reason,
+                    identities=tuple(getattr(get_authenticator(), "identities", ())),
+                )
                 return access.readers(conn, run_id, identity(request))
 
         return await operation(work)

@@ -9,9 +9,9 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from eki import access, accounts
+from eki import access, accounts, maintenance
 from eki.audit import audit_context
-from eki.auth import AuthenticationError, Authenticator, Principal
+from eki.auth import AuthenticationError, Authenticator, Principal, acting_as
 from eki.config import ConfigError, Settings
 from eki.errors import NotFoundError
 from eki.graph.workflow import db
@@ -43,13 +43,17 @@ def install_security(
     dsn: Callable[[], str],
     configuration: Callable[[], Settings],
 ) -> None:
+    def check_active(principal: Principal) -> None:
+        with psycopg.connect(dsn(), autocommit=True) as conn:
+            maintenance.active(conn, principal)
+
     @app.middleware("http")
     async def secure(
         request: Request, following: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         parts = request.url.path.strip("/").split("/")
         is_auth = parts[0] == "auth"
-        if parts[0] not in ("runs", "plans", "sessions", "entries", "runbook", "auth"):
+        if parts[0] not in ("runs", "plans", "sessions", "entries", "runbook", "auth", "flags"):
             return await following(request)
 
         def private(response: Response) -> Response:
@@ -108,9 +112,16 @@ def install_security(
                 request.state.authentication = "cookie"
                 if request.method in UNSAFE_METHODS and not csrf_valid():
                     return rejected(403, "Request origin is not allowed", "csrf_rejected")
+            if not (is_auth and request.method == "GET"):
+                await db(lambda: check_active(principal))
             request.state.principal = principal
             request.state.runbook_reader = False
-            if not is_auth and not principal.admin and parts[0] != "runbook" and len(parts) > 1:
+            if (
+                not is_auth
+                and not principal.admin
+                and parts[0] not in ("runbook", "flags")
+                and len(parts) > 1
+            ):
                 try:
                     resource_id = UUID(parts[1])
                 except ValueError:
@@ -145,6 +156,6 @@ def install_security(
             return rejected(503, "authentication is temporarily unavailable", "auth_unavailable")
         except NotFoundError:
             return rejected(404, "resource not found", "not_found")
-        with audit_context(user_id=principal.subject, correlation_id=uuid4()):
+        with acting_as(principal), audit_context(user_id=principal.subject, correlation_id=uuid4()):
             response = await following(request)
         return private(response)

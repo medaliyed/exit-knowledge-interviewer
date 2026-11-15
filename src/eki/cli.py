@@ -27,7 +27,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 
-from eki import access, accounts
+from eki import access, accounts, maintenance
 from eki.audit import (
     AuditDetails,
     AuditError,
@@ -37,7 +37,7 @@ from eki.audit import (
     list_auth_events,
     list_events,
 )
-from eki.auth import AuthenticationError, Principal, TokenAuthenticator
+from eki.auth import AuthenticationError, Principal, TokenAuthenticator, acting_as
 from eki.config import ConfigError, get_settings, work_domains
 from eki.db import connect, migrate
 from eki.graph.workflow import setup_checkpoints
@@ -129,9 +129,20 @@ def _parser() -> argparse.ArgumentParser:
     review = commands.add_parser("review", help="review draft runbook entries; quit and resume")
     review.add_argument("--plan", type=UUID, required=True)
     review.add_argument("--review-as", help="reviewer's name (default: the run's expert)")
+    handover = commands.add_parser("handover", help="transfer a run into maintenance")
+    handover.add_argument("--run", type=UUID, required=True)
+    handover.add_argument("--to", required=True)
+    ownership = handover.add_mutually_exclusive_group(required=True)
+    ownership.add_argument("--expected-owner")
+    ownership.add_argument("--unassigned", action="store_true")
+    handover.add_argument("--expected-run-revision", type=int, required=True)
+    handover.add_argument("--reason", required=True)
     permissions = commands.add_parser("access", help="set run ownership/readers (local operator)")
     permissions.add_argument("--run", type=UUID, required=True)
     permissions.add_argument("--owner")
+    permissions.add_argument("--expected-owner")
+    permissions.add_argument("--expected-run-revision", type=int)
+    permissions.add_argument("--reason", default="Owner assignment")
     permissions.add_argument(
         "--readers", nargs="*", default=None, help="replace reader subjects; empty revokes all"
     )
@@ -617,7 +628,6 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
             "SELECT expert_name FROM ingest_runs WHERE id = %s", (plan.run_id,)
         ).fetchone()
         assert row is not None  # noqa: S101 - plan references this run
-        expert = row[0]
     if arguments.command == "entries":
         entries = books.list(session)
         unsupported = books.unsupported(session)
@@ -630,7 +640,18 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
         if not entries:
             print("No entries yet. Finish the interview first.")
         return 0
-    return _review_entries(books, session, plan.id, arguments.review_as or expert)
+    credential = settings.api_token
+    if credential is None:
+        raise AuthenticationError("set EKI_API_TOKEN to review entries")
+    principal = TokenAuthenticator(settings.api_tokens.get_secret_value()).authenticate(
+        "Bearer " + credential.get_secret_value()
+    )
+    with acting_as(principal), audit_context(user_id=principal.subject):
+        with books._connect() as conn:
+            maintenance.reviewer(conn, plan.run_id, principal.name)
+        if arguments.review_as and arguments.review_as != principal.name:
+            raise ValueError("--review-as cannot impersonate another reviewer")
+        return _review_entries(books, session, plan.id, principal.name)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -718,10 +739,37 @@ def _main(argv: list[str] | None = None) -> int:
                     )
                 )
                 return 0
+            if arguments.command == "handover":
+                state = maintenance.transfer(
+                    conn,
+                    arguments.run,
+                    arguments.to,
+                    Principal("local-operator", "Local operator", True),
+                    expected_owner=arguments.expected_owner,
+                    expected_revision=arguments.expected_run_revision,
+                    reason=arguments.reason,
+                    start=True,
+                    identities=TokenAuthenticator(
+                        get_settings().api_tokens.get_secret_value()
+                    ).identities,
+                )
+                print(json.dumps(state, default=str))
+                return 0
             if arguments.command == "access":
                 operator = Principal("local-operator", "Local operator", True)
                 if arguments.owner is not None:
-                    access.set_owner(conn, arguments.run, arguments.owner, operator)
+                    access.set_owner(
+                        conn,
+                        arguments.run,
+                        arguments.owner,
+                        operator,
+                        expected_owner=arguments.expected_owner,
+                        expected_revision=arguments.expected_run_revision,
+                        reason=arguments.reason,
+                        identities=TokenAuthenticator(
+                            get_settings().api_tokens.get_secret_value()
+                        ).identities,
+                    )
                 if arguments.readers is not None:
                     access.set_readers(conn, arguments.run, arguments.readers, operator)
                 print(json.dumps(access.readers(conn, arguments.run, operator)))

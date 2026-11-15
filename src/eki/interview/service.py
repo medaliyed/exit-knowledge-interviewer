@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 import psycopg
 from langgraph.types import Command
 
+from eki import maintenance
 from eki.audit import AuditedModel, AuditError, AuditRecorder, Operation
 from eki.config import Settings, model_name, work_domains
 from eki.errors import ConflictError as ConflictError
@@ -140,6 +141,7 @@ class InterviewService:
         """Start a new generation or resume a known one, retaining validated topic results."""
         plan_id = generation_id or uuid4()
         with self._connect() as conn:
+            await db(maintenance.capture, conn, run_id)
             if not await db(store.run_exists, conn, run_id):
                 raise NotFoundError(f"no completed run {run_id}")
             owner = await db(generation.owner_run, conn, plan_id)
@@ -206,6 +208,12 @@ class InterviewService:
 
         def work() -> InterviewPlan:
             with self._connect() as conn, conn.transaction():
+                row = conn.execute(
+                    "SELECT run_id FROM interview_plans WHERE id=%s", (plan_id,)
+                ).fetchone()
+                if row is None:
+                    raise NotFoundError("plan not found")
+                maintenance.capture(conn, row[0])
                 conn.execute("SELECT 1 FROM interview_plans WHERE id = %s FOR UPDATE", (plan_id,))
                 plan = store.load_plan(conn, plan_id)
                 if plan is None:
@@ -219,6 +227,14 @@ class InterviewService:
     async def approve(self, plan_id: UUID, by: str) -> SessionView:
         """Freeze the plan, open its session and ask the first question."""
         with self._connect() as conn:
+            plan_run = await db(
+                lambda: conn.execute(
+                    "SELECT run_id FROM interview_plans WHERE id=%s", (plan_id,)
+                ).fetchone()
+            )
+            if plan_run is None:
+                raise NotFoundError("plan not found")
+            await db(maintenance.capture, conn, plan_run[0])
             if not await db(store.try_lock, conn, plan_id):
                 raise BusyError("the plan is being changed by someone else")
             plan = await db(store.load_plan, conn, plan_id)
@@ -314,6 +330,7 @@ class InterviewService:
             session = await db(store.load_session, conn, session_id)
             if session is None:
                 raise NotFoundError(f"no session {session_id}")
+            await db(maintenance.capture, conn, session.run_id)
             if not await db(store.try_lock, conn, session.plan_id):
                 raise BusyError("another message for this session is being handled")
             return conn, session

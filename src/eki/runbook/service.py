@@ -7,6 +7,8 @@ from uuid import UUID
 
 import psycopg
 
+from eki import maintenance
+from eki.auth import current_principal
 from eki.errors import ConflictError, NotFoundError
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
@@ -39,7 +41,7 @@ def validate_sources(conn: psycopg.Connection, session_id: UUID, entry: RunbookE
                 turn = interviews.load_turn(conn, session_id, citation.turn_index)
                 if (
                     turn is None
-                    or turn.speaker != "expert"
+                    or turn.speaker not in ("expert", "maintainer")
                     or turn.kind == "skip"
                     or turn.confidential
                     or turn.topic_id != entry.topic_id
@@ -103,6 +105,7 @@ class RunbookService:
         self, session_id: UUID, *, overwrite_edits: bool = False
     ) -> tuple[store.StoredEntry, ...]:
         with self._connect() as conn:
+            maintenance.capture(conn, maintenance_run(conn, session_id))
             return synthesise(conn, session_id, overwrite_edits=overwrite_edits)
 
     def list(self, session_id: UUID) -> tuple[store.StoredEntry, ...]:
@@ -154,20 +157,14 @@ class RunbookService:
             previous = store.load_entry(conn, str(entry_id))
             if previous is None:
                 raise NotFoundError(f"no entry {entry_id}")
-            # Lock session first everywhere, including edits, synthesis and corrections.
+            run_id = maintenance_run(conn, previous.session_id)
+            expert, _ = maintenance.reviewer(conn, run_id, by)
+            # Acquire run before session and entry for every maintenance mutation.
             conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (previous.session_id,))
             previous = store.load_entry(conn, str(entry_id), lock=True)
             if previous is None:
                 raise NotFoundError(f"no entry {entry_id}")
-            row = conn.execute(
-                "SELECT r.expert_name FROM ingest_runs r JOIN interview_plans p ON p.run_id = r.id "
-                "JOIN sessions s ON s.plan_id = p.id WHERE s.id = %s",
-                (previous.session_id,),
-            ).fetchone()
-            if row is None:
-                raise NotFoundError("the entry's session no longer exists")
-            review.check_expert(by, row[0])
-            changed = apply(conn, previous, row[0])
+            changed = apply(conn, previous, expert)
             validate_sources(conn, previous.session_id, changed)
             result = store.save_entry(
                 conn,
@@ -235,6 +232,17 @@ class RunbookService:
             ordinal = interviews.add_expert_turn(
                 conn, previous.session_id, previous.entry.topic_id, "edit", text
             )
+            principal = current_principal()
+            mode = conn.execute(
+                "SELECT maintenance_started_at FROM ingest_runs WHERE id=%s",
+                (maintenance_run(conn, previous.session_id),),
+            ).fetchone()
+            if mode and mode[0] and principal:
+                conn.execute(
+                    "UPDATE turns SET speaker='maintainer',author_subject=%s,author_name=%s "
+                    "WHERE session_id=%s AND ordinal=%s",
+                    (principal.subject, self._clean(principal.name), previous.session_id, ordinal),
+                )
             citation = InterviewTurnCitation(
                 session_id=str(previous.session_id), turn_index=ordinal
             )
@@ -300,3 +308,13 @@ def correct_entries(
             validate_sources(conn, session_id, entry)
             store.save_entry(conn, session_id, entry)
             store.add_decision(conn, entry.id, "correction", by, at)
+
+
+def maintenance_run(conn: psycopg.Connection, session_id: UUID) -> UUID:
+    row = conn.execute(
+        "SELECT p.run_id FROM sessions s JOIN interview_plans p ON p.id=s.plan_id WHERE s.id=%s",
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        raise NotFoundError("session not found")
+    return UUID(str(row[0]))

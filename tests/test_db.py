@@ -39,6 +39,9 @@ TABLES = {
     "interview_replies",
     "plan_generations",
     "generation_topics",
+    "handovers",
+    "entry_flags",
+    "flag_throttle",
 }
 MIGRATIONS = [
     "0001_init.sql",
@@ -53,6 +56,7 @@ MIGRATIONS = [
     "0010_artifact_model.sql",
     "0011_generation.sql",
     "0012_accounts.sql",
+    "0013_maintenance.sql",
 ]
 
 

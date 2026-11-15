@@ -251,7 +251,8 @@ def add_expert_turn(
 
 def load_turns(conn: psycopg.Connection, session_id: UUID) -> tuple[Turn, ...]:
     rows = conn.execute(
-        "SELECT ordinal, topic_id, speaker, kind, text, confidential, section, answers, corrects "
+        "SELECT ordinal, topic_id, speaker, kind, text, confidential, section, "
+        "answers, corrects, author_subject, author_name "
         "FROM turns WHERE session_id = %s ORDER BY ordinal",
         (session_id,),
     ).fetchall()
@@ -266,6 +267,8 @@ def load_turns(conn: psycopg.Connection, session_id: UUID) -> tuple[Turn, ...]:
             section=r[6],
             answers=r[7],
             corrects=r[8],
+            author_subject=r[9],
+            author_name=r[10],
         )
         for r in rows
     )
