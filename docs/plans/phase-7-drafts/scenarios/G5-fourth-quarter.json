@@ -1,0 +1,33 @@
+{
+  "id": "G5-fourth-quarter",
+  "title": "Rejected a pull request over an undocumented fourth-quarter code path.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "PR-020"
+  ],
+  "script": {
+    "follow_ups": {},
+    "freeform": null,
+    "initial": {
+      "contacts": "Finance operations own the fiscal calendar.",
+      "diagnosis": "Check whether the change touches the period table.",
+      "pitfalls": "It only fails once a year, at the fourth-quarter close.",
+      "rationale": "The fourth quarter has a 53rd week in some years and a plain rollover skips it.",
+      "rollback": "Revert the change before the next quarter close.",
+      "steps": "Keep the special-cased period table; test with the fourth-quarter fixtures.",
+      "trigger": "Someone changes the fiscal period rollover in the posting job."
+    }
+  },
+  "question_cap": 30
+}

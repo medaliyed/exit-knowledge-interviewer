@@ -1,0 +1,39 @@
+{
+  "id": "G1-batch-restart",
+  "title": "Fixes billing-batch failures by restarting ledger-db replicas first; never says why.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "TCK-0006",
+    "TCK-0026",
+    "TCK-0045",
+    "TCK-0075",
+    "TCK-0103"
+  ],
+  "script": {
+    "follow_ups": {
+      "steps": "Replicas first, always, then the workers. The ticket note that says workers first is wrong."
+    },
+    "freeform": null,
+    "initial": {
+      "contacts": "Platform on-call. Finance only if the run finishes after 06:00 UTC.",
+      "diagnosis": "Check the worker log for the stale snapshot line and replica lag.",
+      "pitfalls": "Re-running without the restart fails the same way and wastes an hour.",
+      "rationale": "The batch reads from the replicas, and after a failed run they keep serving the stale snapshot until they are restarted.",
+      "rollback": "Nothing to roll back; the failed run posts nothing.",
+      "steps": "Restart the ledger-db replicas, wait for them to catch up, re-run the batch.",
+      "trigger": "billing-batch aborts in the posting phase with 'ledger snapshot stale'."
+    }
+  },
+  "question_cap": 30
+}

@@ -1,0 +1,45 @@
+{
+  "scenario": "G1-batch-restart",
+  "noted": {
+    "trigger": [
+      "posting phase",
+      "ledger snapshot stale"
+    ],
+    "diagnosis": [
+      "worker log",
+      "replica lag"
+    ],
+    "steps": [
+      "ledger-db replicas",
+      "catch up",
+      "re-run"
+    ],
+    "rollback": [
+      "nothing to roll back",
+      "posts nothing"
+    ],
+    "contacts": [
+      "platform on-call",
+      "06:00 UTC"
+    ],
+    "pitfalls": [
+      "without the restart",
+      "wastes an hour"
+    ],
+    "rationale": [
+      "reads from the replicas",
+      "stale snapshot"
+    ]
+  },
+  "open": [],
+  "follow_ups": [],
+  "mentions": [
+    [
+      "TCK-0026",
+      "TCK-0075"
+    ]
+  ],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

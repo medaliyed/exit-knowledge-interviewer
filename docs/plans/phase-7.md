@@ -1,9 +1,10 @@
 # Phase 7 PDR: golden interview evals
 
-**Status:** proposed 2026-11-15; implementation started the same day on the
-owner's request ("create a PDR for this feature, update the docs, then
-implement"). Verification evidence goes in the Outcome section when the phase
-is done.
+**Status:** implemented 2026-11-15. Implementation started on the owner's
+request and continued after reviewing the existing 7a work and this PDR.
+Deterministic and scripted database acceptance is complete; owner adoption of
+the drafts and the first paid model run remain pending. Evidence is recorded
+in Outcome below.
 
 **Parent:** [Project PDR](../PDR.md), new requirement **F20**. It builds on the
 opt-in live checks of F15 ([phase-5-live.md](phase-5-live.md)) and on the
@@ -121,7 +122,7 @@ never reads `answer_key.json` or `expert_answers.json`.
 | P1 | The scorecard is printed as one table per scenario (check, result, pass) and a final line `N of M passed`. |
 | P2 | The JSON report records: time, git revision, model names, settings that affect the interview (limits, timeout), per scenario every check with its numbers, question count, model calls, input and output tokens, duration, the transcript (questions and the simulated answers) and the notes and open items. |
 | P3 | The report contains redacted text only, as the session view does. The scripted answers are synthetic. No credentials and no `.env` values are written. |
-| P4 | `--compare PREVIOUS.json` prints, per scenario, the previous and current pass state and the numbers that changed, and both totals. The exit code is 1 when a scenario that passed before fails now. |
+| P4 | `--compare PREVIOUS.json` prints, per scenario, the previous and current pass state and the numbers that changed, and both totals. The exit code is 1 when a scenario that passed before fails or is absent now. |
 | P5 | The exit code is 0 when every scenario passed, 1 otherwise, 2 for a usage or guard error. |
 
 ## 5. CLI
@@ -203,3 +204,56 @@ One commit per deliverable, tagged F20.
 - The first paid run: model names and a call budget. The default of 40 calls
   per scenario and eight scenarios is roughly 320 calls, in the order of
   magnitude of the single existing live test times ten.
+
+
+## 11. Outcome (2026-11-15)
+
+All three F20 code deliverables are implemented. `eki.evals` contains strict
+input/report models, the shared simulated expert and opt-in guard, one shared
+call budget across the two model roles, the pure grader, the isolated driver
+and report rendering/comparison. The standalone `evals/grade.py` command works
+from outside the repository as well as from its root. It is included in mypy's
+configured targets. No dependency was added and CI was not changed.
+
+Each run uses the real stdio MCP servers, mapping/scoring, local artifact index,
+plan drafting/approval and `InterviewService`. A local migration-history table
+and checkpoint setup with public tables hidden prevent accidental reuse of an
+existing application's tables. Cleanup is covered after migration failure and
+after interview success/budget stops. Tests also verify that all application
+and checkpoint tables belong to the temporary schema, and that model error
+messages and planted secrets do not reach reports.
+
+Eight complete draft pairs live under `docs/plans/phase-7-drafts/`. Every planted
+topic maps successfully. All eight finish and pass with the quoting drafter and
+scripted checklist interviewer: G3 gets its rollback follow-up, G7 has seven
+open items and no notes, and G1 asks the existing planner's contradiction
+question containing both ticket IDs. This proves the driver and expectations;
+it does not measure a real model's judgement. G6's wiki document is excluded
+from its topic-member identifiers because documents are not topic members.
+
+Verification:
+
+| Check | Result |
+| --- | --- |
+| `.venv/bin/pytest -q -m "not infra and not live"` (full regression, before the final standalone/draft tests were added) | 733 passed, 11 deselected |
+| Final Phase 7 selection: `.venv/bin/pytest -q -m "not infra and not live" tests/test_evals_grading.py tests/test_evals_driver.py tests/test_evals_drafts.py` | 34 passed |
+| Standalone `evals/grade.py --dry-run` with both draft directory flags | Eight scenarios validated; no settings, database or model work |
+| `.venv/bin/ruff check .` and `.venv/bin/ruff format --check .` | Clean; 261 files formatted |
+| `.venv/bin/mypy` | No issues in 177 source files |
+| `git status --short -- evals/scenarios evals/golden` | No output; both human-owned directories remain absent |
+
+Acceptance A1–A3 are covered in `tests/test_evals_grading.py`. A4, A6 and A7,
+along with failure isolation, caps, usage budgets, report round-trips, schema
+cleanup and redaction, are covered in `tests/test_evals_driver.py`. A5 has a
+standalone CLI regression test plus the eight-draft dry-run and
+`tests/test_evals_drafts.py`; A8 and A9 are recorded above. The old test imports
+for `SimulatedExpert`, `PROVIDER_KEYS` and `has_provider_key` are preserved by
+re-exports. Runtime `eki.evals` imports no test code and reads neither fixture
+answer file.
+
+Still pending: the owner reviews/adopts the draft pairs and chooses the models
+and budget for a paid run. No paid calls were made during implementation.
+Deterministic phrase/term matching has the lexical limits described in the
+eval guide, and one run provides no statistical confidence. A database outage
+can prevent schema cleanup; an operator may then need to drop the leftover
+`eki_eval_*` schema after recovery.

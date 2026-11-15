@@ -1,0 +1,18 @@
+{
+  "scenario": "G7-forgotten-flag",
+  "noted": {},
+  "open": [
+    "trigger",
+    "diagnosis",
+    "steps",
+    "rollback",
+    "contacts",
+    "pitfalls",
+    "rationale"
+  ],
+  "follow_ups": [],
+  "mentions": [],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

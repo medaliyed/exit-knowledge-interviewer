@@ -1,0 +1,38 @@
+{
+  "scenario": "G5-fourth-quarter",
+  "noted": {
+    "trigger": [
+      "fiscal period rollover",
+      "posting job"
+    ],
+    "diagnosis": [
+      "period table"
+    ],
+    "steps": [
+      "special-cased period table",
+      "fourth-quarter fixtures"
+    ],
+    "rollback": [
+      "revert",
+      "next quarter close"
+    ],
+    "contacts": [
+      "finance operations",
+      "fiscal calendar"
+    ],
+    "pitfalls": [
+      "once a year",
+      "fourth-quarter close"
+    ],
+    "rationale": [
+      "53rd week",
+      "rollover skips it"
+    ]
+  },
+  "open": [],
+  "follow_ups": [],
+  "mentions": [],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

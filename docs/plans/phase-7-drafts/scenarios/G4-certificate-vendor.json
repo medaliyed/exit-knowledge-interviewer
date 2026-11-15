@@ -1,0 +1,40 @@
+{
+  "id": "G4-certificate-vendor",
+  "title": "Writes to a vendor contact before every gateway certificate renewal.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "EML-0010",
+    "EML-0032",
+    "EML-0046",
+    "EML-0068",
+    "TCK-0011",
+    "TCK-0036",
+    "TCK-0072",
+    "TCK-0108"
+  ],
+  "script": {
+    "follow_ups": {},
+    "freeform": null,
+    "initial": {
+      "contacts": "Marek Dolan at the certificate vendor.",
+      "diagnosis": "Check the expiry date and the vendor's pinned fingerprint list.",
+      "pitfalls": "Renewing before the vendor confirms breaks partner traffic.",
+      "rationale": "The vendor pins our certificate and has to add the new fingerprint first.",
+      "rollback": "Re-install the previous certificate while it is still valid.",
+      "steps": "Mail the vendor a week ahead, wait for confirmation, then renew and roll.",
+      "trigger": "A gateway certificate renewal is planned."
+    }
+  },
+  "question_cap": 30
+}

@@ -7,7 +7,7 @@ design is a fixed LangGraph workflow with ONE agentic node (the interviewer):
 Ingest -> Map gaps -> Plan -> Interview -> Synthesise -> Approve -> Searchable
 runbook. The expert prunes the plan and approves every entry.
 
-Full requirements (F1-F19), stack and phases: `docs/PDR.md`.
+Full requirements (F1-F20), stack and phases: `docs/PDR.md`.
 Synthetic corpus spec: `docs/fixtures-spec.md`. Phase plans: `docs/plans/`.
 Architecture and diagrams: `docs/architecture.md`. Runtime flows, one page
 each with a sequence diagram: `docs/flows/`. How to run it: `README.md`;
@@ -53,6 +53,8 @@ uv run eki users reset-password --email nadia.ferrand@example.com
 uv run eki users list
 uv run eki audit --auth --after 0 --limit 100
 uv run python evals/run.py --junit reports/quality.xml         # deterministic quality/privacy gate
+uv run python evals/grade.py --dry-run                        # validate owner-owned pairs, no DB/model
+uv run python evals/grade.py --only G3-month-end --max-calls 25 # opted-in real-model scorecard
 uv run pytest -m live -s -rs tests/test_live_retrieval.py       # explicit opt-in provider checks
 ```
 
@@ -67,6 +69,7 @@ real providers with credentials exported to the test process.
 src/eki/
   api/        FastAPI app: plan review, interview chat (SSE), runbook entry review
   web/        authenticated browser workspace, static assets and navigation metadata
+  evals/      golden interview validation, shared expert/budget, scoring, driver and reports
   graph/      LangGraph workflow: fixed nodes around the one agentic node
   ingest/     connectors' client side, redaction, indexing
   interview/  plan, question drafting, the interviewer node and its six tools, storage, service
@@ -495,3 +498,35 @@ The browser restores sessions on reload, retains the current route after expiry,
 and clears cached data/drafts on sign-out or expiry. Unsent text remains in tab
 memory and still requires the existing leave-page and sign-out confirmations.
 See `docs/flows/sign-in.md` for setup and recovery.
+
+
+## Phase 7: golden interview evaluations (F20)
+
+`evals/grade.py` is a separate, opt-in client of `InterviewService`. It never runs
+in CI. Strict scenario/golden JSON pairs are read without mutation; the owner
+owns `evals/scenarios/` and `evals/golden/`. Eight draft pairs live under
+`docs/plans/phase-7-drafts/` for human review and adoption. Until adoption, pass
+both `--scenarios` and `--golden` pointing at those draft subdirectories.
+
+`--dry-run` needs no settings, database or model. Paid runs require both model
+roles and a provider key exported to the process; `.env` alone is not consent.
+Each scenario gets a migrated throwaway schema, a single mapped topic and a
+shared call allowance across drafting and interviewing (`--max-calls`, default
+40). Synthetic `Inbox`, `Sent` and `Vendors` folders are selected explicitly;
+normal mail privacy exclusions and redaction still apply. Schema cleanup runs
+after success, budget stops and failures. Model/provider exception messages are
+not copied into reports.
+
+The pure grader checks notes, fact phrases, open sections, follow-ups, grouped
+artifact mentions, unsupported note terms and question counts. Results contain
+redacted transcript/notes/open items, usage, elapsed time, model names, git
+revision and an allowlist of limits/timeouts. Only new files under `reports/`
+may be written. `--compare PREVIOUS.json` prints pass-state and numeric changes;
+a previously passing scenario missing or failing now makes the command exit 1.
+Exit codes are 0 for all passes, 1 for failures/regressions and 2 for usage or
+configuration errors. See `evals/README.md` and `docs/flows/grade-interviews.md`.
+
+The shared `SimulatedExpert` and provider opt-in guard live in `eki.evals`;
+`tests/fakes.py` and `tests/live_support.py` re-export the original import names.
+The runtime never imports tests or reads the fixture answer key/expert script.
+No paid model run was performed as part of implementation.

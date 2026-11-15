@@ -1,0 +1,35 @@
+{
+  "id": "G6-failover-slot",
+  "title": "Performs a manual failover step that the wiki runbook does not contain.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "TCK-0021",
+    "TCK-0050",
+    "TCK-0101"
+  ],
+  "script": {
+    "follow_ups": {},
+    "freeform": null,
+    "initial": {
+      "contacts": "Platform on-call and the storage team.",
+      "diagnosis": "List replication slots on the old primary before promoting.",
+      "pitfalls": "With the slot left in place the old primary fills its disk with retained log.",
+      "rationale": "The slot pins write-ahead log that nothing will ever consume again.",
+      "rollback": "Recreate the slot when the old primary rejoins as a replica.",
+      "steps": "Drop the stale replication slot on the old primary, then follow the failover page.",
+      "trigger": "A ledger-db failover is needed."
+    }
+  },
+  "question_cap": 30
+}

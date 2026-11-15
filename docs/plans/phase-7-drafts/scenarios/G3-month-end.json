@@ -1,0 +1,42 @@
+{
+  "id": "G3-month-end",
+  "title": "Recurring month-end ticket closed with an unexplained standard remedy.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "TCK-0004",
+    "TCK-0014",
+    "TCK-0025",
+    "TCK-0038",
+    "TCK-0055",
+    "TCK-0074",
+    "TCK-0095",
+    "TCK-0112"
+  ],
+  "script": {
+    "follow_ups": {
+      "rollback": "Restore the reconciliation table from the pre-run export; the job is idempotent."
+    },
+    "freeform": null,
+    "initial": {
+      "contacts": "Finance operations, who report it and confirm the totals.",
+      "diagnosis": "Compare the last posting sequence number on both sides.",
+      "pitfalls": "Run it before the period is closed, or it needs a reopen.",
+      "rationale": "Postings made in the last minutes of the month land after the cut-off.",
+      "rollback": null,
+      "steps": "Re-run the reconciliation job with the replay flag for the last day of the month.",
+      "trigger": "Month-end totals differ between billing-batch and ledger-db."
+    }
+  },
+  "question_cap": 30
+}

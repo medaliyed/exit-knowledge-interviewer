@@ -1,0 +1,42 @@
+{
+  "scenario": "G3-month-end",
+  "noted": {
+    "trigger": [
+      "month-end",
+      "billing-batch",
+      "ledger-db"
+    ],
+    "diagnosis": [
+      "last posting sequence number"
+    ],
+    "steps": [
+      "reconciliation job",
+      "replay flag",
+      "last day"
+    ],
+    "rollback": [
+      "pre-run export",
+      "idempotent"
+    ],
+    "contacts": [
+      "finance operations",
+      "confirm the totals"
+    ],
+    "pitfalls": [
+      "period is closed",
+      "reopen"
+    ],
+    "rationale": [
+      "last minutes",
+      "cut-off"
+    ]
+  },
+  "open": [],
+  "follow_ups": [
+    "rollback"
+  ],
+  "mentions": [],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

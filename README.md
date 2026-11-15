@@ -174,6 +174,28 @@ export GROQ_API_KEY=...
 uv run pytest -m live -s -rs
 ```
 
+## Golden interview evaluations
+
+Phase 7 adds a scorecard for real-model interview quality. Start with the eight
+review drafts; validation performs no database or provider work:
+
+```bash
+uv run python evals/grade.py --dry-run \
+  --scenarios docs/plans/phase-7-drafts/scenarios \
+  --golden docs/plans/phase-7-drafts/golden
+```
+
+To grade them, configure `EKI_DATABASE_URL`, `EKI_MODEL_DRAFTER` and
+`EKI_MODEL_INTERVIEWER`, export the provider key, then remove `--dry-run` and
+optionally add `--only G3-month-end --max-calls 25`. Each scenario uses a temporary
+Postgres schema and a shared call budget. The command prints a scorecard and
+saves a redacted JSON report under `reports/evals/`. Add `--compare PATH` to
+compare with an earlier report. This is separate from the CI quality gate.
+
+The default `evals/scenarios/` and `evals/golden/` directories remain human-owned
+and unpopulated. The owner reviews and adopts the drafts; the grader only reads
+them. Formats, scoring limits and exit codes are in [evals/README.md](evals/README.md).
+
 ## Status
 
 Phases 0–4 and the Phase 5 code deliverables are implemented with synthetic
@@ -182,7 +204,8 @@ model-aware artifact retrieval and resumable plan generation. The redesigned
 workspace follows the supplied HTML prototype and UI PDR, with automated browser
 workflow, accessibility and responsive-layout checks. Phase 6 adds invited
 email/password accounts, persistent browser sessions and operator account management.
-Real-provider validation
+Phase 7 adds golden interview grading, bounded runs and report comparison, with
+eight scenario/golden drafts awaiting owner adoption. Real-provider validation
 remains deferred by user request; manual screen-reader validation is still pending.
 Source connectors remain synthetic. The
 [Phase 5 PDR](docs/plans/phase-5.md) records evidence and remaining acceptance

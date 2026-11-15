@@ -1,0 +1,39 @@
+{
+  "scenario": "G4-certificate-vendor",
+  "noted": {
+    "trigger": [
+      "gateway certificate renewal"
+    ],
+    "diagnosis": [
+      "expiry date",
+      "fingerprint list"
+    ],
+    "steps": [
+      "week ahead",
+      "confirmation",
+      "renew"
+    ],
+    "rollback": [
+      "previous certificate",
+      "still valid"
+    ],
+    "contacts": [
+      "Marek Dolan",
+      "certificate vendor"
+    ],
+    "pitfalls": [
+      "vendor confirms",
+      "partner traffic"
+    ],
+    "rationale": [
+      "pins our certificate",
+      "new fingerprint first"
+    ]
+  },
+  "open": [],
+  "follow_ups": [],
+  "mentions": [],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

@@ -1,0 +1,48 @@
+{
+  "id": "G7-forgotten-flag",
+  "title": "Toggles a feature flag around every billing-batch release.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "10550a4150909c7f0a4b0d1726e2c82a4eda6d71",
+    "24cb442f9ceb70fa5248f2710d981b507af49d21",
+    "29edeb81736503dda67e27a658d3e344a38eeba2",
+    "2e026a864b2f47f7494990f5e117ea8a000167ab",
+    "31adccc526699674c7e05ed75a29742e0ee5077a",
+    "4a67f268f1b7ecef88ccaea1160f3706b5104580",
+    "5756c87c2b34dacb472ec3231ed0f8e351fdcae5",
+    "62629fb947c30b7fdd6e7cbf21210edfa7e90613",
+    "7e4ef580a6069c8f6ed55d3f9296a28e639fff5b",
+    "856083e70f14ba6962ad02ef36cd96c435e37fbd",
+    "8949655dc98e24f195bed87b865f9df24fc996f6",
+    "96413bb1f560774f91ccc1e4c803ae043d26b05d",
+    "9da2598ecd4f725b6ba114fa13548b6988cc38e8",
+    "aee8c3b1443c2d8fecb77c7a0936aeab832b7339",
+    "b7c7a8c0155a35edaea50e6f7cf20a5e9263e96a",
+    "e0e6e1a4695322a8acab33abf1d3bd5306823b26"
+  ],
+  "script": {
+    "follow_ups": {},
+    "freeform": "I don't remember",
+    "initial": {
+      "contacts": null,
+      "diagnosis": null,
+      "pitfalls": null,
+      "rationale": null,
+      "rollback": null,
+      "steps": null,
+      "trigger": null
+    }
+  },
+  "question_cap": 30
+}

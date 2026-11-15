@@ -1,0 +1,39 @@
+{
+  "scenario": "G8-backup-exception",
+  "noted": {
+    "trigger": [
+      "ledger-db",
+      "standard backup job"
+    ],
+    "diagnosis": [
+      "separate snapshot job",
+      "replica-2"
+    ],
+    "steps": [
+      "leave it out",
+      "05:30",
+      "replica-2"
+    ],
+    "rollback": [
+      "settlement window moves"
+    ],
+    "contacts": [
+      "engineering manager",
+      "audit"
+    ],
+    "pitfalls": [
+      "02:00",
+      "stalls postings"
+    ],
+    "rationale": [
+      "snapshot lock",
+      "settlement window"
+    ]
+  },
+  "open": [],
+  "follow_ups": [],
+  "mentions": [],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

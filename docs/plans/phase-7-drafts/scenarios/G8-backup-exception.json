@@ -1,0 +1,36 @@
+{
+  "id": "G8-backup-exception",
+  "title": "Decision to keep ledger-db off the standard backup schedule exists only in mail.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "EML-0028",
+    "EML-0029",
+    "EML-0030",
+    "b936a6872c79d49c0e88118a0598277e6214adde"
+  ],
+  "script": {
+    "follow_ups": {},
+    "freeform": null,
+    "initial": {
+      "contacts": "Engineering manager and audit.",
+      "diagnosis": "Check the separate snapshot job on replica-2.",
+      "pitfalls": "Adding it back to the 02:00 job stalls postings.",
+      "rationale": "The standard snapshot lock overlaps the settlement window.",
+      "rollback": "Add it back only if the settlement window moves.",
+      "steps": "Leave it out of the standard job; keep the 05:30 snapshot from replica-2.",
+      "trigger": "Someone asks why ledger-db is not in the standard backup job."
+    }
+  },
+  "question_cap": 30
+}

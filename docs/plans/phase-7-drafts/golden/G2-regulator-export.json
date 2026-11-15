@@ -1,0 +1,38 @@
+{
+  "scenario": "G2-regulator-export",
+  "noted": {
+    "trigger": [
+      "export",
+      "nightly"
+    ],
+    "diagnosis": [
+      "export job log",
+      "row counts"
+    ],
+    "steps": [
+      "fix forward",
+      "compare counts"
+    ],
+    "rollback": [
+      "previous period",
+      "archive bucket"
+    ],
+    "contacts": [
+      "finance operations",
+      "regulator liaison"
+    ],
+    "pitfalls": [
+      "column order",
+      "never reorder"
+    ],
+    "rationale": [
+      "knowledge stayed with me"
+    ]
+  },
+  "open": [],
+  "follow_ups": [],
+  "mentions": [],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

@@ -1,0 +1,77 @@
+{
+  "id": "G2-regulator-export",
+  "title": "Sole committer to report-export for the whole 24 months.",
+  "corpus": "tests/fixtures/corpus",
+  "expert": {
+    "name": "Nadia Ferrand",
+    "email": "nadia.ferrand@example.com",
+    "work_domains": [
+      "example.com"
+    ]
+  },
+  "span": {
+    "since": "2024-11-01",
+    "until": "2026-10-31"
+  },
+  "topic_artifact_ids": [
+    "012f8f1095fab49e2dcdb034d9fecb1ea0ddef4a",
+    "02a70241d07ab0adb4bdb6b963097e67dd0ecb3e",
+    "04147961fb8a2f44e4a726394229e2a2a05d2783",
+    "0b9d528938e2ad91c7c7b5df8d8d4e191d1eb731",
+    "1cbc63167e08111202c0d8d01e22a7e14e13b1d3",
+    "27e55a893700266cfebb69ff19ed08d7976f9044",
+    "2a231edf7f087131f83e59b47574d6b529e27497",
+    "3fa5b59d3de7fc139e294b4260463333d7bc2eaf",
+    "4064d044cc0b59d75ac9231ee882a7839ae7a2de",
+    "43cd2efbb844e48c696ab6b9db431d0f3dd880b0",
+    "43d13ae141aa66ff0733ec78d77a5a6bb157c58d",
+    "4c91526d7acda48bf93156ca288d759548654320",
+    "50976b8627a9c08c0e1277acbf44e3152b461bee",
+    "56139602408af9c684e1cc89a8758ca1d26c0c07",
+    "5884faafbeb24284857a7f23e562ba03108f0a51",
+    "5c1d96723aedd917162af80ffbcf7dbb6e2ced08",
+    "6ba94ffc6cb6ddf9013843e00910086608fdf9b7",
+    "7371b2c748aedceb46535e1c36aaf3b7f52a3f81",
+    "752d0cf6b4d0f15244dafc03420feec4009ab211",
+    "7a3c20fd8c8763741782c30c5b284f169668be4a",
+    "81ae96df3bb4979fc480e2b022c4c85545478197",
+    "88ff5c3759cfd1d1d17dda952ee9c37f73598a8b",
+    "89cb827c7f7c23dcc92a1dc98e0a7193f989ccc6",
+    "8fb15275192bb99d1aa2aa0b9ee1f2c47685c9e0",
+    "910f3f824091fe38c84ed396497334fe4605a42d",
+    "9738de56f2a3905d50c0db8ae4feca0ee731d626",
+    "998f73e366c12c5f92f7e4b8d966b0a3ac8ba00c",
+    "9f120e676a78df63a5f2d9d64bcc3f872bc526b6",
+    "a0a62b32c5c1d0435471574180bbce6f7831711f",
+    "a1a09ae75ecb15e82492046276017fac2591c652",
+    "b2359452e0bb12aad0eec2e9d46f4e02904b86d4",
+    "b3b1ab1e5ccbdef49ce5aa560e575883350ae86c",
+    "c1bbdcc207aeb58dba539bf0233ae9599b32332e",
+    "c73a2042fa71fab125546416c3a3e5cb99d2e762",
+    "c7ada2d87cc796fa341595512890612e54969789",
+    "d029bb63b2fba69c7dc84b23929dd876a83f589d",
+    "d07921f8d32c2d9a5e23592801db60229a786ee7",
+    "d452b3a5c57f3d45633d6f951229e560855e7bc6",
+    "e588f44ddc74fe7a565fb04dbf9becd5bbcd4a55",
+    "ea2cfee3610ec54cfee755dd19e76f0f625d46e5",
+    "ead51d8bd725422a21370537559256f3925e9f8e",
+    "ec9295f4c711d964d7430fd8419c246f883ce7c6",
+    "f30ca8a0988521516a18fa73453a6cee688b1c3a",
+    "f626cd9926b7f23d0180e846fc3c359ab4c1d432",
+    "fbc77fd544fbaa7bda49ea6655487664f05ae0b1"
+  ],
+  "script": {
+    "follow_ups": {},
+    "freeform": null,
+    "initial": {
+      "contacts": "Finance operations for content, the regulator liaison for deadlines.",
+      "diagnosis": "Look at the export job log and the row counts per sheet.",
+      "pitfalls": "Column order is contractual; never reorder columns.",
+      "rationale": "Nobody else picked it up, so the knowledge stayed with me.",
+      "rollback": "Re-publish the previous period's file from the archive bucket.",
+      "steps": "Fix forward in the writer, run the export for the period by hand, compare counts.",
+      "trigger": "Finance or the regulator needs an export, or the nightly export fails."
+    }
+  },
+  "question_cap": 30
+}

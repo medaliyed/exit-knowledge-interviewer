@@ -1,0 +1,40 @@
+{
+  "scenario": "G6-failover-slot",
+  "noted": {
+    "trigger": [
+      "ledger-db failover"
+    ],
+    "diagnosis": [
+      "replication slots",
+      "old primary",
+      "promoting"
+    ],
+    "steps": [
+      "drop",
+      "stale replication slot",
+      "failover page"
+    ],
+    "rollback": [
+      "recreate the slot",
+      "rejoins as a replica"
+    ],
+    "contacts": [
+      "platform on-call",
+      "storage team"
+    ],
+    "pitfalls": [
+      "fills its disk",
+      "retained log"
+    ],
+    "rationale": [
+      "pins write-ahead log",
+      "consume again"
+    ]
+  },
+  "open": [],
+  "follow_ups": [],
+  "mentions": [],
+  "max_questions": 10,
+  "max_unsupported_terms": 2,
+  "min_facts": 1.0
+}

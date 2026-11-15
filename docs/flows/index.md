@@ -16,6 +16,7 @@ For the static picture (pipeline, components, workflow graph, data model) see
 | [Message delivery and recovery](message-delivery.md) | Message POST or receipt resume | Save a question-bound message before processing and resume without repeating logical effects. |
 | [One interview turn](interview-turn.md) | `eki interview`, `POST /sessions/{id}/messages` | Store the answer, let the interviewer model note it and ask again, checkpoint at every question. |
 | [Review and approve an entry](review-entry.md) | `eki review`, `POST /entries/{id}/approve` | Show the draft with its unsupported claims, then approve it under lock with a decision and an audit event. |
+| [Grade golden interviews](grade-interviews.md) | `python evals/grade.py` | Interview one planted topic per isolated schema, score it and save or compare redacted reports. |
 | [Search and ask](search-and-ask.md) | `eki search`, `eki ask`, `/runbook/search`, `/runbook/ask` | Index approved entries lazily, rank with keyword and vector search under access rules, answer with exact claims or abstain. |
 
 The pipeline flows run in order for one expert; the browser workspace spans

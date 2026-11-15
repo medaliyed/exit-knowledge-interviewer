@@ -36,6 +36,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | F17 | Optional semantic retrieval over source artifacts, with matching document/query model identities and an offline fallback. Implemented: Phase 5d; real-model quality pending. |
 | F18 | Resumable plan generation that retains completed topics and retries unfinished work under a stable generation ID. Delivered: Phase 5e. |
 | F19 | Invited work-email/password accounts, bounded server-side browser sessions, one-time password links, local operator account management, CSRF protection, throttling and metadata-only authentication audit. Phase 6. |
+| F20 | Golden interview evaluations: strict scenario/golden files, isolated real-service runs, shared model-call budgets, deterministic scorecards and comparable redacted reports. Phase 7; paid evidence pending. |
 
 ## Stack
 
@@ -60,6 +61,7 @@ The expert prunes the interview plan and approves every runbook entry.
 | 4 | Harden | Mail connector, red-team suite, evals in CI, audit log. |
 | 5 | Recovery and expert workflow | [Phase 5 PDR](plans/phase-5.md): reliable interview recovery, real-model validation, expert UI, semantic artifact retrieval and resumable plan drafting, in that order. |
 | 6 | Email/password accounts | [Phase 6 PDR](plans/phase-6.md): account provisioning, sessions/authentication, browser sign-in and operational documentation. |
+| 7 | Golden interview evals | [Phase 7 PDR](plans/phase-7.md): bounded real-model interviews, deterministic grading, saved reports and comparisons; owner-review drafts for G1–G8. |
 
 Each phase is planned separately in `docs/plans/phase-N.md` and needs human
 approval before implementation starts. The hard rules that apply to every
@@ -82,6 +84,7 @@ line and, where there is one, their Outcome section.
 | 4 Harden | `docs/plans/phase-4.md` | F3, F13, red-team and quality gate |
 | 5 Recovery and expert workflow | [docs/plans/phase-5.md](plans/phase-5.md) | F14/F16/F17/F18 implemented; F15 live evidence and manual screen-reader validation pending |
 | 6 Email/password accounts | [docs/plans/phase-6.md](plans/phase-6.md) | F19 implemented 2026-11-15; manual browser pass and timing check pending |
+| 7 Golden interview evals | [docs/plans/phase-7.md](plans/phase-7.md) | F20 implemented 2026-11-15; draft adoption and paid model evidence pending |
 
 Added after the phases: synthesis keeps drafts the expert edited by hand
 (F10), review lists claims that say more than the answer they cite (F9), and
@@ -109,5 +112,7 @@ Still open:
 - The connectors read the synthetic local corpus only; there is no adapter for
   a live mailbox, Git host or issue tracker.
 - `evals/scenarios/` and `evals/golden/` are human-owned and do not exist yet;
-  the CI quality gate runs the synthetic contracts in `tests/`.
+  the CI quality gate runs the synthetic contracts in `tests/`. Phase 7 supplies
+  eight review drafts under `docs/plans/phase-7-drafts/` and a separate opt-in
+  grader; it does not adopt the drafts or change CI.
 - Known gaps in the implementation are listed in `docs/flows/index.md`.
