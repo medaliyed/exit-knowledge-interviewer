@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from eki.evals.expert import SimulatedExpert as SimulatedExpert
 from eki.llm import Message, Reply, ToolCall, ToolSpec
 from eki.llm.tracing import ModelCall
 
@@ -79,29 +80,6 @@ def expert_answers() -> dict[str, Any]:
     path = Path(__file__).resolve().parent / "fixtures" / "expert_answers.json"
     answers: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))["answers"]
     return answers
-
-
-class SimulatedExpert:
-    """Answers for one topic the way the fixture says the expert would.
-
-    The first question gets everything she volunteers, one labelled line per
-    section. A later question about a section gets her follow-up for it.
-    """
-
-    def __init__(self, script: dict[str, Any] | None) -> None:
-        self._script = script
-        self._asked = False
-
-    def answer(self, section: str | None) -> str:
-        if self._script is None or self._script["freeform"]:
-            return "I don't remember" if self._script is None else str(self._script["freeform"])
-        initial, follow_ups = self._script["initial"], self._script["follow_ups"]
-        if not self._asked:
-            self._asked = True
-            return "\n".join(
-                f"{name.capitalize()}: {initial[name]}" for name in SECTION_ORDER if initial[name]
-            )
-        return str(follow_ups.get(section) or initial.get(section) or "I don't know.")
 
 
 class RecordingTracer:
