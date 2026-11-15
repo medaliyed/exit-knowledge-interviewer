@@ -60,5 +60,9 @@ def test_every_data_endpoint_requires_credentials_and_documents_bearer_auth() ->
         for parameter in ("run_id", "plan_id", "session_id", "entry_id"):
             url = url.replace("{" + parameter + "}", "00000000-0000-0000-0000-000000000000")
         for method, operation in operations.items():
-            assert operation["security"] == [{"BearerAuth": []}]
+            if path in ("/auth/login", "/auth/setup-password", "/auth/logout"):
+                assert "security" not in operation
+                assert client.request(method, url).status_code == 403
+                continue
+            assert operation["security"] == [{"BearerAuth": []}, {"SessionCookie": []}]
             assert client.request(method, url).status_code == 401, (method, url)

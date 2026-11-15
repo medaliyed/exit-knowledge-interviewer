@@ -1,12 +1,14 @@
 """The HTTP API: liveness, plan review, interview chat and private runbook review.
 
-All data routes require a configured bearer identity; run ownership and reader
+All data routes require a bearer or session identity; run ownership and reader
 ACLs determine which data is visible. Posting a message returns a Server-Sent Events stream of what
 the interviewer did, ending with its next question, ``done`` or ``error``.
 """
 
 import json
+import logging
 from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from functools import lru_cache
 from typing import Annotated, Any, Literal
@@ -20,12 +22,13 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from eki import __version__, access
+from eki import __version__, access, accounts
 from eki.api import access_log
+from eki.api.accounts import install_accounts
 from eki.api.security import identity, install_security
 from eki.audit import AuditError, list_events
 from eki.auth import Authenticator, ForbiddenError, TokenAuthenticator
-from eki.config import ConfigError, get_settings, work_domains
+from eki.config import ConfigError, Settings, get_settings, work_domains
 from eki.graph.workflow import db
 from eki.ingest.redaction import redact
 from eki.interview import generation
@@ -54,7 +57,7 @@ CONFIDENTIAL = "[confidential]"
 
 
 class AuthenticatedAPI(FastAPI):
-    """Document the bearer authentication enforced by the data-route middleware."""
+    """Document both forms of authentication enforced by the middleware."""
 
     def openapi(self) -> dict[str, Any]:
         if self.openapi_schema is None:
@@ -63,10 +66,15 @@ class AuthenticatedAPI(FastAPI):
                 "type": "http",
                 "scheme": "bearer",
             }
+            schema["components"]["securitySchemes"]["SessionCookie"] = {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "__Host-eki_session",
+            }
             for path, operations in schema["paths"].items():
-                if path != "/healthz":
+                if path not in ("/healthz", "/auth/login", "/auth/setup-password", "/auth/logout"):
                     for operation in operations.values():
-                        operation["security"] = [{"BearerAuth": []}]
+                        operation["security"] = [{"BearerAuth": []}, {"SessionCookie": []}]
             self.openapi_schema = schema
         return self.openapi_schema
 
@@ -186,9 +194,36 @@ def create_app(
     authenticator: Authenticator | None = None,
     search_service: SearchService | None = None,
     answer_service: AnswerService | None = None,
+    settings: Settings | None = None,
 ) -> FastAPI:
     """The application. Without ``service`` one is built from settings on first use."""
-    app = AuthenticatedAPI(title="Exit-Knowledge Interviewer", version=__version__)
+
+    def configuration() -> Settings:
+        return settings if settings is not None else get_settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        configuration()  # Reject insecure production settings before accepting requests.
+        bearer = get_authenticator()
+        if isinstance(bearer, TokenAuthenticator):
+
+            def check_subjects() -> None:
+                try:
+                    with psycopg.connect(database_dsn(), autocommit=True) as conn:
+                        accounts.validate_bearer_identities(conn, bearer.identities)
+                except psycopg.Error:
+                    # No database yet (or migrations pending): the same check runs again
+                    # on every sign-in, so starting is safe. A real conflict still refuses.
+                    logging.getLogger(__name__).warning(
+                        "bearer/account identity check skipped: database unavailable"
+                    )
+
+            await db(check_subjects)
+        yield
+
+    app = AuthenticatedAPI(
+        title="Exit-Knowledge Interviewer", version=__version__, lifespan=lifespan
+    )
     access_log.install()
 
     def database_dsn() -> str:
@@ -200,12 +235,13 @@ def create_app(
             return runbook_service.dsn
         if service is not None:
             return service.dsn
-        return get_settings().database_url.get_secret_value()
+        return configuration().database_url.get_secret_value()
 
     def get_authenticator() -> Authenticator:
-        return authenticator or TokenAuthenticator(get_settings().api_tokens.get_secret_value())
+        return authenticator or TokenAuthenticator(configuration().api_tokens.get_secret_value())
 
-    install_security(app, get_authenticator, database_dsn)
+    install_security(app, get_authenticator, database_dsn, configuration)
+    install_accounts(app, database_dsn, configuration)
     install_browser(app, database_dsn)
 
     def actor(request: Request, name: str) -> None:
