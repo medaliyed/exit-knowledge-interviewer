@@ -111,7 +111,10 @@ _LABELLED = re.compile(
     r"^(Trigger|Diagnosis|Steps|Rollback|Contacts|Pitfalls|Rationale): (.+)$", re.MULTILINE
 )
 _UNKNOWN = re.compile(r"don't (remember|know)", re.IGNORECASE)
-_PROGRESS = re.compile(r" (Still missing: [a-z, ]+\.|Every section is covered\.)$")
+_PROGRESS = re.compile(
+    r"\n\nInterview status \(not part of the answer\): "
+    r"(Still missing: [a-z, ]+\.|Every section is covered\.)$"
+)
 _FIRST_DRAFTED = re.compile(r"^1\. (.+)$", re.MULTILINE)
 
 

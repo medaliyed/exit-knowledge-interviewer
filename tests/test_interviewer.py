@@ -391,3 +391,41 @@ async def test_real_provider_tool_call_ids_reach_the_model_unchanged(scratch: Sc
     result_ids = [m.tool_call_id for m in messages if m.role == "tool"]
     assert assistant_ids == [first, second]
     assert result_ids == [first, second]
+
+
+async def test_progress_text_never_reaches_notes_or_open_items(scratch: Scratch) -> None:
+    """F7: a model that copies the tool's progress suffix does not publish it.
+
+    Seen with a real provider: "wfrwfr Still missing: diagnosis, steps." became a claim.
+    """
+    service, _, view = await start(
+        scratch,
+        [
+            tool_reply(ask("What starts it?", "trigger")),
+            tool_reply(
+                note("trigger", "Month-end close. Still missing: diagnosis, steps, rollback."),
+                opened("diagnosis", "She forgot. Still missing: steps, rollback."),
+                note("steps", "Every section is covered."),
+                ask("How do you undo it?", "rollback"),
+            ),
+        ],
+    )
+    await say(service, view.session.id, "It starts at month-end close.")
+    current = await service.view(view.session.id)
+    assert {str(n.section): n.text for n in current.notes} == {"trigger": "Month-end close."}
+    assert [(o.section, o.reason) for o in current.open_items] == [("diagnosis", "She forgot.")]
+
+
+async def test_tool_result_separates_answer_from_progress(scratch: Scratch) -> None:
+    """F7: the expert's words and the checklist status are on separate lines."""
+    service, model, view = await start(
+        scratch,
+        [tool_reply(ask("What starts it?", "trigger")), tool_reply(ask("Then?", "steps"))],
+    )
+    await say(service, view.session.id, "Month-end close.")
+    answered = [r for r in tool_results(model, 1) if "The expert answered" in r]
+    assert answered == [
+        "The expert answered:\nMonth-end close.\n\n"
+        "Interview status (not part of the answer): Still missing: trigger, diagnosis, "
+        "steps, rollback, contacts, pitfalls, rationale."
+    ]

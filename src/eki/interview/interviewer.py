@@ -11,6 +11,7 @@ or when a limit is reached; a limit marks what is left as open. Text from the
 model and from the expert is redacted before it is stored or sent anywhere.
 """
 
+import re
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -58,6 +59,19 @@ LIMIT_REACHED = RedactedText("the question limit for this topic was reached")
 STOPPED = RedactedText("the interviewer stopped before covering this section")
 SKIPPED = RedactedText("skipped by expert")
 FOLLOW_UP_QUESTION_LIMIT = RedactedText("the question limit for this follow-up was reached")
+STATUS_PREFIX = "\n\nInterview status (not part of the answer): "
+# A model may copy the status line it was shown into a note or an open reason.
+COPIED_STATUS = re.compile(
+    r"\s*(?:Interview status \(not part of the answer\):\s*)?"
+    r"(?:Still missing: [a-z, ]+\.|Every section is covered\.)\s*$"
+)
+
+
+def without_status(text: str) -> str:
+    """``text`` without a trailing checklist status the model copied from a tool result."""
+    return COPIED_STATUS.sub("", text).strip()
+
+
 FOLLOW_UP_MODEL_BUDGET = RedactedText("the model budget for this follow-up was reached")
 
 
@@ -200,8 +214,8 @@ class _Step:
     async def remaining(self) -> str:
         missing = await self.missing()
         if missing:
-            return " Still missing: " + ", ".join(missing) + "."
-        return " Every section is covered."
+            return STATUS_PREFIX + "Still missing: " + ", ".join(missing) + "."
+        return STATUS_PREFIX + "Every section is covered."
 
     async def close(self, reason: RedactedText) -> None:
         """End the topic, recording every section still missing as open."""
@@ -550,7 +564,7 @@ class _Step:
     async def record_note(self, section: Any, text: Any, gap_id: Any = None) -> str:
         if section not in SECTIONS:
             return "Refused: section must be one of " + ", ".join(SECTIONS) + "."
-        if not isinstance(text, str) or not text.strip():
+        if not isinstance(text, str) or not without_status(text):
             return "Refused: a note needs text."
         refusal = self.out_of_scope(section)
         if refusal is not None:
@@ -583,7 +597,7 @@ class _Step:
             )
             if unknown:
                 return "Refused: this answer was recorded as unknown and cannot supply a fact."
-        note = RedactedText(text.strip())
+        note = RedactedText(without_status(text))
         await db(
             store.record_note,
             self.conn,
@@ -600,7 +614,7 @@ class _Step:
     async def mark_open(self, section: Any, reason: Any, gap_id: Any = None) -> str:
         if section not in SECTIONS:
             return "Refused: section must be one of " + ", ".join(SECTIONS) + "."
-        if not isinstance(reason, str) or not reason.strip():
+        if not isinstance(reason, str) or not without_status(reason):
             return "Refused: an open item needs a reason."
         refusal = self.out_of_scope(section)
         if refusal is not None:
@@ -623,7 +637,7 @@ class _Step:
                 return "Refused: gap_id must match the answered follow-up question."
         elif checklist[section] in ("noted", "confidential"):
             return f"Refused: {section} already has a note."
-        why = RedactedText(reason.strip())
+        why = RedactedText(without_status(reason))
         await db(
             store.mark_open,
             self.conn,
