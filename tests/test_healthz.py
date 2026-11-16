@@ -24,6 +24,8 @@ def test_api_routes_are_exactly_these() -> None:
         "/follow-up-requests/{gap_id}",
         "/runs/{run_id}/follow-up-gaps",
         "/runs/{run_id}/follow-up-gaps/{gap_id}",
+        "/runs/{run_id}/follow-ups",
+        "/sessions/{session_id}/stop",
         "/entries/{entry_id}/review",
         "/entries/{entry_id}/withdraw",
         "/runs/{run_id}/handover",

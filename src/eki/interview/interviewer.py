@@ -18,11 +18,12 @@ from langgraph.types import interrupt
 from psycopg.types.json import Jsonb
 
 from eki.audit import AuditDetails, Operation, Phase
+from eki.followup import sessions as follow_ups
 from eki.graph.workflow import Deps, InterviewState, WorkflowError, db, emit
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store, tools
 from eki.interview.drafting import as_data
-from eki.interview.models import SECTIONS, PlannedTopic, Turn
+from eki.interview.models import SECTIONS, FollowUpLimits, PlannedTopic, Turn
 from eki.llm import (
     Message,
     Reply,
@@ -56,9 +57,13 @@ NUDGE = RedactedText(
 LIMIT_REACHED = RedactedText("the question limit for this topic was reached")
 STOPPED = RedactedText("the interviewer stopped before covering this section")
 SKIPPED = RedactedText("skipped by expert")
+FOLLOW_UP_QUESTION_LIMIT = RedactedText("the question limit for this follow-up was reached")
+FOLLOW_UP_MODEL_BUDGET = RedactedText("the model budget for this follow-up was reached")
 
 
-def _brief(topic: PlannedTopic, question_limit: int) -> RedactedText:
+def _brief(
+    topic: PlannedTopic, question_limit: int, *, scope: tuple[SectionName, ...] | None = None
+) -> RedactedText:
     lines = [
         f"Topic: {topic.label}",
         f"Kind: {topic.kind}. System: {topic.system or 'none'}.",
@@ -69,11 +74,27 @@ def _brief(topic: PlannedTopic, question_limit: int) -> RedactedText:
     if topic.questions:
         drafted = []
         for number, question in enumerate(topic.questions, start=1):
-            drafted.append(f"{number}. {question.text}")
+            if question.origin == "follow_up":
+                drafted.append(f"{number}. [gap_id={question.gap_id}] {question.text}")
+            else:
+                drafted.append(f"{number}. {question.text}")
             if question.artifact_id and question.quote:
                 drafted.append(f'   From {question.artifact_id}: "{question.quote}"')
-        lines += ["Drafted questions:", as_data([("plan", "\n".join(drafted))], kind="DATA"), ""]
-    lines.append("Sections to fill: " + ", ".join(SECTIONS) + ".")
+        heading = (
+            "Approved follow-up questions. Ask each with its gap_id; the first time, word for word:"
+            if topic.origin == "follow_up"
+            else "Drafted questions:"
+        )
+        lines += [heading, as_data([("plan", "\n".join(drafted))], kind="DATA"), ""]
+    if scope is not None and len(scope) < len(SECTIONS):
+        lines.append(
+            "Sections to fill: "
+            + ", ".join(scope)
+            + ". The other sections were answered in the original interview and are out of "
+            "scope: do not ask about them or record notes for them."
+        )
+    else:
+        lines.append("Sections to fill: " + ", ".join(SECTIONS) + ".")
     return RedactedText("\n".join(lines))
 
 
@@ -96,6 +117,51 @@ class _Step:
         self.model_calls = state.get("model_calls", 0)
         self.last_turn = state.get("last_turn")
         self.done = False
+        # Follow-up scope and budgets (F22); ordinary capture keeps the seven-section scope.
+        self.follow_up = False
+        self.scope: tuple[SectionName, ...] = SECTIONS
+        self.limits: FollowUpLimits | None = None
+        self.seeds: dict[str, str] = {}
+        self.seed_sections: dict[str, SectionName | None] = {}
+        self.topic: PlannedTopic | None = None
+
+    async def load_scope(self) -> None:
+        plan = await db(store.load_plan, self.conn, self.plan_id)
+        topic = plan.topic(self.topic_id) if plan else None
+        if plan is None or topic is None:
+            raise WorkflowError(f"{self.topic_id} is not in the plan")
+        self.topic = topic
+        self.follow_up = plan.kind == "follow_up"
+        self.limits = plan.limits
+        self.scope = topic.sections or SECTIONS
+        self.seeds = {
+            q.gap_id: q.text for q in topic.questions if q.origin == "follow_up" and q.gap_id
+        }
+        self.seed_sections = {q.gap_id: q.section for q in topic.questions if q.gap_id}
+
+    async def unattempted_seeds(self) -> list[str]:
+        return [
+            gap_id
+            for gap_id in self.seeds
+            if not await db(store.gap_asked, self.conn, self.session_id, gap_id)
+        ]
+
+    async def cached_reply(self) -> Any:
+        row = await db(
+            self.conn.execute,
+            "SELECT reply FROM interview_replies WHERE session_id=%s AND step=%s AND call_index=%s",
+            (self.session_id, self.step, self.model_calls + 1),
+        )
+        found = row.fetchone()
+        return None if found is None else found[0]
+
+    async def usage(self) -> dict[str, int]:
+        return await db(follow_ups.usage_counts, self.conn, self.session_id)
+
+    def out_of_scope(self, section: Any) -> str | None:
+        if self.follow_up and section not in self.scope:
+            return f"Refused: {section} is outside this follow-up's scope."
+        return None
 
     def result(self) -> dict[str, Any]:
         return {
@@ -125,7 +191,11 @@ class _Step:
 
     async def missing(self) -> list[SectionName]:
         checklist = await db(store.checklist, self.conn, self.session_id, self.topic_id)
-        return [section for section, status in checklist.items() if status == "missing"]
+        return [
+            section
+            for section, status in checklist.items()
+            if status == "missing" and section in self.scope
+        ]
 
     async def remaining(self) -> str:
         missing = await self.missing()
@@ -151,11 +221,13 @@ class _Step:
     # --- the expert's side ---
 
     async def open_topic(self) -> None:
-        plan = await db(store.load_plan, self.conn, self.plan_id)
-        topic = plan.topic(self.topic_id) if plan else None
-        if topic is None:
+        if self.topic is None:
             raise WorkflowError(f"{self.topic_id} is not in the plan")
-        brief = _brief(topic, self.deps.limits.turns_per_topic)
+        brief = _brief(
+            self.topic,
+            self.deps.limits.turns_per_topic,
+            scope=self.scope if self.follow_up else None,
+        )
         self.messages = [Message("system", SYSTEM), Message("user", brief)]
 
     async def take_response(self, ordinal: int) -> bool:
@@ -173,6 +245,7 @@ class _Step:
                 self.notices.append(await self.correction_notice(turn))
             return False
         if turn.kind == "skip":
+            self.last_turn = None
             body = "The expert skipped this question. Do not ask it again."
             checklist = await db(store.checklist, self.conn, self.session_id, self.topic_id)
             if checklist[section] == "missing":
@@ -195,6 +268,7 @@ class _Step:
                 )
                 body += f" Section {section} is now open."
         elif turn.confidential:
+            self.last_turn = None
             # The answer itself never reaches the model, a trace or the workflow state.
             await db(
                 store.record_note,
@@ -205,6 +279,7 @@ class _Step:
                 store.CONFIDENTIAL_NOTE,
                 turn=turn.ordinal,
                 confidential=True,
+                keep_previous=self.follow_up,
             )
             emit(
                 {
@@ -341,15 +416,63 @@ class _Step:
         if section not in SECTIONS:
             self.say(call.id, "Refused: section must be one of " + ", ".join(SECTIONS) + ".")
             return False
+        refusal = self.out_of_scope(section)
+        if refusal is not None:
+            self.say(call.id, refusal)
+            return False
+        if self.follow_up:
+            gap_id = call.arguments.get("gap_id")
+            if not isinstance(gap_id, str) or not gap_id:
+                self.say(
+                    call.id,
+                    "Refused: a follow-up question needs the gap_id of one of the approved "
+                    "questions for this topic.",
+                )
+                return False
+            if gap_id not in self.seeds:
+                self.say(call.id, f"Refused: {gap_id} is not a selected gap of this topic.")
+                return False
+            selected_section = self.seed_sections[gap_id]
+            if selected_section is not None and section != selected_section:
+                self.say(call.id, "Refused: this gap is mapped to " + selected_section + ".")
+                return False
+            asked = await db(store.gap_asked, self.conn, self.session_id, gap_id)
+            if not asked and question.strip() != self.seeds[gap_id].strip():
+                self.say(
+                    call.id,
+                    f"Refused: the first question for gap {gap_id} must use the approved text: "
+                    f'"{self.seeds[gap_id]}"',
+                )
+                return False
         if self.expert_turns >= self.deps.limits.turns_per_topic:
             await self.close(LIMIT_REACHED)
             self.say(call.id, "Not asked: the question limit for this topic was reached.")
+            return False
+        replay_question = await db(
+            lambda: (
+                self.conn.execute(
+                    "SELECT 1 FROM turns WHERE session_id=%s AND step=%s AND kind='question'",
+                    (self.session_id, self.step),
+                ).fetchone()
+                is not None
+            )
+        )
+        if (
+            self.follow_up
+            and self.limits is not None
+            and (await self.usage())["questions"] >= self.limits.questions
+            and not replay_question
+        ):
+            await db(follow_ups.set_completion_reason, self.conn, self.session_id, "question_limit")
+            await self.close(FOLLOW_UP_QUESTION_LIMIT)
+            self.say(call.id, "Not asked: the question limit for this follow-up was reached.")
             return False
         return True
 
     async def ask(self, call: ToolCall, after: list[list[str]]) -> None:
         question = RedactedText(str(call.arguments["question"]).strip())
         section: SectionName = call.arguments["section"]
+        gap_id = str(call.arguments["gap_id"]) if self.follow_up else None
         turn = await db(
             store.add_question,
             self.conn,
@@ -358,6 +481,7 @@ class _Step:
             question,
             section=section,
             step=self.step,
+            gap_id=gap_id,
         )
         self.pending = {
             "type": "question",
@@ -365,6 +489,7 @@ class _Step:
             "question": question,
             "section": section,
             "topic_id": self.topic_id,
+            **({"gap_id": gap_id} if self.follow_up else {}),
             "call_id": call.id,
             "after": after,
         }
@@ -372,10 +497,23 @@ class _Step:
     async def run_tool(self, call: ToolCall) -> str:
         arguments = call.arguments
         if call.name == "record_note":
-            return await self.record_note(arguments.get("section"), arguments.get("text"))
+            return await self.record_note(
+                arguments.get("section"),
+                arguments.get("text"),
+                arguments.get("gap_id"),
+            )
         if call.name == "mark_open":
-            return await self.mark_open(arguments.get("section"), arguments.get("reason"))
+            return await self.mark_open(
+                arguments.get("section"),
+                arguments.get("reason"),
+                arguments.get("gap_id"),
+            )
         if call.name == "finish_topic":
+            unattempted = await self.unattempted_seeds() if self.follow_up else []
+            if unattempted:
+                return "Refused: approved seed questions have not been attempted: " + ", ".join(
+                    unattempted
+                )
             missing = await self.missing()
             if missing:
                 return (
@@ -387,15 +525,18 @@ class _Step:
             return "The topic is finished."
         if call.name == "search_artifacts":
             limit = arguments.get("limit")
-            return await db(
-                tools.search_artifacts,
-                self.conn,
-                self.run_id,
-                self.deps.embedder,
-                str(arguments.get("query", "")),
-                limit if isinstance(limit, int) else 5,
-                self.domains,
-            )
+            try:
+                return await db(
+                    tools.search_artifacts,
+                    self.conn,
+                    self.run_id,
+                    self.deps.embedder,
+                    str(arguments.get("query", "")),
+                    limit if isinstance(limit, int) else 5,
+                    self.domains,
+                )
+            except follow_ups.ProviderBudgetExceeded:
+                return "Refused: the artifact search budget for this follow-up is exhausted."
         if call.name == "get_artifact":
             return await db(
                 tools.get_artifact,
@@ -406,19 +547,42 @@ class _Step:
             )
         return f"Unknown tool: {call.name}. The tools are: " + ", ".join(tools.TOOL_NAMES) + "."
 
-    async def record_note(self, section: Any, text: Any) -> str:
+    async def record_note(self, section: Any, text: Any, gap_id: Any = None) -> str:
         if section not in SECTIONS:
             return "Refused: section must be one of " + ", ".join(SECTIONS) + "."
         if not isinstance(text, str) or not text.strip():
             return "Refused: a note needs text."
+        refusal = self.out_of_scope(section)
+        if refusal is not None:
+            return refusal
         checklist = await db(store.checklist, self.conn, self.session_id, self.topic_id)
-        if checklist[section] == "confidential":
+        if checklist[section] == "confidential" and not self.follow_up:
             return f"Refused: {section} was answered confidentially and takes no note."
         if self.last_turn is None:
             return (
                 "Refused: a note must come from something the expert said about this topic. "
                 "Ask first."
             )
+        if self.follow_up:
+            answer = await db(store.load_turn, self.conn, self.session_id, self.last_turn)
+            question = (
+                await db(store.load_turn, self.conn, self.session_id, answer.answers)
+                if answer is not None and answer.answers is not None
+                else None
+            )
+            if question is None or question.section != section:
+                return "Refused: a follow-up note must match the answered question's section."
+            if gap_id is not None and gap_id != question.gap_id:
+                return "Refused: gap_id must match the answered follow-up question."
+            unknown = await db(
+                lambda: self.conn.execute(
+                    "SELECT 1 FROM turns WHERE session_id=%s AND ordinal=%s "
+                    "AND follow_up_outcome='unknown'",
+                    (self.session_id, self.last_turn),
+                ).fetchone()
+            )
+            if unknown:
+                return "Refused: this answer was recorded as unknown and cannot supply a fact."
         note = RedactedText(text.strip())
         await db(
             store.record_note,
@@ -428,17 +592,36 @@ class _Step:
             section,
             note,
             turn=self.last_turn,
+            keep_previous=self.follow_up,
         )
         emit({"type": "note", "topic_id": self.topic_id, "section": section, "text": note})
         return f"Noted {section}." + await self.remaining()
 
-    async def mark_open(self, section: Any, reason: Any) -> str:
+    async def mark_open(self, section: Any, reason: Any, gap_id: Any = None) -> str:
         if section not in SECTIONS:
             return "Refused: section must be one of " + ", ".join(SECTIONS) + "."
         if not isinstance(reason, str) or not reason.strip():
             return "Refused: an open item needs a reason."
+        refusal = self.out_of_scope(section)
+        if refusal is not None:
+            return refusal
         checklist = await db(store.checklist, self.conn, self.session_id, self.topic_id)
-        if checklist[section] in ("noted", "confidential"):
+        if self.follow_up:
+            answer = (
+                await db(store.load_turn, self.conn, self.session_id, self.last_turn)
+                if self.last_turn is not None
+                else None
+            )
+            question = (
+                await db(store.load_turn, self.conn, self.session_id, answer.answers)
+                if answer is not None and answer.answers is not None
+                else None
+            )
+            if question is None or question.section != section:
+                return "Refused: an open item must match the answered follow-up question."
+            if gap_id is not None and gap_id != question.gap_id:
+                return "Refused: gap_id must match the answered follow-up question."
+        elif checklist[section] in ("noted", "confidential"):
             return f"Refused: {section} already has a note."
         why = RedactedText(reason.strip())
         await db(
@@ -454,6 +637,7 @@ class _Step:
         return f"Marked {section} open." + await self.remaining()
 
     async def run(self) -> dict[str, Any]:
+        await self.load_scope()
         if self.pending is not None:
             public = {k: v for k, v in self.pending.items() if k not in ("call_id", "after")}
             response = interrupt(public)
@@ -465,13 +649,29 @@ class _Step:
             self.messages.append(Message("user", RedactedText("\n".join(self.notices))))
             self.notices = []
         while not self.done and self.pending is None:
-            if not await self.missing():
+            if not self.follow_up and not await self.missing():
                 self.done = True
             elif self.model_calls >= self.deps.limits.model_calls_per_topic:
                 await self.close(STOPPED)
+            elif (
+                self.follow_up
+                and self.limits is not None
+                and (await self.usage())["model_calls"] >= self.limits.model_calls
+                and await self.cached_reply() is None
+            ):
+                await db(
+                    follow_ups.set_completion_reason, self.conn, self.session_id, "model_budget"
+                )
+                await self.close(FOLLOW_UP_MODEL_BUDGET)
             else:
                 self.model_calls += 1
-                await self.handle(await self.complete())
+                try:
+                    await self.handle(await self.complete())
+                except follow_ups.ProviderBudgetExceeded:
+                    await db(
+                        follow_ups.set_completion_reason, self.conn, self.session_id, "model_budget"
+                    )
+                    await self.close(FOLLOW_UP_MODEL_BUDGET)
         return self.result()
 
 

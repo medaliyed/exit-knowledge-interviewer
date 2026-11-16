@@ -83,6 +83,10 @@ def synthesise(
         opened = interviews.load_open_items(conn, session_id)
         existing = {s.entry.topic_id: s for s in store.list_entries(conn, session_id)}
         for topic in plan.topics:
+            # Existing targets go through the F22 proposal/apply path (9c). Never create
+            # a second entry for them through either automatic or explicit synthesis.
+            if plan.kind == "follow_up" and topic.target_entry_id is not None:
+                continue
             previous = existing.get(topic.topic_id)
             if previous is not None and (
                 previous.entry.status != EntryStatus.DRAFT

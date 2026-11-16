@@ -162,6 +162,23 @@ class GapService:
             for r in rows:
                 if r["kind"] == "request":
                     merged.append(_public(r))
+            attempts: dict[str, list[dict[str, Any]]] = {}
+            for gap_id, session_id, outcome, question_turn, recorded_at in conn.execute(
+                "SELECT a.gap_id,a.session_id,a.outcome,a.question_turn,a.recorded_at "
+                "FROM follow_up_attempts a JOIN follow_up_gaps g ON g.id=a.gap_id "
+                "WHERE g.run_id=%s ORDER BY a.id",
+                (run_id,),
+            ).fetchall():
+                attempts.setdefault(str(gap_id), []).append(
+                    {
+                        "session_id": str(session_id),
+                        "outcome": outcome,
+                        "question_turn": question_turn,
+                        "recorded_at": recorded_at.isoformat(),
+                    }
+                )
+            for gap in merged:
+                gap["attempts"] = attempts.get(str(gap.get("group_id") or gap["id"]), [])
         selected = [g for g in merged if _matches(filter, g)]
         selected.sort(
             key=lambda g: (
@@ -300,7 +317,7 @@ class GapService:
             maintenance.lock_run(conn, run_id)
             maintenance.active(conn, principal)
             access.require_manager(conn, run_id, principal)
-            row = self._lock_gap(conn, run_id, gap_id)
+            row = self.lock_gap(conn, run_id, gap_id)
             if row["revision"] != expected_revision:
                 raise ConflictError("gap changed; refresh before triaging")
             status: str = row["status"]
@@ -353,7 +370,9 @@ class GapService:
             else:
                 if group_with is None or str(group_with) == str(row["id"]):
                     raise ValueError("grouping needs another gap of this run")
-                leader = self._lock_gap(conn, run_id, group_with)
+                leader = self.lock_gap(conn, run_id, group_with)
+                if status != "pending" or leader["status"] != "pending":
+                    raise ConflictError("only pending gaps can be grouped")
                 if leader["group_id"] is not None:
                     raise ConflictError("group under the leading gap, not a grouped one")
                 update["group_id"] = group_with
@@ -383,7 +402,7 @@ class GapService:
             live = next((c for c in candidates(conn, run_id) if c["id"] == str(saved["id"])), {})
             return {**_blank_state(), **_public(saved), **live, "status": saved["status"]}
 
-    def _lock_gap(
+    def lock_gap(
         self, conn: psycopg.Connection, run_id: UUID, gap_id: UUID | str
     ) -> dict[str, Any]:
         """Lock a gap row, creating the state row of a live open-section candidate first."""
@@ -392,9 +411,11 @@ class GapService:
                 "SELECT * FROM follow_up_gaps WHERE id=%s AND run_id=%s FOR UPDATE",
                 (gap_id, run_id),
             ).fetchone()
-            if row is not None:
-                return dict(row)
             live = next((c for c in candidates(conn, run_id) if c["id"] == str(gap_id)), None)
+            if row is not None:
+                if row["kind"] == "open_section" and live is None:
+                    raise ConflictError("the selected section is no longer a public open gap")
+                return dict(row)
             if live is None:
                 raise NotFoundError("gap not found")
             cursor.execute(

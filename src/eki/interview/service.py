@@ -17,9 +17,11 @@ from langgraph.types import Command
 
 from eki import maintenance
 from eki.audit import AuditedModel, AuditError, AuditRecorder, Operation
+from eki.auth import current_principal
 from eki.config import Settings, model_name, work_domains
 from eki.errors import ConflictError as ConflictError
 from eki.errors import NotFoundError as NotFoundError
+from eki.followup import sessions as follow_ups
 from eki.graph.workflow import (
     AgentNode,
     Deps,
@@ -49,6 +51,7 @@ from eki.llm.litellm_model import LiteLLMModel
 from eki.llm.tracing import NullTracer, TracedModel, Tracer, build_tracer
 from eki.runbook.models import SectionName
 from eki.runbook.service import correct_entries
+from eki.search.embedding import AuditedEmbedder
 
 Event = dict[str, Any]
 Action = Literal["answer", "skip", "correct"]
@@ -74,6 +77,10 @@ class SessionView:
     turns: tuple[Turn, ...]
     notes: tuple[Note, ...]
     open_items: tuple[OpenItem, ...]
+    scope: tuple[SectionName, ...] = ()
+    """Sections in scope for the current topic; a follow-up may select fewer than seven."""
+    usage: dict[str, Any] | None = None
+    """Follow-up sessions: question/model/embedding counts, frozen limits and completion."""
 
 
 @dataclass
@@ -102,12 +109,16 @@ class InterviewService:
         session_id: UUID | None = None,
     ) -> Deps:
         """Node dependencies, with both models traced under the given IDs."""
+        recorder = AuditRecorder(self.dsn)
+        if session_id is not None:
+            session = store.load_session(conn, session_id)
+            plan = store.load_plan(conn, session.plan_id) if session is not None else None
+            if plan is not None and plan.kind == "follow_up" and plan.limits is not None:
+                recorder = follow_ups.FollowUpRecorder(self.dsn, session_id, plan.limits)
 
         def traced(model: ChatModel, step: Operation) -> ChatModel:
             return TracedModel(
-                AuditedModel(
-                    model, AuditRecorder(self.dsn), step, () if run_id is None else (run_id,)
-                ),
+                AuditedModel(model, recorder, step, () if run_id is None else (run_id,)),
                 self.tracer,
                 step=step,
                 work_email_domains=self.work_email_domains,
@@ -116,16 +127,22 @@ class InterviewService:
                 session_id=None if session_id is None else str(session_id),
             )
 
+        embedder = (
+            self.artifact_resolver(conn, run_id)
+            if self.artifact_resolver is not None and run_id is not None
+            else self.embedder
+        )
+        if isinstance(recorder, follow_ups.FollowUpRecorder) and not isinstance(
+            embedder, HashingEmbedder
+        ):
+            inner = embedder.inner if isinstance(embedder, AuditedEmbedder) else embedder
+            embedder = AuditedEmbedder(inner, recorder, () if run_id is None else (run_id,))
         return Deps(
             conn=conn,
             audit=AuditRecorder(self.dsn),
             drafter=traced(self.drafter, "draft"),
             interviewer=traced(self.interviewer, "interview"),
-            embedder=(
-                self.artifact_resolver(conn, run_id)
-                if self.artifact_resolver is not None and run_id is not None
-                else self.embedder
-            ),
+            embedder=embedder,
             work_email_domains=self.work_email_domains,
             limits=self.limits,
             draft_configuration=self.draft_configuration,
@@ -202,7 +219,11 @@ class InterviewService:
             return await db(store.session_of_plan, conn, plan_id)
 
     async def edit_plan(
-        self, plan_id: UUID, edit: Callable[[InterviewPlan], InterviewPlan]
+        self,
+        plan_id: UUID,
+        edit: Callable[[InterviewPlan], InterviewPlan],
+        *,
+        expected_revision: int | None = None,
     ) -> InterviewPlan:
         """Apply an edit from ``eki.interview.plan``. Raises ``PlanFrozenError`` once approved."""
 
@@ -214,17 +235,40 @@ class InterviewService:
                 if row is None:
                     raise NotFoundError("plan not found")
                 maintenance.capture(conn, row[0])
+                maintenance.lock_run(conn, row[0])
                 conn.execute("SELECT 1 FROM interview_plans WHERE id = %s FOR UPDATE", (plan_id,))
                 plan = store.load_plan(conn, plan_id)
                 if plan is None:
                     raise NotFoundError(f"no plan {plan_id}")
+                if expected_revision is not None and plan.revision != expected_revision:
+                    raise ConflictError("plan changed; refresh before editing")
                 changed = edit(plan)
+                follow_ups.validate_edit(plan, changed)
+                if plan.kind == "follow_up":
+                    topics = []
+                    for topic in changed.topics:
+                        questions = tuple(
+                            q.model_copy(
+                                update={
+                                    "text": redact(
+                                        q.text,
+                                        work_email_domains=self.work_email_domains,
+                                    ).text
+                                }
+                            )
+                            for q in topic.questions
+                        )
+                        topics.append(topic.model_copy(update={"questions": questions}))
+                    changed = changed.model_copy(update={"topics": tuple(topics)})
                 store.save_plan(conn, changed)
-                return changed
+                follow_ups.release(conn, plan, changed)
+                return store.load_plan(conn, plan_id) or changed
 
         return await db(work)
 
-    async def approve(self, plan_id: UUID, by: str) -> SessionView:
+    async def approve(
+        self, plan_id: UUID, by: str, *, expected_revision: int | None = None
+    ) -> SessionView:
         """Freeze the plan, open its session and ask the first question."""
         with self._connect() as conn:
             plan_run = await db(
@@ -240,16 +284,49 @@ class InterviewService:
             plan = await db(store.load_plan, conn, plan_id)
             if plan is None:
                 raise NotFoundError(f"no plan {plan_id}")
+            follow_up = plan.kind == "follow_up"
+            respondent = None
+            if follow_up:
+                respondent = await db(
+                    follow_ups.respondent, conn, plan.run_id, current_principal(), by
+                )
+            existing_session = await db(store.session_of_plan, conn, plan_id)
             if plan.status == "draft":
+                if expected_revision is not None and expected_revision != plan.revision:
+                    raise ConflictError("plan changed; refresh before approving")
+                if follow_up:
+                    await db(follow_ups.validate_selection, conn, plan)
                 await db(store.save_plan, conn, approve_plan(plan, by, self.clock()))
-            elif await db(store.session_of_plan, conn, plan_id) is not None:
-                raise ConflictError("the plan is already approved")
-            new_session = await db(store.session_of_plan, conn, plan_id) or uuid4()
+            elif existing_session is not None:
+                if follow_up:
+                    previous = await self.view(existing_session)
+                    if previous.session.status == "finished" or previous.waiting is not None:
+                        return previous  # completed approval retries spend no provider allowance
+                else:
+                    raise ConflictError("the plan is already approved")
+            new_session = existing_session or uuid4()
+            # A durable session also identifies the budget recorder before its first call.
+            if follow_up:
+                new_session = await db(store.create_session, conn, new_session, plan.id, respondent)
             deps = self._deps(conn, run_id=plan.run_id, plan_id=plan_id, session_id=new_session)
             async with open_workflow(self.dsn, deps, self.agent) as workflow:
+                config = thread_config(plan_id)
+                if follow_up and not (await workflow.aget_state(config)).values:
+                    # Prepared without the drafting node: start the thread up to plan review.
+                    await workflow.ainvoke(
+                        {"run_id": str(plan.run_id), "plan_id": str(plan_id)},
+                        config,
+                        durability="sync",
+                    )
+                snapshot = await workflow.aget_state(config)
+                command: Command[Any] | None = (
+                    Command(resume={"session_id": str(new_session), "respondent": respondent})
+                    if snapshot.interrupts
+                    else None
+                )
                 await workflow.ainvoke(
-                    Command(resume={"session_id": str(new_session)}),
-                    thread_config(plan_id),
+                    command,
+                    config,
                     durability="sync",
                 )
             session_id = await db(store.session_of_plan, conn, plan_id)
@@ -265,6 +342,7 @@ class InterviewService:
                 if session is None:
                     raise NotFoundError(f"no session {session_id}")
                 topic_id = session.current_topic_id
+                in_scope = store.scope(conn, session_id, topic_id) if topic_id else ()
                 return SessionView(
                     session=session,
                     waiting=(
@@ -272,10 +350,22 @@ class InterviewService:
                         if session.status == "active"
                         else None
                     ),
-                    checklist=store.checklist(conn, session_id, topic_id) if topic_id else {},
+                    checklist=(
+                        {
+                            s: v
+                            for s, v in store.checklist(conn, session_id, topic_id).items()
+                            if s in in_scope
+                        }
+                        if topic_id
+                        else {}
+                    ),
                     turns=store.load_turns(conn, session_id),
                     notes=store.load_notes(conn, session_id),
                     open_items=store.load_open_items(conn, session_id),
+                    scope=in_scope,
+                    usage=(
+                        follow_ups.usage(conn, session_id) if session.kind == "follow_up" else None
+                    ),
                 )
 
         return await db(work)
@@ -331,6 +421,11 @@ class InterviewService:
             if session is None:
                 raise NotFoundError(f"no session {session_id}")
             await db(maintenance.capture, conn, session.run_id)
+            if session.kind == "follow_up":
+                # Only the recorded respondent answers or resumes a follow-up (F22 I2).
+                subject = await db(follow_ups.respondent, conn, session.run_id, current_principal())
+                if session.respondent_subject not in (None, subject):
+                    raise NotFoundError(f"no session {session_id}")
             if not await db(store.try_lock, conn, session.plan_id):
                 raise BusyError("another message for this session is being handled")
             return conn, session

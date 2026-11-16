@@ -15,6 +15,7 @@ For the static picture (pipeline, components, workflow graph, data model) see
 | [Draft an interview plan](draft-plan.md) | `eki plan`, `POST /runs/{id}/plan` | Pick the highest-gap topics and have a model draft questions that must quote an artifact. |
 | [Message delivery and recovery](message-delivery.md) | Message POST or receipt resume | Save a question-bound message before processing and resume without repeating logical effects. |
 | [One interview turn](interview-turn.md) | `eki interview`, `POST /sessions/{id}/messages` | Store the answer, let the interviewer model note it and ask again, checkpoint at every question. |
+| [Focused follow-up](follow-up.md) | Explicit saved request, gap selection and authenticated plan approval | Revisit selected sections through the existing graph with durable session-wide limits. |
 | [Maintain knowledge](maintenance.md) | Admin handover, entry review date or reader report | Transfer responsibility, review freshness and triage private feedback under the current owner. |
 | [Review and approve an entry](review-entry.md) | `eki review`, `POST /entries/{id}/approve` | Show the draft with its unsupported claims, then approve it under lock with a decision and an audit event. |
 | [Grade golden interviews](grade-interviews.md) | `python evals/grade.py` | Interview one planted topic per isolated schema, score it and save or compare redacted reports. |
@@ -47,11 +48,10 @@ These are single-component operations. A sentence is enough.
 
 Things the flow pages flag. Each is cited on its page.
 
-- **Open questions do not lead to a focused follow-up session.** Ask also
-  retains no unanswered-question backlog. [Phase 9](../plans/phase-9.md) proposes
-  explicit gap intake and a second interview through the existing workflow,
-  pending implementation approval.
-  ([interview-turn.md](interview-turn.md), [search-and-ask.md](search-and-ask.md))
+- **Follow-up publication and dedicated browser/CLI journeys remain open.**
+  Phase 9a/9b implement explicit gap intake and bounded focused sessions. Mapped
+  answers stay private until 9c implements reviewed proposals, lineage and apply;
+  9d will expose the full journey in the browser and CLI. ([follow-up.md](follow-up.md))
 - **Real-provider calls interrupted before their result is persisted may repeat**
   on recovery. Accepted messages and stored replies survive.
   ([message-delivery.md](message-delivery.md))

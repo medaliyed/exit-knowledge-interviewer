@@ -1,7 +1,9 @@
 # Phase 9 PDR: follow-up interviews on knowledge gaps
 
-**Status:** proposed 2026-11-15, at the owner's request. Planning only;
-implementation has not started. This document proposes behaviour and defaults.
+**Status:** implementation continued at the owner's request on 2026-11-16.
+**9a and 9b are implemented** with deterministic acceptance coverage. Entry
+proposals/source lineage (9c) and browser/CLI journeys (9d) remain open. The
+requirements below describe the full phase; the outcome records shipped scope.
 
 **Parent:** [Project PDR](../PDR.md), new requirement **F22**. Reuses F6–F10
 (plan, interview, confidentiality, citations and approval), F14/F18 (durable
@@ -207,7 +209,9 @@ approval. Confidential-only or unknown answers do not produce publishable claims
 
 ## 6. API and CLI proposal
 
-These are proposed routes and strict request models, not implemented contracts.
+This table describes the full-phase API. Intake, triage, preparation, plan review,
+interview and stop routes are implemented; proposal routes remain planned for 9c.
+See [the follow-up flow](../flows/follow-up.md) for the current contract.
 Actor identity is derived from authentication. Owner/admin queue endpoints and
 reader receipts have separate response models.
 
@@ -332,5 +336,72 @@ Implementation does not require or authorize a paid model evaluation.
 - Follow-up sessions use the original expert before handover; successor
   maintenance and reader flags retain Phase 8's separate responsibilities.
 
-Status will record implementation approval and any changes to these choices.
-Creating this proposal does not change runtime behaviour or contact an expert.
+The owner's continuation request authorizes implementation with these defaults.
+Nothing sends an invitation or contacts an expert.
+
+## 12. Implementation outcome — 2026-11-16
+
+**9a:** committed as `6cc1981`. Public-open candidates and explicitly saved,
+redacted Ask requests share a run-scoped owner queue. Receipts, exact deduplication,
+shared-worker throttling, safe abstention reasons and triage are implemented.
+
+**9b:** deterministic preparation creates a `follow_up` plan with a finished
+capture parent, selected gap IDs, per-seed section mappings, target base versions,
+revision and visible limits. Review can edit/remove seeds and reduce/change limits;
+removing a seed releases its reservation and narrows the topic scope. Preparation
+retries retain their original request fingerprint even after review edits.
+
+Only the authenticated current owner matching the original expert can approve,
+answer or resume. The respondent subject is retained on the session. Approval
+rechecks sources, target versions and reservations; ownership/mode and disabled
+account checks use the shared capture boundary. Handover refuses active follow-up
+work or unsettled receipts, and releases abandoned draft selections.
+
+Preparation serializes at the run and reserves a single draft's selected gaps
+immediately, rather than waiting until approval. This also prevents competing draft
+plans from retaining the same selections. Approval revalidates those reservations;
+removing selections, stopping or finishing returns unresolved work to triage.
+
+The existing graph and six tools enforce selected sections and the approved text
+of every seed's first question. Section coverage cannot silently satisfy a second
+seed in the same section. Multiple public answers retain separate notes and source
+turns. Skip, unknown and confidential outcomes remain unresolved; attempts are shown
+in the private queue. Finished usage includes a partial flag, completion reason,
+durable questions/chat/embedding counts, available token totals and elapsed time.
+
+Provider reservations and their audit starts commit together, linked by call ID.
+Failed/uncertain attempts remain charged. A cached reply can finish replaying after
+the allowance is spent without another provider call. Semantic artifact retrieval
+uses its recorded model and separate allowance; offline hashing spends no provider
+embedding allowance. Accepted answers remain durable when a limit closes the graph,
+and the finished state commits before its receipt reports processing complete.
+
+Migration `0017_follow_up_sessions.sql` preserves existing capture data and adds
+lineage/scope, revisions, durable usage, provider attempts and per-seed outcomes.
+Its note index allows independent answers in one section. Deliberately new topics
+produce idempotent private drafts, including explicit open sections after a stop.
+Mapped topics leave the existing entry untouched and cannot create duplicate
+entries through explicit synthesis.
+
+**Remaining:** 9c must turn mapped notes into private section proposals, implement
+comparison/apply, cross-session citation validation/corrections and approval-linked
+gap resolution. Until then, mapped answers remain private interview notes awaiting
+review; they do not update the published entry. 9d must add follow-up browser/CLI
+journeys and their acceptance cases. The current browser regression suite verifies
+existing journeys only. No paid provider evaluation was run; human-owned evaluation
+scenarios and golden files remain untouched.
+
+Verification on 2026-11-16:
+
+- `pytest -q -m 'not infra and not live' --tb=short --maxfail=5`: **805 passed**,
+  11 deselected, including 24 scripted follow-up session/recovery cases.
+- `python evals/run.py --junit reports/quality.xml`: **78 passed**, zero failures,
+  errors or skipped gate cases.
+- Ruff lint and format checks, and strict mypy: passed.
+- Frontend TypeScript check and Vitest: **11 passed**; Node delivery/SSE checks:
+  **4 passed**.
+- Existing Playwright browser regression suite: **39 passed**, using synthetic
+  API doubles and installed Chrome, including accessibility and narrow layouts.
+
+Database and loopback-server tests ran outside the filesystem/network sandbox
+against isolated local test schemas. No live or paid provider tests ran.

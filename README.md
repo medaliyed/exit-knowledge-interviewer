@@ -236,6 +236,10 @@ workspace follows the supplied HTML prototype and UI PDR, with automated browser
 workflow, accessibility and responsive-layout checks. Phase 6 adds invited
 email/password accounts, persistent browser sessions and operator account management.
 Phase 8 adds successor handover, review dates and private reader-feedback triage.
+Phase 9a/9b add explicit follow-up requests, owner triage and focused interviews
+with durable budgets through the HTTP/shared services. Apply migrations before
+starting the API. Mapped entry proposals/source lineage and dedicated browser/CLI
+journeys remain in 9c/9d; see the [follow-up flow](docs/flows/follow-up.md).
 Phase 7 adds golden interview grading, bounded runs and report comparison, with
 eight scenario/golden drafts awaiting owner adoption. Real-provider validation
 remains deferred by user request; manual screen-reader validation is still pending.

@@ -35,6 +35,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 
 from eki.audit import AuditRecorder
+from eki.followup import sessions as follow_ups
 from eki.ingest.embedding import Embedder
 from eki.ingest.pipeline import load as load_snapshot
 from eki.ingest.redaction import redact
@@ -208,7 +209,11 @@ async def _await_review(deps: Deps, state: InterviewState) -> dict[str, Any]:
     if plan is None or plan.status != "approved":
         raise WorkflowError("the plan is not approved")
     session_id = await db(
-        store.create_session, deps.conn, UUID(str(decision["session_id"])), plan.id
+        store.create_session,
+        deps.conn,
+        UUID(str(decision["session_id"])),
+        plan.id,
+        decision.get("respondent"),
     )
     return {"session_id": str(session_id), "status": "interviewing", "topic_index": -1, "step": 0}
 
@@ -231,6 +236,13 @@ async def _next_topic(deps: Deps, state: InterviewState) -> dict[str, Any]:
     }
     if index >= len(plan.topics):
         return {**fresh, "topic_id": None, "status": "done"}
+    if plan.kind == "follow_up" and plan.limits is not None:
+        # A spent session-wide budget ends the follow-up before the next topic starts;
+        # its remaining seeds are reported as unattempted rather than asked anyway.
+        reason = await db(follow_ups.exhausted, deps.conn, session_id, plan.limits)
+        if reason is not None:
+            await db(follow_ups.set_completion_reason, deps.conn, session_id, reason)
+            return {**fresh, "topic_id": None, "status": "done"}
     topic_id = plan.topics[index].topic_id
     await db(store.set_current_topic, deps.conn, session_id, topic_id)
     emit(
@@ -247,10 +259,10 @@ async def _next_topic(deps: Deps, state: InterviewState) -> dict[str, Any]:
 
 async def _check_complete(deps: Deps, state: InterviewState) -> dict[str, Any]:
     """Plain code: a topic is complete when each section has a note or is recorded as open."""
-    checklist = await db(
-        store.checklist, deps.conn, UUID(str(state["session_id"])), str(state["topic_id"])
-    )
-    missing = [section for section, status in checklist.items() if status == "missing"]
+    session_id, topic_id = UUID(str(state["session_id"])), str(state["topic_id"])
+    checklist = await db(store.checklist, deps.conn, session_id, topic_id)
+    in_scope = await db(store.scope, deps.conn, session_id, topic_id)
+    missing = [s for s, status in checklist.items() if status == "missing" and s in in_scope]
     if not missing:
         return {}
     notice = "The topic is not finished. These sections are still missing: " + ", ".join(missing)
@@ -259,9 +271,15 @@ async def _check_complete(deps: Deps, state: InterviewState) -> dict[str, Any]:
 
 async def _synthesise(deps: Deps, state: InterviewState) -> dict[str, Any]:
     def work() -> None:
+        session_id = UUID(str(state["session_id"]))
+        session = store.load_session(deps.conn, session_id)
         with deps.conn.transaction():
-            store.finish_session(deps.conn, UUID(str(state["session_id"])))
-            synthesise(deps.conn, UUID(str(state["session_id"])))
+            if session is not None and session.kind == "follow_up":
+                # Follow-ups record outcomes per seed; entry proposals are a review step.
+                follow_ups.finish(deps.conn, session_id)
+                return
+            store.finish_session(deps.conn, session_id)
+            synthesise(deps.conn, session_id)
 
     await db(work)
     return {"status": "done"}

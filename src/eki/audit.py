@@ -53,6 +53,8 @@ Operation = Literal[
     "flag_resolved",
     "follow_up_requested",
     "gap_triaged",
+    "follow_up_prepared",
+    "follow_up_finished",
     "sign_in",
     "sign_out",
     "session_expired",

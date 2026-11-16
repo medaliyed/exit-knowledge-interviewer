@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Literal, Self, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from eki.ingest.redaction import RedactedText
 from eki.runbook.models import SectionName
@@ -30,12 +30,25 @@ class _Model(BaseModel):
         return type(self).model_validate({**dict(self), **update})
 
 
+class FollowUpLimits(_Model):
+    """Session-wide bounds of one follow-up, frozen when the expert approves its plan (F22)."""
+
+    topics: int = Field(default=3, ge=1, le=10)
+    questions: int = Field(default=6, ge=1, le=30)
+    model_calls: int = Field(default=12, ge=1, le=60)
+    embedding_calls: int = Field(default=6, ge=0, le=20)
+
+
 class Question(_Model):
     text: RedactedText
-    origin: Literal["drafted", "expert"] = "drafted"
+    origin: Literal["drafted", "expert", "follow_up"] = "drafted"
     artifact_id: str | None = None
     quote: RedactedText | None = None
     """Verbatim from the artifact. Required for a drafted question (F6)."""
+    gap_id: str | None = None
+    """Follow-up seeds: the selected gap this question was prepared from (F22)."""
+    section: SectionName | None = None
+    """Mapped follow-up seeds retain their approved section, independent of topic coverage."""
 
     @model_validator(mode="after")
     def _check(self) -> Self:
@@ -43,6 +56,8 @@ class Question(_Model):
             raise ValueError("a question needs text")
         if self.origin == "drafted" and not (self.artifact_id and (self.quote or "").strip()):
             raise ValueError("a drafted question must quote an artifact")
+        if (self.origin == "follow_up") != (self.gap_id is not None):
+            raise ValueError("exactly the follow-up seeds carry a gap_id")
         return self
 
 
@@ -51,7 +66,7 @@ class PlannedTopic(_Model):
     label: str
     kind: str
     system: str | None
-    origin: Literal["ranked", "contradiction", "expert"]
+    origin: Literal["ranked", "contradiction", "expert", "follow_up"]
     """Why it is in the plan: its gap score, sources that disagree, or the expert added it."""
     score: float | None
     reason: str
@@ -59,6 +74,11 @@ class PlannedTopic(_Model):
     questions: tuple[Question, ...] = ()
     dropped: tuple[str, ...] = ()
     """Why drafted questions were thrown away, for example a quote that is not in the artifact."""
+    sections: tuple[SectionName, ...] | None = None
+    """Follow-up scope: the sections to revisit. ``None`` is the ordinary seven-section scope."""
+    target_entry_id: str | None = None
+    """Follow-up: the existing entry this topic revisits, with the version it was prepared from."""
+    base_version: int | None = None
 
 
 class InterviewPlan(_Model):
@@ -69,12 +89,38 @@ class InterviewPlan(_Model):
     """In interview order."""
     approved_by: str | None = None
     approved_at: datetime | None = None
+    kind: Literal["capture", "follow_up"] = "capture"
+    parent_session_id: UUID | None = None
+    limits: FollowUpLimits | None = None
+    revision: int = Field(default=1, ge=1)
 
     @model_validator(mode="after")
     def _check(self) -> Self:
         ids = [topic.topic_id for topic in self.topics]
         if len(ids) != len(set(ids)):
             raise ValueError("a topic appears more than once in the plan")
+        if self.kind == "follow_up":
+            if self.parent_session_id is None or self.limits is None:
+                raise ValueError("a follow-up plan needs its parent session and frozen limits")
+            if len(self.topics) > self.limits.topics:
+                raise ValueError("follow-up topic limit exceeded")
+            questions = [q for t in self.topics for q in t.questions]
+            gaps = [q.gap_id for q in questions]
+            if len(questions) > self.limits.questions:
+                raise ValueError("follow-up question limit exceeded")
+            if any(q.origin != "follow_up" for q in questions) or len(gaps) != len(set(gaps)):
+                raise ValueError("follow-up questions must retain distinct selected gap IDs")
+            for topic in self.topics:
+                if not topic.questions or topic.origin != "follow_up":
+                    raise ValueError("follow-up topics need selected seed questions")
+                if topic.target_entry_id is not None and (
+                    not topic.sections
+                    or not topic.base_version
+                    or any(q.section not in topic.sections for q in topic.questions)
+                ):
+                    raise ValueError("mapped follow-up questions need their selected section")
+        elif self.parent_session_id is not None or self.limits is not None:
+            raise ValueError("capture plans cannot carry follow-up scope")
         if self.status == "approved":
             if not (self.approved_by and self.approved_at):
                 raise ValueError("an approved plan needs an approver and a time")
@@ -92,11 +138,19 @@ class Session(_Model):
     run_id: UUID
     status: Literal["active", "finished"]
     current_topic_id: str | None
+    kind: Literal["capture", "follow_up"] = "capture"
+    respondent_subject: str | None = None
+    """Follow-up: the authenticated subject that approved the plan and answers it."""
+    completion_reason: (
+        Literal["complete", "question_limit", "model_budget", "expert_stopped"] | None
+    ) = None
 
 
 class Turn(_Model):
     author_subject: str | None = None
     author_name: str | None = None
+    gap_id: str | None = None
+    """Follow-up question turns: the selected gap this question is attributed to."""
     ordinal: int
     """Position in the session's transcript, from 1."""
     topic_id: str | None

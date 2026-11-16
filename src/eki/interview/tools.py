@@ -48,19 +48,34 @@ TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "ask_expert",
         "Ask the expert one question and wait for the answer. "
-        "Say which runbook section the question is about.",
-        _schema({"question": {"type": "string"}, "section": _SECTION}, ["question", "section"]),
+        "Say which runbook section the question is about. In a follow-up, also give the "
+        "gap_id of the approved question it serves.",
+        _schema(
+            {
+                "question": {"type": "string"},
+                "section": _SECTION,
+                "gap_id": {"type": "string"},
+            },
+            ["question", "section"],
+        ),
     ),
     ToolSpec(
         "record_note",
-        "Record what the expert said for one section, faithfully. Only after they answered.",
-        _schema({"section": _SECTION, "text": {"type": "string"}}, ["section", "text"]),
+        "Record what the expert said for one section, faithfully. Only after they answered. "
+        "Follow-up notes use the latest answer's selected gap; an optional gap_id must match it.",
+        _schema(
+            {"section": _SECTION, "text": {"type": "string"}, "gap_id": {"type": "string"}},
+            ["section", "text"],
+        ),
     ),
     ToolSpec(
         "mark_open",
         "Record that a section could not be filled: the expert does not know, does not "
         "remember, or it does not apply. Give the expert's words as the reason.",
-        _schema({"section": _SECTION, "reason": {"type": "string"}}, ["section", "reason"]),
+        _schema(
+            {"section": _SECTION, "reason": {"type": "string"}, "gap_id": {"type": "string"}},
+            ["section", "reason"],
+        ),
     ),
     ToolSpec(
         "finish_topic",

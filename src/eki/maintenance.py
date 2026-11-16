@@ -111,6 +111,20 @@ def transfer(
         ).fetchone()
         if pending:
             raise ConflictError("recover accepted interview messages before handover")
+        active_follow_up = conn.execute(
+            "SELECT 1 FROM sessions s JOIN interview_plans p ON p.id=s.plan_id WHERE "
+            "p.run_id=%s AND p.kind='follow_up' AND s.status='active' LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if active_follow_up:
+            raise ConflictError("finish or stop the active follow-up before handover")
+        # Draft follow-ups cannot start after handover; return their reserved gaps to triage.
+        conn.execute(
+            "UPDATE follow_up_gaps SET status='pending',plan_id=NULL,revision=revision+1 "
+            "WHERE run_id=%s AND status='scheduled' AND plan_id IN (SELECT id FROM "
+            "interview_plans WHERE run_id=%s AND kind='follow_up' AND status='draft')",
+            (run_id, run_id),
+        )
         clean = redact(reason, work_email_domains=frozenset()).text
         conn.execute(
             "UPDATE ingest_runs SET owner_subject=%s,maintenance_started_at=CASE WHEN"

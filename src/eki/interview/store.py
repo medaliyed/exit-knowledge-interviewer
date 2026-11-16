@@ -12,9 +12,11 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from eki.audit import AuditDetails, append_event
+from eki.errors import ConflictError
 from eki.ingest.redaction import RedactedText
 from eki.interview.models import (
     SECTIONS,
+    FollowUpLimits,
     InterviewPlan,
     Note,
     OpenItem,
@@ -47,21 +49,35 @@ def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
     """Insert or replace a plan with its topics and questions, atomically."""
     with conn.transaction():
         previous = conn.execute(
-            "SELECT status FROM interview_plans WHERE id = %s FOR UPDATE", (plan.id,)
+            "SELECT status, revision FROM interview_plans WHERE id = %s FOR UPDATE", (plan.id,)
         ).fetchone()
+        if previous and plan.kind == "follow_up" and previous[1] != plan.revision:
+            raise ConflictError("plan changed; refresh before editing or approving")
         conn.execute(
-            "INSERT INTO interview_plans (id, run_id, status, approved_by, approved_at) "
-            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE SET "
+            "INSERT INTO interview_plans (id, run_id, status, approved_by, approved_at, kind, "
+            "parent_session_id, limits) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET "
             "status = EXCLUDED.status, approved_by = EXCLUDED.approved_by, "
-            "approved_at = EXCLUDED.approved_at",
-            (plan.id, plan.run_id, plan.status, plan.approved_by, plan.approved_at),
+            "approved_at = EXCLUDED.approved_at, limits = EXCLUDED.limits, "
+            "revision = interview_plans.revision + CASE WHEN "
+            "interview_plans.kind = 'follow_up' THEN 1 ELSE 0 END",
+            (
+                plan.id,
+                plan.run_id,
+                plan.status,
+                plan.approved_by,
+                plan.approved_at,
+                plan.kind,
+                plan.parent_session_id,
+                None if plan.limits is None else Jsonb(plan.limits.model_dump()),
+            ),
         )
         conn.execute("DELETE FROM plan_topics WHERE plan_id = %s", (plan.id,))
         with conn.cursor() as cursor:
             cursor.executemany(
                 "INSERT INTO plan_topics (plan_id, position, topic_id, label, kind, system, "
-                "origin, score, reason, artifact_ids, dropped) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "origin, score, reason, artifact_ids, dropped, sections, target_entry_id, "
+                "base_version) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 [
                     (
                         plan.id,
@@ -75,15 +91,28 @@ def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
                         t.reason,
                         Jsonb(list(t.artifact_ids)),
                         Jsonb(list(t.dropped)),
+                        None if t.sections is None else Jsonb(list(t.sections)),
+                        None if t.target_entry_id is None else UUID(t.target_entry_id),
+                        t.base_version,
                     )
                     for position, t in enumerate(plan.topics)
                 ],
             )
             cursor.executemany(
                 "INSERT INTO questions (plan_id, topic_id, position, text, origin, artifact_id, "
-                "quote) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "quote, gap_id, section) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 [
-                    (plan.id, t.topic_id, position, q.text, q.origin, q.artifact_id, q.quote)
+                    (
+                        plan.id,
+                        t.topic_id,
+                        position,
+                        q.text,
+                        q.origin,
+                        q.artifact_id,
+                        q.quote,
+                        None if q.gap_id is None else UUID(q.gap_id),
+                        q.section,
+                    )
                     for t in plan.topics
                     for position, q in enumerate(t.questions)
                 ],
@@ -101,14 +130,16 @@ def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
 
 def load_plan(conn: psycopg.Connection, plan_id: UUID) -> InterviewPlan | None:
     head = conn.execute(
-        "SELECT run_id, status, approved_by, approved_at FROM interview_plans WHERE id = %s",
+        "SELECT run_id, status, approved_by, approved_at, kind, parent_session_id, "
+        "limits, revision "
+        "FROM interview_plans WHERE id = %s",
         (plan_id,),
     ).fetchone()
     if head is None:
         return None
     questions: dict[str, list[Question]] = {}
-    for topic_id, text, origin, artifact_id, quote in conn.execute(
-        "SELECT topic_id, text, origin, artifact_id, quote FROM questions "
+    for topic_id, text, origin, artifact_id, quote, gap_id, section in conn.execute(
+        "SELECT topic_id, text, origin, artifact_id, quote, gap_id, section FROM questions "
         "WHERE plan_id = %s ORDER BY topic_id, position",
         (plan_id,),
     ).fetchall():
@@ -118,6 +149,8 @@ def load_plan(conn: psycopg.Connection, plan_id: UUID) -> InterviewPlan | None:
                 origin=origin,
                 artifact_id=artifact_id,
                 quote=None if quote is None else _stored(quote),
+                gap_id=None if gap_id is None else str(gap_id),
+                section=section,
             )
         )
     topics = tuple(
@@ -132,9 +165,13 @@ def load_plan(conn: psycopg.Connection, plan_id: UUID) -> InterviewPlan | None:
             artifact_ids=tuple(r[7]),
             dropped=tuple(r[8]),
             questions=tuple(questions.get(r[0], [])),
+            sections=None if r[9] is None else tuple(r[9]),
+            target_entry_id=None if r[10] is None else str(r[10]),
+            base_version=r[11],
         )
         for r in conn.execute(
-            "SELECT topic_id, label, kind, system, origin, score, reason, artifact_ids, dropped "
+            "SELECT topic_id, label, kind, system, origin, score, reason, artifact_ids, dropped, "
+            "sections, target_entry_id, base_version "
             "FROM plan_topics WHERE plan_id = %s ORDER BY position",
             (plan_id,),
         ).fetchall()
@@ -146,16 +183,44 @@ def load_plan(conn: psycopg.Connection, plan_id: UUID) -> InterviewPlan | None:
         approved_by=head[2],
         approved_at=head[3],
         topics=topics,
+        kind=head[4],
+        parent_session_id=head[5],
+        limits=None if head[6] is None else FollowUpLimits.model_validate(head[6]),
+        revision=head[7],
     )
 
 
-def create_session(conn: psycopg.Connection, session_id: UUID, plan_id: UUID) -> UUID:
+def scope(conn: psycopg.Connection, session_id: UUID, topic_id: str) -> tuple[SectionName, ...]:
+    """All seven sections unless a follow-up selected a smaller scope."""
+    row = conn.execute(
+        "SELECT t.sections FROM sessions s JOIN plan_topics t ON t.plan_id = s.plan_id "
+        "AND t.topic_id = %s WHERE s.id = %s",
+        (topic_id, session_id),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return SECTIONS
+    selected = set(row[0])
+    return tuple(section for section in SECTIONS if section in selected)
+
+
+def gap_asked(conn: psycopg.Connection, session_id: UUID, gap_id: str) -> bool:
+    """Whether a question attributed to this gap was already asked in the session."""
+    row = conn.execute(
+        "SELECT 1 FROM turns WHERE session_id = %s AND gap_id = %s AND kind = 'question' LIMIT 1",
+        (session_id, UUID(gap_id)),
+    ).fetchone()
+    return row is not None
+
+
+def create_session(
+    conn: psycopg.Connection, session_id: UUID, plan_id: UUID, respondent: str | None = None
+) -> UUID:
     """Open the session of a plan. A plan has one session: a second call returns the first ID."""
     with conn.transaction():
         conn.execute(
-            "INSERT INTO sessions (id, plan_id, status) VALUES (%s, %s, 'active') "
-            "ON CONFLICT (plan_id) DO NOTHING",
-            (session_id, plan_id),
+            "INSERT INTO sessions (id, plan_id, status, respondent_subject) "
+            "VALUES (%s, %s, 'active', %s) ON CONFLICT (plan_id) DO NOTHING",
+            (session_id, plan_id, respondent),
         )
         row = conn.execute("SELECT id FROM sessions WHERE plan_id = %s", (plan_id,)).fetchone()
     assert row is not None  # noqa: S101 - just inserted or already there
@@ -164,14 +229,22 @@ def create_session(conn: psycopg.Connection, session_id: UUID, plan_id: UUID) ->
 
 def load_session(conn: psycopg.Connection, session_id: UUID) -> Session | None:
     row = conn.execute(
-        "SELECT s.plan_id, p.run_id, s.status, s.current_topic_id FROM sessions s "
+        "SELECT s.plan_id, p.run_id, s.status, s.current_topic_id, p.kind, "
+        "s.respondent_subject, s.completion_reason FROM sessions s "
         "JOIN interview_plans p ON p.id = s.plan_id WHERE s.id = %s",
         (session_id,),
     ).fetchone()
     if row is None:
         return None
     return Session(
-        id=session_id, plan_id=row[0], run_id=row[1], status=row[2], current_topic_id=row[3]
+        id=session_id,
+        plan_id=row[0],
+        run_id=row[1],
+        status=row[2],
+        current_topic_id=row[3],
+        kind=row[4],
+        respondent_subject=row[5],
+        completion_reason=row[6],
     )
 
 
@@ -204,18 +277,28 @@ def add_question(
     *,
     section: SectionName | None,
     step: int,
+    gap_id: str | None = None,
 ) -> int:
     """Store an interviewer question and return its ordinal. One question per workflow step."""
     with conn.transaction():
         conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (session_id,))
         row = conn.execute(
-            "INSERT INTO turns (session_id, ordinal, topic_id, speaker, kind, text, section, step) "
+            "INSERT INTO turns (session_id, ordinal, topic_id, speaker, kind, text, section, step, "
+            "gap_id) "
             "VALUES (%s, (SELECT coalesce(max(ordinal), 0) + 1 FROM turns WHERE session_id = %s), "
-            "%s, 'interviewer', 'question', %s, %s, %s) "
+            "%s, 'interviewer', 'question', %s, %s, %s, %s) "
             "ON CONFLICT (session_id, step) WHERE step IS NOT NULL DO UPDATE SET "
-            "text = EXCLUDED.text, section = EXCLUDED.section, topic_id = EXCLUDED.topic_id "
-            "RETURNING ordinal",
-            (session_id, session_id, topic_id, text, section, step),
+            "text = EXCLUDED.text, section = EXCLUDED.section, topic_id = EXCLUDED.topic_id, "
+            "gap_id = EXCLUDED.gap_id RETURNING ordinal",
+            (
+                session_id,
+                session_id,
+                topic_id,
+                text,
+                section,
+                step,
+                None if gap_id is None else UUID(gap_id),
+            ),
         ).fetchone()
     assert row is not None  # noqa: S101
     return int(row[0])
@@ -252,7 +335,7 @@ def add_expert_turn(
 def load_turns(conn: psycopg.Connection, session_id: UUID) -> tuple[Turn, ...]:
     rows = conn.execute(
         "SELECT ordinal, topic_id, speaker, kind, text, confidential, section, "
-        "answers, corrects, author_subject, author_name "
+        "answers, corrects, author_subject, author_name, gap_id "
         "FROM turns WHERE session_id = %s ORDER BY ordinal",
         (session_id,),
     ).fetchall()
@@ -269,6 +352,7 @@ def load_turns(conn: psycopg.Connection, session_id: UUID) -> tuple[Turn, ...]:
             corrects=r[8],
             author_subject=r[9],
             author_name=r[10],
+            gap_id=None if r[11] is None else str(r[11]),
         )
         for r in rows
     )
@@ -298,8 +382,13 @@ def record_note(
     *,
     turn: int,
     confidential: bool = False,
+    keep_previous: bool = False,
 ) -> None:
-    """Put a note in force for a section. An earlier note is kept but superseded."""
+    """Put a note in force for a section. An earlier note is kept but superseded.
+
+    ``keep_previous`` leaves earlier notes of the section in force too, so a follow-up
+    keeps each public fact with its own source turn instead of overwriting the first.
+    """
     with conn.transaction():
         if conn.execute(
             "SELECT 1 FROM notes WHERE session_id=%s AND topic_id=%s AND section=%s "
@@ -310,8 +399,8 @@ def record_note(
 
         conn.execute(
             "UPDATE notes SET superseded = true WHERE session_id = %s AND topic_id = %s "
-            "AND section = %s AND NOT superseded",
-            (session_id, topic_id, section),
+            "AND section = %s AND NOT superseded AND (NOT %s OR turn_ordinal=%s)",
+            (session_id, topic_id, section, keep_previous, turn),
         )
         conn.execute(
             "INSERT INTO notes (session_id, topic_id, section, text, turn_ordinal, confidential) "
@@ -335,6 +424,14 @@ def mark_open(
 ) -> None:
     """Record that a section could not be filled, and why."""
     with conn.transaction():
+        if turn is not None:
+            conn.execute(
+                "UPDATE turns SET follow_up_outcome='unknown' WHERE session_id=%s "
+                "AND ordinal=%s AND kind='answer' AND NOT confidential AND EXISTS "
+                "(SELECT 1 FROM sessions s JOIN interview_plans p ON p.id=s.plan_id "
+                "WHERE s.id=%s AND p.kind='follow_up')",
+                (session_id, turn, session_id),
+            )
         conn.execute(
             "INSERT INTO open_items (session_id, topic_id, section, reason, turn_ordinal) "
             "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (session_id, topic_id, section) "

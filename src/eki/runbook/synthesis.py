@@ -25,6 +25,34 @@ def build_entry(
     sections: dict[str, Section] = {}
     for name in SECTION_NAMES:
         note = active.get(name)
+        if topic.origin == "follow_up":
+            public = [
+                n
+                for n in notes
+                if n.topic_id == topic.topic_id
+                and n.section == name
+                and not n.superseded
+                and not n.confidential
+            ]
+            if public:
+                sections[name] = Section(
+                    claims=tuple(
+                        Claim(
+                            text=text,
+                            citations=(
+                                InterviewTurnCitation(
+                                    session_id=str(session_id),
+                                    turn_index=n.turn,
+                                ),
+                            ),
+                        )
+                        for n in public
+                        for text in claim_texts(name, n.text)
+                        if text.strip()
+                    ),
+                    open_question=opened[name].reason if name in opened else None,
+                )
+                continue
         if note is not None:
             if note.confidential:
                 sections[name] = Section(open_question=CONFIDENTIAL)

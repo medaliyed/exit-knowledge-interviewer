@@ -35,8 +35,15 @@ from eki.config import ConfigError, Settings, get_settings, work_domains
 from eki.graph.workflow import db
 from eki.ingest.redaction import redact
 from eki.interview import generation
-from eki.interview.models import InterviewPlan
-from eki.interview.plan import PlanError, PlanFrozenError, add_topic, remove_topic, reorder
+from eki.interview.models import FollowUpLimits, InterviewPlan
+from eki.interview.plan import (
+    PlanError,
+    PlanFrozenError,
+    add_topic,
+    edit_follow_up,
+    remove_topic,
+    reorder,
+)
 from eki.interview.service import (
     ConflictError,
     GenerationFailed,
@@ -99,6 +106,10 @@ class PlanEdit(_Body):
     remove: list[str] = []
     add: list[TopicToAdd] = []
     order: list[str] | None = None
+    seeds: dict[str, str] = {}
+    remove_gaps: list[str] = []
+    limits: FollowUpLimits | None = None
+    expected_revision: int | None = None
 
 
 class Approval(_Body):
@@ -183,6 +194,8 @@ def _session(view: SessionView) -> dict[str, Any]:
         for turn in view.turns
     ]
     for turn in turns:
+        if turn.get("gap_id") is None:
+            turn.pop("gap_id", None)
         if turn["confidential"]:
             turn["text"] = CONFIDENTIAL
     return {
@@ -191,6 +204,10 @@ def _session(view: SessionView) -> dict[str, Any]:
         "run_id": str(view.session.run_id),
         "status": view.session.status,
         "current_topic_id": view.session.current_topic_id,
+        "kind": view.session.kind,
+        "completion_reason": view.session.completion_reason,
+        "scope": list(view.scope),
+        "usage": view.usage,
         "waiting": None
         if waiting is None
         else {
@@ -524,9 +541,25 @@ def create_app(
                     redact(item.note, work_email_domains=domains).text,
                     position=item.position,
                 )
+            if edit.seeds or edit.remove_gaps or edit.limits is not None:
+                plan = edit_follow_up(
+                    plan,
+                    seeds={
+                        g: redact(text, work_email_domains=domains).text
+                        for g, text in edit.seeds.items()
+                    },
+                    remove_gaps=edit.remove_gaps,
+                    limits=edit.limits,
+                )
             return plan if edit.order is None else reorder(plan, edit.order)
 
-        return _plan(await service.edit_plan(plan_id, apply))
+        return _plan(
+            await service.edit_plan(
+                plan_id,
+                apply,
+                expected_revision=edit.expected_revision,
+            )
+        )
 
     @app.post("/plans/{plan_id}/approve")
     async def approve_plan(
@@ -547,7 +580,13 @@ def create_app(
             check_expert(approval.approved_by, row[0])
 
         await operation(expert)
-        return _session(await service.approve(plan_id, approval.approved_by))
+        return _session(
+            await service.approve(
+                plan_id,
+                approval.approved_by,
+                expected_revision=approval.expected_version,
+            )
+        )
 
     @app.get("/sessions/{session_id}")
     async def read_session(session_id: UUID, service: Service) -> dict[str, Any]:

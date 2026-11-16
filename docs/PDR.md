@@ -39,7 +39,7 @@ explicit maintenance handover, the current owner reviews later entry changes.
 | F19 | Invited work-email/password accounts, bounded server-side browser sessions, one-time password links, local operator account management, CSRF protection, throttling and metadata-only authentication audit. Phase 6. |
 | F20 | Golden interview evaluations: strict scenario/golden files, isolated real-service runs, shared model-call budgets, deterministic scorecards and comparable redacted reports. Phase 7; paid evidence pending. |
 | F21 | Maintain knowledge after the expert leaves: explicit successor ownership and attributed re-approval, entry review-by dates, freshness across retrieval/export, and reader flags with owner triage. Implemented: Phase 8. |
-| F22 | Focused follow-up interviews while the original expert is reachable: public open sections and explicitly saved unanswered Ask questions feed a reviewed, bounded second session, with cited proposals and explicit entry re-approval. Proposed: Phase 9; not implemented. |
+| F22 | Focused follow-up interviews while the original expert is reachable. Phase 9a/9b implement gap intake, reviewed focused sessions and durable budgets. Entry proposals/source lineage and browser/CLI journeys remain open in 9c/9d. |
 
 ## Stack
 
@@ -66,7 +66,7 @@ explicit maintenance handover, the current owner reviews later entry changes.
 | 6 | Email/password accounts | [Phase 6 PDR](plans/phase-6.md): account provisioning, sessions/authentication, browser sign-in and operational documentation. |
 | 7 | Golden interview evals | [Phase 7 PDR](plans/phase-7.md): bounded real-model interviews, deterministic grading, saved reports and comparisons; owner-review drafts for G1–G8. |
 | 8 | Knowledge maintenance | [Phase 8 PDR](plans/phase-8.md): successor handover, review dates and reader flags. Implemented. |
-| 9 | Follow-up interviews | [Phase 9 PDR](plans/phase-9.md): gap intake, focused sessions through the existing workflow, bounded usage and cited entry updates. Proposed; implementation awaits approval. |
+| 9 | Follow-up interviews | [Phase 9 PDR](plans/phase-9.md): gap intake and bounded focused sessions implemented (9a/9b); cited entry proposals and browser/CLI journeys pending (9c/9d). |
 
 Each phase is planned separately in `docs/plans/phase-N.md` and needs human
 approval before implementation starts. The hard rules that apply to every
@@ -91,7 +91,7 @@ line and, where there is one, their Outcome section.
 | 6 Email/password accounts | [docs/plans/phase-6.md](plans/phase-6.md) | F19 implemented 2026-11-15; manual browser pass and timing check pending |
 | 7 Golden interview evals | [docs/plans/phase-7.md](plans/phase-7.md) | F20 implemented 2026-11-15; draft adoption and paid model evidence pending |
 | 8 Knowledge maintenance | [docs/plans/phase-8.md](plans/phase-8.md) | F21 implemented 2026-11-15; successor review, freshness and reader feedback |
-| 9 Follow-up interviews | [docs/plans/phase-9.md](plans/phase-9.md) | F22 proposed 2026-11-15; planning only |
+| 9 Follow-up interviews | [docs/plans/phase-9.md](plans/phase-9.md) | F22: 9a/9b implemented 2026-11-16; 9c/9d pending |
 
 Added after the phases: synthesis keeps drafts the expert edited by hand
 (F10), review lists claims that say more than the answer they cite (F9), and
@@ -109,9 +109,9 @@ How it is built and how it behaves at runtime: `docs/architecture.md` and
 
 Still open:
 
-- Open sections and unanswered Ask questions do not feed a focused follow-up
-  session today. [Phase 9](plans/phase-9.md) proposes that capture workflow while
-  the original expert remains available; it is not implemented.
+- [Phase 9](plans/phase-9.md) now supports gap intake and focused follow-up sessions
+  through the HTTP/shared services. Mapped entry proposals, source lineage and
+  dedicated browser/CLI journeys remain open in 9c/9d.
 - No run against a real model yet. Interview quality, semantic search and
   model-selected answers are unverified; Phase 5b will record actual evidence.
 - Durable message recovery and per-topic plan recovery are implemented. Calls

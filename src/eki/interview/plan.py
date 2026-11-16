@@ -4,12 +4,12 @@ Every function returns a new plan; an approved plan refuses all of them.
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from uuid import UUID, uuid4
 
 from eki.ingest.redaction import RedactedText
-from eki.interview.models import InterviewPlan, PlannedTopic, Question
+from eki.interview.models import FollowUpLimits, InterviewPlan, PlannedTopic, Question
 from eki.mapping.models import GapScore, Topic
 
 DEFAULT_LIMIT = 10
@@ -92,6 +92,41 @@ def remove_topic(plan: InterviewPlan, topic_id: str) -> InterviewPlan:
     if plan.topic(topic_id) is None:
         raise PlanError(f"{topic_id} is not in the plan")
     return _with_topics(plan, [t for t in plan.topics if t.topic_id != topic_id])
+
+
+def edit_follow_up(
+    plan: InterviewPlan,
+    *,
+    seeds: Mapping[str, RedactedText],
+    remove_gaps: Sequence[str],
+    limits: FollowUpLimits | None = None,
+) -> InterviewPlan:
+    """Review selected questions and visible limits without changing their provenance."""
+    _editable(plan)
+    if plan.kind != "follow_up":
+        raise PlanError("follow-up question edits require a follow-up plan")
+    selected = {q.gap_id for t in plan.topics for q in t.questions}
+    if not set(seeds).union(remove_gaps) <= selected:
+        raise PlanError("a question is not in the selected follow-up gaps")
+    if any(not text.strip() or len(text) > 2000 for text in seeds.values()):
+        raise PlanError("a seed question needs 1 to 2000 characters")
+    topics = []
+    for topic in plan.topics:
+        questions = tuple(
+            q.model_copy(update={"text": seeds[q.gap_id]})
+            if q.gap_id is not None and q.gap_id in seeds
+            else q
+            for q in topic.questions
+            if q.gap_id not in remove_gaps
+        )
+        if questions:
+            sections = (
+                None
+                if topic.sections is None
+                else tuple(s for s in topic.sections if any(q.section == s for q in questions))
+            )
+            topics.append(topic.model_copy(update={"questions": questions, "sections": sections}))
+    return plan.model_copy(update={"topics": tuple(topics), "limits": limits or plan.limits})
 
 
 def reorder(plan: InterviewPlan, topic_ids: Sequence[str]) -> InterviewPlan:

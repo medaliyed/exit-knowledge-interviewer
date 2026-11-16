@@ -44,6 +44,9 @@ TABLES = {
     "flag_throttle",
     "follow_up_gaps",
     "follow_up_throttle",
+    "session_usage",
+    "session_provider_attempts",
+    "follow_up_attempts",
 }
 MIGRATIONS = [
     "0001_init.sql",
@@ -62,6 +65,7 @@ MIGRATIONS = [
     "0014_feedback_decisions.sql",
     "0015_maintenance_index.sql",
     "0016_follow_up_gaps.sql",
+    "0017_follow_up_sessions.sql",
 ]
 
 

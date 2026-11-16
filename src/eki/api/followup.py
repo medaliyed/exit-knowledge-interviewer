@@ -4,14 +4,26 @@ from collections.abc import Callable
 from typing import Any, Literal
 from uuid import UUID
 
+import psycopg
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from eki.accounts import Throttled
 from eki.api.security import identity
 from eki.followup.gaps import GapService
+from eki.followup.sessions import FollowUpService
 from eki.graph.workflow import db
+from eki.interview import store
+from eki.interview.models import FollowUpLimits
 from eki.runbook.models import SectionName
+
+
+class FollowUpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_id: UUID
+    parent_session_id: UUID
+    gap_ids: list[UUID] = Field(min_length=1, max_length=50)
+    limits: FollowUpLimits | None = None
 
 
 class SaveRequest(BaseModel):
@@ -88,4 +100,30 @@ def install_followup(
     ) -> dict[str, Any]:
         return await operation(
             lambda: service().triage(run_id, gap_id, identity(request), **body.model_dump())
+        )
+
+    @app.post("/runs/{run_id}/follow-ups")
+    async def prepare_follow_up(
+        run_id: UUID, body: FollowUpRequest, request: Request, response: Response
+    ) -> dict[str, Any]:
+        def work() -> dict[str, Any]:
+            with psycopg.connect(dsn(), autocommit=True) as conn:
+                existed = store.load_plan(conn, body.request_id) is not None
+            plan = FollowUpService(dsn(), domains()).prepare(
+                run_id,
+                identity(request),
+                request_id=body.request_id,
+                parent_session_id=body.parent_session_id,
+                gap_ids=body.gap_ids,
+                limits=body.limits,
+            )
+            response.status_code = 200 if existed else 201
+            return plan.model_dump(mode="json")
+
+        return await operation(work)
+
+    @app.post("/sessions/{session_id}/stop")
+    async def stop_session(session_id: UUID, request: Request) -> dict[str, Any]:
+        return await operation(
+            lambda: FollowUpService(dsn(), domains()).stop(session_id, identity(request))
         )
