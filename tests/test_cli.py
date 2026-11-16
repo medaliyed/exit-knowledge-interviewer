@@ -90,6 +90,7 @@ def test_cli_end_to_end(scratch_database: None, capsys: pytest.CaptureFixture[st
     table = capsys.readouterr().out
     assert len([line for line in table.splitlines() if line[:4].strip().isdigit()]) == 5
     assert "report-export" in table
+    assert "report-export: report-export" not in table, "a system topic names its system once"
     for secret in FAKE_CREDENTIALS:
         assert secret not in table
         assert secret not in json.dumps(rows)

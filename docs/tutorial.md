@@ -168,7 +168,7 @@ Mapped 37 topics and scored them.
 rank  score  excl   doc   rec  crit  doc status kind        n  topic
 --------------------------------------------------------------------
    1   86.8  1.00  1.00  0.99  0.75  none       procedure   4  billing-batch: Clarify invoice rounding for multi-currency tenants
-   2   86.0  1.00  1.00  0.98  0.75  none       system     57  report-export: report-export
+   2   86.0  1.00  1.00  0.98  0.75  none       system     57  report-export
    3   80.3  1.00  1.00  0.92  0.75  none       procedure   2  ledger-db: Connection pool exhausted during a load test
    4   79.5  1.00  1.00  0.79  1.00  none       incident    5  billing-batch: billing-batch run failed during the posting phase
    5   77.8  1.00  1.00  0.89  0.75  none       incident    8  billing-batch: Month-end reconciliation mismatch between billing-batch
@@ -212,7 +212,7 @@ Plan 8c46d867-6bbd-42ff-8608-69c9b6face70 (draft), 4 topics
   1. billing-batch: Clarify invoice rounding for multi-currency tenants  (gap score 86.8)
        Q: What is behind TCK-0120?
           from TCK-0120: "Nadia Ferrand: Linked the pull request."
-  2. report-export: report-export  (gap score 86.0)
+  2. report-export  (gap score 86.0)
        Q: What is behind 6ba94ffc6cb6ddf9013843e00910086608fdf9b7?
           from 6ba94ffc6cb6ddf9013843e00910086608fdf9b7: "fix(scheduler): skip export when the ledger is mid-close"
   3. billing-batch: billing-batch run failed during the posting phase  (its sources contradict each other)

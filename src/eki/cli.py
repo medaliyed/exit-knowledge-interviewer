@@ -357,6 +357,11 @@ def _map(conn: psycopg.Connection, run_id: UUID) -> int:
     return 0
 
 
+def _topic_name(system: str | None, label: str) -> str:
+    """``system: label``, or the system alone for a system topic, whose label is its name."""
+    return label if label == system else f"{system or '-'}: {label}"
+
+
 def _gap_rows(conn: psycopg.Connection, run_id: UUID) -> list[dict[str, Any]] | None:
     load(conn, run_id)  # raises IngestError for an unknown run
     topics, scores = load_mapping(conn, run_id)
@@ -400,7 +405,7 @@ def _gaps(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
     print(header)
     print("-" * len(header))
     for row in rows:
-        label = f"{row['system'] or '-'}: {row['label']}"
+        label = _topic_name(row["system"], row["label"])
         print(
             f"{row['rank']:>4} {row['score']:>6.1f} {row['exclusivity']:>5.2f} "
             f"{row['doc_gap']:>5.2f} {row['recency']:>5.2f} {row['criticality']:>5.2f}  "
@@ -418,7 +423,7 @@ def _show_plan(plan: InterviewPlan) -> None:
             f"{plan.limits.embedding_calls} embedding calls."
         )
     for position, topic in enumerate(plan.topics, start=1):
-        print(f"{position:>3}. {topic.system or '-'}: {topic.label}  ({topic.reason})")
+        print(f"{position:>3}. {_topic_name(topic.system, topic.label)}  ({topic.reason})")
         if topic.sections is not None:
             print("       Selected sections: " + ", ".join(topic.sections))
         for question in topic.questions:
