@@ -469,3 +469,21 @@ def test_failed_ingest_rolls_back_snapshot_and_records_failure(
             "SELECT phase FROM audit_events WHERE kind = 'ingest' ORDER BY id"
         ).fetchall()
         assert phases == [("started",), ("failed",)]
+
+
+def test_commands_warn_when_migrations_are_pending(
+    scratch_database: None,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    assert main(["migrate"]) == 0
+    capsys.readouterr()
+    assert main(["gaps", "--run", str(uuid.uuid4())]) == 1
+    assert "eki migrate" not in capsys.readouterr().err
+    (tmp_path / "9999_future.sql").write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr("eki.db.MIGRATIONS_DIR", tmp_path)
+    assert main(["gaps", "--run", str(uuid.uuid4())]) == 1
+    err = capsys.readouterr().err
+    assert "1 database migration is pending (9999_future.sql); run: eki migrate" in err
+    assert "no completed run" in err.lower(), "the command itself still runs"

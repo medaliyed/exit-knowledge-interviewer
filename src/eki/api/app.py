@@ -32,6 +32,7 @@ from eki.api.security import identity, install_security
 from eki.audit import AuditError, list_events
 from eki.auth import AuthenticationError, Authenticator, ForbiddenError, TokenAuthenticator
 from eki.config import ConfigError, Settings, get_settings, work_domains
+from eki.db import pending_warning
 from eki.graph.workflow import db
 from eki.ingest.redaction import redact
 from eki.interview import generation
@@ -262,6 +263,17 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configuration()  # Reject insecure production settings before accepting requests.
+
+        def check_migrations() -> None:
+            try:
+                with psycopg.connect(database_dsn(), autocommit=True) as conn:
+                    warning = pending_warning(conn)
+            except psycopg.Error:
+                return  # an unreachable database is reported by the first request
+            if warning is not None:
+                logging.getLogger(__name__).warning(warning)
+
+        await db(check_migrations)
         bearer = get_authenticator()
         if isinstance(bearer, TokenAuthenticator):
 

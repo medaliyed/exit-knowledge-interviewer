@@ -45,7 +45,7 @@ from eki.auth import (
     current_principal,
 )
 from eki.config import ConfigError, get_settings, work_domains
-from eki.db import connect, migrate
+from eki.db import connect, migrate, pending_warning
 from eki.feedback import FeedbackService
 from eki.graph.workflow import setup_checkpoints
 from eki.ingest.embedding import HashingEmbedder
@@ -835,8 +835,21 @@ def main(argv: list[str] | None = None) -> int:
         return _main(argv)
 
 
+def _warn_if_migrations_pending() -> None:
+    """Tell the operator about unapplied migrations; the command itself still runs."""
+    try:
+        with connect(get_settings()) as conn:
+            warning = pending_warning(conn)
+    except (psycopg.Error, ConfigError):
+        return  # the command reports an unreachable database or bad settings itself
+    if warning is not None:
+        print(f"eki: warning: {warning}", file=sys.stderr)
+
+
 def _main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
+    if arguments.command != "migrate":
+        _warn_if_migrations_pending()
     try:
         if arguments.command == "follow-up":
             return followup_cli.execute(arguments, get_settings())

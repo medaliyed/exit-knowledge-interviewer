@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -319,3 +320,20 @@ class TestCookieHTTP:
                     ).status_code
                     == 200
                 )
+
+
+@pytest.mark.db
+def test_startup_logs_pending_migrations(
+    scratch: Scratch,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    with TestClient(create_app(settings=configuration(scratch.dsn), authenticator=bearer())):
+        pass
+    assert "eki migrate" not in caplog.text
+    (tmp_path / "9999_future.sql").write_text("SELECT 1;", encoding="utf-8")
+    monkeypatch.setattr("eki.db.MIGRATIONS_DIR", tmp_path)
+    with TestClient(create_app(settings=configuration(scratch.dsn), authenticator=bearer())):
+        pass
+    assert "1 database migration is pending (9999_future.sql); run: eki migrate" in caplog.text

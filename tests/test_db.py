@@ -6,7 +6,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from eki.db import migrate
+from eki.db import migrate, pending_migrations
 
 pytestmark = pytest.mark.db
 
@@ -214,3 +214,14 @@ def test_existing_edited_drafts_are_marked_when_the_flag_is_added(
         "plain-draft": False,
         "rejected-then-untouched": False,
     }
+
+
+def test_pending_migrations_lists_unapplied_files(
+    empty_conn: psycopg.Connection, tmp_path: Path
+) -> None:
+    assert pending_migrations(empty_conn) == MIGRATIONS
+    assert table_names(empty_conn) == set(), "checking changes nothing"
+    migrate(empty_conn)
+    assert pending_migrations(empty_conn) == []
+    (tmp_path / "9999_future.sql").write_text("SELECT 1;", encoding="utf-8")
+    assert pending_migrations(empty_conn, tmp_path) == ["9999_future.sql"]
