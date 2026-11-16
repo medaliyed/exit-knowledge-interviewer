@@ -48,10 +48,6 @@ These are single-component operations. A sentence is enough.
 
 Things the flow pages flag. Each is cited on its page.
 
-- **Follow-up publication and dedicated browser/CLI journeys remain open.**
-  Phase 9a/9b implement explicit gap intake and bounded focused sessions. Mapped
-  answers stay private until 9c implements reviewed proposals, lineage and apply;
-  9d will expose the full journey in the browser and CLI. ([follow-up.md](follow-up.md))
 - **Real-provider calls interrupted before their result is persisted may repeat**
   on recovery. Accepted messages and stored replies survive.
   ([message-delivery.md](message-delivery.md))

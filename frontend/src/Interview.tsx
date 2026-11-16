@@ -41,6 +41,7 @@ function InterviewSession() {
   const [events, setEvents] = useState<string[]>([]);
   const [unknownId, setUnknownId] = useState<string | null>(() => api.unconfirmedMessageId(`${sessionId}:answer`) || api.unconfirmedMessageId(`${sessionId}:correction`));
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [stopOpen, setStopOpen] = useState(false);
   const [selectedTurn, setSelectedTurn] = useState('');
   const [correction, setCorrection] = useState('');
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -170,6 +171,18 @@ function InterviewSession() {
     } finally { busy.current = false; if (live.current) await reload(); }
   }
 
+  async function stop() {
+    if (busy.current) return;
+    busy.current = true; setDelivery('processing'); setFailure('');
+    try {
+      await api.request(`/sessions/${sessionId}/stop`, 'POST');
+      drafts.delete(answerKey); drafts.delete(privacyKey);
+      setAnswer(''); setConfidential(false); setStopOpen(false); setDelivery('idle');
+      notify('Follow-up stopped. Captured answers are kept; unanswered questions remain open.');
+    } catch (error) { setDelivery('failed'); setFailure(failureText(error, false)); }
+    finally { busy.current = false; if (live.current) await reload(); }
+  }
+
   if (sessionQuery.isPending || receiptsQuery.isPending) return <Loading />;
   if (sessionQuery.error || receiptsQuery.error) return <Empty title="The conversation could not be opened"><p>Saved answers remain on the server. Try opening the conversation again.</p><Button onClick={() => { void sessionQuery.refetch(); void receiptsQuery.refetch(); }}>Try again</Button></Empty>;
   if (!session || !run) return <Empty title="Conversation unavailable"><p>Select a handover to continue.</p></Empty>;
@@ -178,8 +191,12 @@ function InterviewSession() {
   const topic = plan?.topics.find(item => item.topic_id === session.current_topic_id);
   const topicIndex = plan?.topics.findIndex(item => item.topic_id === session.current_topic_id) ?? -1;
   const pending = receiptsQuery.data || [];
-  const locked = ['sending', 'processing'].includes(delivery);
-  const blocked = locked || sessionQuery.isFetching || receiptsQuery.isFetching || pending.length > 0 || Boolean(unknownId);
+  // Acceptance clears the payload before the stream has finished processing it.
+  // Keep the composer locked until the entire request and its refresh settle.
+  const locked = busy.current || ['sending', 'processing'].includes(delivery);
+  const followUp = session.kind === 'follow_up';
+  const unavailable = followUp && (run.owner_unavailable || identity.name !== run.expert_name || (run.owner_subject !== undefined && run.owner_subject !== identity.subject));
+  const blocked = locked || sessionQuery.isFetching || receiptsQuery.isFetching || pending.length > 0 || Boolean(unknownId) || unavailable;
   const correctedOrdinals = new Set(session.turns.filter(turn => turn.kind === 'correction').map(turn => turn.corrects));
   const correctable = session.turns.filter(turn => turn.speaker === 'expert' && ['answer', 'correction'].includes(turn.kind) && !correctedOrdinals.has(turn.ordinal));
   const selected = correctable.find(turn => String(turn.ordinal) === selectedTurn);
@@ -199,20 +216,24 @@ function InterviewSession() {
   return <div className="interview-view">
     <div className="interview-layout">
       <aside className="interview-topic">
+        {followUp && <Badge>Focused follow-up</Badge>}
         <p className="eyebrow">{session.status === 'finished' ? 'Interview finished' : topicIndex >= 0 ? `Topic ${topicIndex + 1} of ${plan?.topics.length}` : 'Current topic'}</p>
         <h2>{topic?.label || (session.status === 'finished' ? 'A lasting reference' : 'Your conversation')}</h2>
         {topic && <p className="muted">{topic.kind}{topic.system ? ` · ${topic.system}` : ''}</p>}
         {planQuery.error && <Notice error><p>Topic details could not load. Your conversation is still available.</p><Button onClick={() => void planQuery.refetch()}>Reload topics</Button></Notice>}
         <details className="section-checklist" open>
           <summary>Sections of this topic</summary>
-          <ul className="checklist">{sections.map(name => <li key={name} className={session.waiting?.section === name ? 'now' : ''}>
+          <ul className="checklist">{(followUp ? session.scope ?? topic?.sections ?? sections : sections).map(name => <li key={name} className={session.waiting?.section === name ? 'now' : ''}>
             <span className={`status-mark status-${session.checklist[name] || 'missing'}`} aria-hidden="true" />
             <span>{title(name)}</span><span className="checklist-state">{statusLabel[session.checklist[name] || 'missing']}{session.waiting?.section === name ? ' · asking now' : ''}</span>
           </li>)}</ul>
         </details>
+        {followUp && session.usage && <section className="stack small" aria-label="Follow-up usage"><h3>Interview limits</h3><p>{session.usage.questions} of {session.usage.limits?.questions ?? plan?.limits?.questions ?? '…'} questions used · {Math.max(0, (session.usage.limits?.questions ?? plan?.limits?.questions ?? 0) - session.usage.questions)} remaining</p><p>{session.usage.model_calls} of {session.usage.limits?.model_calls ?? plan?.limits?.model_calls ?? '…'} model attempts · {session.usage.embedding_calls} of {session.usage.limits?.embedding_calls ?? plan?.limits?.embedding_calls ?? '…'} embedding attempts</p>{session.usage.duration_seconds !== undefined && <p>{Math.round(session.usage.duration_seconds)} seconds elapsed{session.usage.input_tokens != null && ` · ${session.usage.input_tokens} input tokens`}{session.usage.output_tokens != null && ` · ${session.usage.output_tokens} output tokens`}</p>}</section>}
+        {followUp && session.status === 'active' && <Button disabled={blocked} onClick={() => setStopOpen(true)}>Stop for now</Button>}
       </aside>
 
       <section className="interview-main" aria-label="Interview question and answer">
+        {unavailable && <Notice error>The original expert must be signed in as the current owner to answer this follow-up. Their account must be available.</Notice>}
         {(delivery === 'saved' || delivery === 'processing') && <Notice><strong>Your answer is saved.</strong>{locked && <p>The interviewer is reading your answer. This may take a little while.</p>}</Notice>}
         {delivery === 'sending' && <Notice><strong>Sending your answer…</strong><p>Keep this page open until it is saved.</p></Notice>}
         {failure && <Notice error><p>{failure}</p>{unknownId && <Button onClick={() => void checkUnknown()} disabled={locked}>Check saved answer</Button>}</Notice>}
@@ -222,8 +243,7 @@ function InterviewSession() {
 
         {session.status === 'finished' ? <section className="sheet stack">
           <Badge status="approved">Interview finished</Badge><h1>Thank you, {identity.name.split(' ')[0]}.</h1>
-          <p>{notedCount} sections noted, {openCount} left open.</p><p>Each topic is now a draft entry for you to read, correct and approve. Nothing is published without your approval.</p>
-          <Link className="btn btn-primary" to={`${base}/review?session=${sessionId}`}>Review entries <span aria-hidden="true">→</span></Link>
+          <p>{notedCount} sections noted, {openCount} left open.</p>{followUp ? <><p><strong>{{ complete: 'Selected questions attempted', question_limit: 'Question limit reached', model_budget: 'Model budget reached', expert_stopped: 'Stopped by expert' }[session.completion_reason ?? 'complete']}</strong></p><p>Captured public answers become unpublished proposals or new topic drafts. Unknown, confidential, skipped and unanswered questions remain unresolved. Apply selected changes, then approve the updated entry separately.</p><Link className="btn btn-primary" to={`${base}/follow-ups/${sessionId}`}>Review follow-up proposals <span aria-hidden="true">→</span></Link></> : <><p>Each topic is now a draft entry for you to read, correct and approve. Nothing is published without your approval.</p><Link className="btn btn-primary" to={`${base}/review?session=${sessionId}`}>Review entries <span aria-hidden="true">→</span></Link><Link to={`${base}/follow-ups`}>Plan a follow-up</Link></>}
         </section> : session.waiting ? <>
           <section className="question"><p className="eyebrow">Turn {session.waiting.turn} · {session.waiting.section}</p><h1>{session.waiting.question}</h1></section>
           <form className="composer stack" onSubmit={(event: FormEvent) => { event.preventDefault(); void send('answer'); }}>
@@ -271,5 +291,6 @@ function InterviewSession() {
         </>}
       </form>
     </Modal>
+    <Modal title="Stop this follow-up?" open={stopOpen} onClose={() => { if (!locked) setStopOpen(false); }}><p>Keep the answers already captured and finish this follow-up without more questions. Unanswered gaps return to triage.</p>{answer.trim() && <Notice error>Your unsent answer will be discarded. Cancel and send it first if you want to keep it.</Notice>}<div className="toolbar"><Button variant="primary" disabled={blocked} onClick={() => void stop()}>Stop and keep captured answers</Button><Button disabled={locked} onClick={() => setStopOpen(false)}>Keep interviewing</Button></div></Modal>
   </div>;
 }

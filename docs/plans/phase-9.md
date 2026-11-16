@@ -1,9 +1,9 @@
 # Phase 9 PDR: follow-up interviews on knowledge gaps
 
-**Status:** implementation continued at the owner's request on 2026-11-16.
-**9a and 9b are implemented** with deterministic acceptance coverage. Entry
-proposals/source lineage (9c) and browser/CLI journeys (9d) remain open. The
-requirements below describe the full phase; the outcome records shipped scope.
+**Status:** 9a–9d are implemented at the owner's request on 2026-11-16.
+The requirements below describe the full phase; the outcome records shipped scope
+and actual synthetic acceptance evidence. Real-provider quality remains separately
+deferred.
 
 **Parent:** [Project PDR](../PDR.md), new requirement **F22**. Reuses F6–F10
 (plan, interview, confidentiality, citations and approval), F14/F18 (durable
@@ -209,8 +209,8 @@ approval. Confidential-only or unknown answers do not produce publishable claims
 
 ## 6. API and CLI proposal
 
-This table describes the full-phase API. Intake, triage, preparation, plan review,
-interview and stop routes are implemented; proposal routes remain planned for 9c.
+This table describes the full-phase API: intake, triage, preparation, plan review,
+interview, stop, proposal comparison/apply and approval-linked resolution.
 See [the follow-up flow](../flows/follow-up.md) for the current contract.
 Actor identity is derived from authentication. Owner/admin queue endpoints and
 reader receipts have separate response models.
@@ -227,6 +227,8 @@ reader receipts have separate response models.
 | `POST /sessions/{id}/stop` | Authorized expert stops further questions, settling accepted work and finishing with unresolved items retained. A processing receipt must be recovered before stop commits; stop cannot discard an accepted answer. |
 | `GET /sessions/{id}/follow-up-proposals` | Expert/manager comparison of base and proposed sections with citations and versions. |
 | `POST /follow-up-proposals/{id}/apply` | Current entry-review authority selects section patches with expected proposal/base-entry versions; create the target draft atomically. |
+| `POST /follow-up-proposals/{id}/refresh` | Explicitly rebuild a stale comparison against the current target, requiring expected proposal/base versions; review it again before apply. |
+| `POST /runs/{id}/follow-up-gaps/{gap_id}/resolve` | Current reviewer confirms a saved reader question is answered by a specified approved same-run entry/version, with the expected gap revision. |
 | Existing entry approval route | Current entry-review authority explicitly approves; link eligible gap resolutions to the resulting approved version. |
 
 CLI additions: `eki follow-up gaps --run ID` and `eki follow-up plan --run ID
@@ -383,7 +385,8 @@ produce idempotent private drafts, including explicit open sections after a stop
 Mapped topics leave the existing entry untouched and cannot create duplicate
 entries through explicit synthesis.
 
-**Remaining:** 9c must turn mapped notes into private section proposals, implement
+**At completion of 9b:** 9c still needed to turn mapped notes into private section
+proposals, implement
 comparison/apply, cross-session citation validation/corrections and approval-linked
 gap resolution. Until then, mapped answers remain private interview notes awaiting
 review; they do not update the published entry. 9d must add follow-up browser/CLI
@@ -405,3 +408,74 @@ Verification on 2026-11-16:
 
 Database and loopback-server tests ran outside the filesystem/network sandbox
 against isolated local test schemas. No live or paid provider tests ran.
+
+## 13. Remaining deliverables completed — 2026-11-16
+
+**9c:** finished mapped topics create one idempotent private section proposal.
+The reviewer compares current content, citations and both merge/replace results,
+then explicitly applies selected sections against expected proposal and entry
+versions. Apply revises the same entry to draft, preserves unrelated facts and
+invalidates its index atomically. Stale proposals require explicit refresh and
+another review. Re-synthesis preserves applied facts, while separate ordinary
+approval revalidates all sources and publishes the revision.
+
+Migration `0018_follow_up_proposals.sql` records the proposal and entry/topic source
+lineage. Only public expert turns from the original or explicitly linked follow-up
+topic are accepted. Correcting a follow-up answer rewrites dependent proposals and
+entries, reopens review and invalidates publication atomically. Faithfulness resolves
+each source by session and ordinal, including proposal previews. Search, Ask and
+Markdown retain genuine follow-up citations. Owners can inspect source answers;
+readers receive references without transcript access.
+
+Approval now resolves tracked public open-section gaps only after their sections
+contain cited public knowledge with no remaining open question. Saved reader requests
+require explicit current-owner confirmation against a same-run approved entry/version.
+This includes idempotent retries, optimistic conflicts, active-account checks,
+maintenance successor authority, reopening and transactional metadata-only audit.
+Neither completing an interview nor applying a proposal claims a request was answered.
+
+**9d:** the browser implements explicit chosen-handover Ask saves and safe receipts,
+gap mapping/grouping/deferral/dismissal/reopening, selected plan preparation and seed
+review, visible frozen budgets, original-expert approval, scoped interviewing and
+stop/recovery, private proposal comparison/apply/refresh, source inspection and
+separate approval/request resolution. New-topic drafts appear on completion alongside
+mapped proposals. Legacy session-entry links route follow-ups to their proposals.
+Entry mutation refreshes the related gap/target/proposal views immediately. Accepted
+answers keep the composer locked until processing/reload finishes, preventing a quick
+second send from being ignored. The review history labels follow-up apply honestly.
+
+Authenticated `eki follow-up` commands expose request saves/receipts, queue/triage,
+model-free plan preparation and edits/discard, proposal comparison/apply/refresh,
+approved-version resolution and stop. `eki interview` binds follow-up approval to the
+displayed revision and authenticated original expert, reports scope/usage and directs
+completion to private proposals. Existing capture commands retain their behavior.
+
+The real-browser acceptance path uses the built FastAPI-served UI, real work-email
+cookie sessions and Origin checks, real HTTP/SSE/shared services, a temporary Postgres
+schema and a scripted interviewer. It proves reader save → owner triage/selection →
+two seeds in one section → bounded interview → proposal/apply → source expansion →
+separate approval → automatic public-gap resolution → explicit request resolution →
+safe reader receipt and Markdown access. The draft is inaccessible to the reader and
+the follow-up transcript remains private after publication. CI runs this path
+explicitly in addition to mocked browser tests and database contracts.
+
+No dependency was added, real source connected, human-owned golden changed or paid
+provider evaluation run. The inherited manual screen-reader and live-quality work
+remain separate from this phase's automated synthetic acceptance.
+
+Verification on 2026-11-16:
+
+| Check | Result |
+| --- | --- |
+| Full provider-free Python regression, including database and built-UI browser acceptance: `pytest -q -m 'not infra and not live' --tb=short --maxfail=5` | 850 passed, 11 deselected; one route-inventory assertion omitted the new resolution endpoint. The inventory was updated and all six health/API-surface cases passed on rerun, including a final isolated rerun of that assertion. |
+| Final compiled workspace against the real cookie API: `pytest -q -m db tests/test_follow_up_browser.py` | 1 passed, including reader privacy, linked source expansion, separate publication and both resolution paths. |
+| `python evals/run.py --junit reports/quality.xml` | 78 passed; zero failures, errors or skipped gate cases. |
+| Ruff lint/format and strict mypy | Passed; 286 Python files formatted and 202 source files type-checked. |
+| Frontend production build and Vitest | Passed; 11 tests. |
+| Final full Playwright workflow/accessibility/responsive suite | 56 passed, including 17 follow-up cases. |
+| Node delivery/SSE regression | 4 passed. |
+
+Desktop gap selection and the 360-pixel proposal comparison were also inspected
+from screenshots produced by the real API browser test. The frontend source and
+generated production assets are included together. Test databases used isolated
+temporary schemas, and loopback/browser checks ran with local network access.

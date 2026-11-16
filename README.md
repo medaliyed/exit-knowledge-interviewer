@@ -173,6 +173,37 @@ commands retain their existing trust model. See the
 Legacy review dates are backfilled from approval time plus 90 days, so some
 older entries become overdue as soon as the migration is applied.
 
+## Focused follow-up interviews
+
+While the original expert is still available, use **Follow-ups** in the browser
+to revisit public open sections or explicitly saved reader questions. An unsupported
+Ask result offers **Save for a follow-up**, with a choice of handover and owner.
+The owner triages questions, reviews a focused plan and its limits, then the original
+expert approves and answers it. Completion opens private section proposals. Compare
+and apply selected sections, then approve the updated entry separately to publish it.
+Public open sections resolve on approval; reader questions need explicit reviewer
+confirmation against an approved entry/version.
+
+The CLI uses the same registered identity and rules (`EKI_API_TOKEN` required):
+
+```bash
+uv run eki follow-up gaps --run RUN_ID
+uv run eki follow-up plan --run RUN_ID --parent-session FINISHED_SESSION_ID --gap GAP_ID
+uv run eki interview --plan FOLLOW_UP_PLAN_ID
+uv run eki follow-up proposals --session FOLLOW_UP_SESSION_ID
+uv run eki follow-up apply --proposal PROPOSAL_ID --expected-revision REVISION \
+  --expected-version ENTRY_VERSION --section rollback=merge
+uv run eki review --plan ORIGINAL_PLAN_ID
+uv run eki follow-up resolve --run RUN_ID --gap REQUEST_GAP_ID --entry ENTRY_ID \
+  --expected-revision GAP_REVISION --expected-version APPROVED_VERSION --confirms-answer
+```
+
+Use `eki follow-up --help` for request receipts, triage, plan edits/discard,
+proposal refresh and stop controls. Preparation and review need no provider;
+interview execution does. Follow-up capture closes after maintenance handover, while
+the successor can review already captured proposals. See the
+[follow-up guide](docs/flows/follow-up.md) for retries, privacy and conflicts.
+
 ## Without a provider key
 
 The whole pipeline is exercised by tests that use scripted model doubles and a
@@ -236,10 +267,11 @@ workspace follows the supplied HTML prototype and UI PDR, with automated browser
 workflow, accessibility and responsive-layout checks. Phase 6 adds invited
 email/password accounts, persistent browser sessions and operator account management.
 Phase 8 adds successor handover, review dates and private reader-feedback triage.
-Phase 9a/9b add explicit follow-up requests, owner triage and focused interviews
-with durable budgets through the HTTP/shared services. Apply migrations before
-starting the API. Mapped entry proposals/source lineage and dedicated browser/CLI
-journeys remain in 9c/9d; see the [follow-up flow](docs/flows/follow-up.md).
+Phase 9 adds explicit follow-up requests, owner triage and focused interviews
+with durable budgets, private section proposals, linked citations and corrections,
+explicit apply/re-approval and approval-linked gap resolution. The browser and
+authenticated `eki follow-up` commands expose the complete journey. Apply migrations
+before starting the API; see the [follow-up flow](docs/flows/follow-up.md).
 Phase 7 adds golden interview grading, bounded runs and report comparison, with
 eight scenario/golden drafts awaiting owner adoption. Real-provider validation
 remains deferred by user request; manual screen-reader validation is still pending.

@@ -52,6 +52,14 @@ class Triage(BaseModel):
     group_with: UUID | None = None
 
 
+class Resolve(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0)
+    entry_id: UUID
+    expected_version: int = Field(ge=1)
+    confirms_answer: Literal[True]
+
+
 def install_followup(
     app: FastAPI, dsn: Callable[[], str], domains: Callable[[], frozenset[str]] = frozenset
 ) -> None:
@@ -105,6 +113,14 @@ def install_followup(
     ) -> dict[str, Any]:
         return await operation(
             lambda: service().triage(run_id, gap_id, identity(request), **body.model_dump())
+        )
+
+    @app.post("/runs/{run_id}/follow-up-gaps/{gap_id}/resolve")
+    async def resolve_gap(
+        run_id: UUID, gap_id: UUID, body: Resolve, request: Request
+    ) -> dict[str, Any]:
+        return await operation(
+            lambda: service().resolve(run_id, gap_id, identity(request), **body.model_dump())
         )
 
     @app.post("/runs/{run_id}/follow-ups")

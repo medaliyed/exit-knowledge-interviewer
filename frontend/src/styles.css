@@ -25,6 +25,15 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 input,select,textarea { width: 100%; min-width: 0; min-height: 46px; color: var(--ink); background: white; border: 1px solid var(--muted); border-radius: 8px; padding: 11px 14px; }
 textarea { min-height: 142px; resize: vertical; line-height: 1.55; }
 input[type=checkbox] { width: 20px; min-height: 20px; height: 20px; accent-color: var(--accent); }
+.follow-up-limits { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.proposal-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.proposal-comparison > div { padding: 16px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.proposal-section { border-top: 1px solid var(--line); padding-top: 24px; }
+.follow-up-save { padding-top: 20px; border-top: 1px solid var(--line); }
+.follow-up-page .card,.proposal { min-width: 0; overflow-wrap: anywhere; }
+.follow-up-page label.inline,.proposal label.inline { align-items: flex-start; }
+.follow-up-page input[type=checkbox],.proposal input[type=checkbox] { flex-shrink: 0; }
+@media (max-width: 700px) { .follow-up-limits { grid-template-columns: repeat(2, minmax(0, 1fr)); } .proposal-comparison { grid-template-columns: minmax(0, 1fr); } }
 input[aria-invalid=true],textarea[aria-invalid=true] { border: 2px solid var(--warn); }
 input:disabled,textarea:disabled,select:disabled { background: var(--paper); }
 label { display: block; font-weight: 600; }

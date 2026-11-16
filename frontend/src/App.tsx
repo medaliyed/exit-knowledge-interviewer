@@ -10,6 +10,7 @@ import { Interview } from './Interview';
 import { Entries, EntryView } from './Entries';
 import { Knowledge } from './Knowledge';
 import { Maintenance } from './Maintenance';
+import { FollowUps, FollowUpProposals } from './FollowUps';
 import { AccountMenu, ChangePassword, SetPassword, SignIn, type Message } from './Auth';
 
 function queryClient() {
@@ -49,7 +50,7 @@ function Shell({ auth, runs, notify, drafts, signOut, changePassword }: { auth: 
   if (!run) return <Navigate to="/workspace" replace />;
   const base = `/workspace/${run.id}`;
   // An entry page belongs to the review tab for the owner and to approved knowledge for a reader.
-  const tab = location.pathname.startsWith(`${base}/maintenance`) ? 'maintenance' : location.pathname.startsWith(`${base}/plans`) ? 'plans'
+  const tab = location.pathname.startsWith(`${base}/follow-ups`) ? 'follow-ups' : location.pathname.startsWith(`${base}/maintenance`) ? 'maintenance' : location.pathname.startsWith(`${base}/plans`) ? 'plans'
     : location.pathname.startsWith(`${base}/review`) || (location.pathname.startsWith(`${base}/entries/`) && run.can_manage) ? 'review'
     : location.pathname.startsWith(`${base}/knowledge`) || location.pathname.startsWith(`${base}/entries/`) ? 'knowledge' : '';
   return <WorkspaceContext.Provider value={{ ...auth, run, notify, drafts }}>
@@ -69,7 +70,7 @@ function Shell({ auth, runs, notify, drafts, signOut, changePassword }: { auth: 
         </Link>)}</nav><p className="sidebar-note">Keep the knowledge.<br />Honour the source.</p></aside>}
       <main id="main-content" className={interview ? 'interview-page' : 'workspace-main'} tabIndex={-1} ref={content}>
         {!interview && <><div className="handover-heading"><p className="eyebrow">Handover</p><h1>{run.expert_name} <span className="handover-period">{handoverPeriod(run)}</span></h1>{run.maintenance_started_at && <p className="small muted">Expert: {run.expert_name} · Maintained by: {run.owner_name ?? 'Unassigned'}</p>}</div>
-          <nav className="tabs" aria-label="Handover">{run.can_manage && <><Tab to={`${base}/plans`} active={tab === 'plans'}>Interview plans</Tab><Tab to={`${base}/review`} active={tab === 'review'}>Review entries</Tab><Tab to={`${base}/maintenance`} active={tab === 'maintenance'}>Maintenance</Tab></>}
+          <nav className="tabs" aria-label="Handover">{run.can_manage && <><Tab to={`${base}/plans`} active={tab === 'plans'}>Interview plans</Tab><Tab to={`${base}/follow-ups`} active={tab === 'follow-ups'}>Follow-ups</Tab><Tab to={`${base}/review`} active={tab === 'review'}>Review entries</Tab><Tab to={`${base}/maintenance`} active={tab === 'maintenance'}>Maintenance</Tab></>}
             <Tab to={`${base}/knowledge`} active={tab === 'knowledge'}>Approved knowledge</Tab></nav></>}
         <Outlet key={location.pathname} />
       </main>
@@ -104,6 +105,8 @@ function Authenticated({ auth, notify, drafts, signOut, changePassword }: { auth
     <Route path="plans/:planId" element={<ManagerOnly runs={runs}><PlanReview /></ManagerOnly>} />
     <Route path="interview/:sessionId" element={<ManagerOnly runs={runs}><Interview /></ManagerOnly>} />
     <Route path="maintenance" element={<ManagerOnly runs={runs}><Maintenance /></ManagerOnly>} />
+    <Route path="follow-ups" element={<ManagerOnly runs={runs}><FollowUps /></ManagerOnly>} />
+    <Route path="follow-ups/:sessionId" element={<ManagerOnly runs={runs}><FollowUpProposals /></ManagerOnly>} />
     <Route path="review" element={<ManagerOnly runs={runs}><Entries /></ManagerOnly>} />
     <Route path="entries/:entryId" element={<EntryView />} />
     <Route path="knowledge" element={<Knowledge />} />

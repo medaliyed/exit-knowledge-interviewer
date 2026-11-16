@@ -54,7 +54,7 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
             with psycopg.connect(dsn(), autocommit=True) as conn:
                 rows = conn.execute(
                     "SELECT r.id, r.expert_name, r.since, r.until, r.status, r.owner_subject,"
-                    "r.maintenance_started_at,coalesce(a.name,r.owner_subject) "
+                    "r.maintenance_started_at,coalesce(a.name,r.owner_subject),a.disabled "
                     "FROM ingest_runs r LEFT JOIN accounts a ON a.subject=r.owner_subject WHERE "
                     + access.VISIBLE_RUN
                     + " ORDER BY r.started_at DESC, r.id LIMIT 200",
@@ -70,6 +70,11 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
                     "can_manage": principal.admin or r[5] == principal.subject,
                     "maintenance_started_at": None if r[6] is None else r[6].isoformat(),
                     "owner_name": r[7],
+                    **(
+                        {"owner_subject": r[5], "owner_unavailable": bool(r[8]) or r[5] is None}
+                        if principal.admin or r[5] == principal.subject
+                        else {}
+                    ),
                 }
                 for r in rows
             ]
@@ -81,13 +86,19 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
         def read() -> list[dict[str, Any]]:
             with psycopg.connect(dsn(), autocommit=True) as conn:
                 rows = conn.execute(
-                    "SELECT p.id, p.status, s.id FROM interview_plans p "
+                    "SELECT p.id, p.status, s.id, p.kind, s.status FROM interview_plans p "
                     "LEFT JOIN sessions s ON s.plan_id=p.id WHERE p.run_id=%s "
                     "ORDER BY p.created_at DESC, p.id LIMIT 200",
                     (run_id,),
                 ).fetchall()
             return [
-                {"id": str(r[0]), "status": r[1], "session_id": None if r[2] is None else str(r[2])}
+                {
+                    "id": str(r[0]),
+                    "status": r[1],
+                    "session_id": None if r[2] is None else str(r[2]),
+                    "kind": r[3],
+                    "session_status": r[4],
+                }
                 for r in rows
             ]
 

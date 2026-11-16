@@ -13,7 +13,7 @@ from eki import maintenance
 from eki.audit import AuditDetails, append_event
 from eki.auth import current_principal
 from eki.errors import ConflictError, NotFoundError
-from eki.followup import proposals
+from eki.followup import gaps, proposals
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
 from eki.interview.models import Turn
@@ -208,7 +208,7 @@ class RunbookService:
                 raise NotFoundError(f"no session {session_id}")
             turns = interviews.load_turns(conn, session_id)
             return {
-                stored.entry.id: check_entry(stored.entry, turns)
+                stored.entry.id: _check(conn, stored.entry, stored.session_id, turns)
                 for stored in store.list_entries(conn, session_id)
             }
 
@@ -265,6 +265,14 @@ class RunbookService:
             )
             if action == "approve":
                 review_metadata.reviewed(conn, entry_id, self._clean(by), self.clock(), review_by)
+                principal = current_principal()
+                gaps.resolve_approved_sections(
+                    conn,
+                    run_id,
+                    result,
+                    principal.subject if principal is not None else "local-operator",
+                    self.clock(),
+                )
             store.add_decision(conn, changed.id, action, self._clean(by), self.clock(), reason)
             return result
 
@@ -390,7 +398,11 @@ class RunbookService:
         if current is None:
             raise NotFoundError("proposal not found")
         info = review_metadata.info(conn, row["entry_id"], self.clock())
-        return proposals.view(row, current, info, ())
+        patch = proposals.parse_patch(row["patch"])
+        # Advisory: the claims of every proposed section, merged, against their own turns.
+        preview = proposals.selected(current.entry, patch, {name: "merge" for name in patch})
+        turns = interviews.load_turns(conn, current.session_id)
+        return proposals.view(row, current, info, _check(conn, preview, current.session_id, turns))
 
     def proposal(self, proposal_id: UUID) -> dict[str, Any]:
         with self._connect() as conn:
@@ -666,6 +678,17 @@ def correct_entries(
                 AuditDetails(operation="correction", target_id=proposal_id),
                 run_id=run_id,
             )
+
+
+def _check(
+    conn: psycopg.Connection, entry: RunbookEntry, home: UUID, turns: tuple[Turn, ...]
+) -> tuple[Unsupported, ...]:
+    """Faithfulness against the home transcript and each explicitly linked follow-up."""
+    linked = {
+        str(s): interviews.load_turns(conn, s)
+        for s in proposals.linked_sessions(conn, entry.id, entry.topic_id)
+    }
+    return check_entry(entry, turns, session_id=str(home), linked=linked)
 
 
 def maintenance_run(conn: psycopg.Connection, session_id: UUID) -> UUID:

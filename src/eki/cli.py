@@ -27,7 +27,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 
-from eki import access, accounts, maintenance
+from eki import access, accounts, followup_cli, maintenance
 from eki.audit import (
     AuditDetails,
     AuditError,
@@ -56,6 +56,7 @@ from eki.ingest.semantic import configured as artifact_embedder
 from eki.interview import generation
 from eki.interview import store as interviews
 from eki.interview.models import InterviewPlan
+from eki.interview.plan import PlanError
 from eki.interview.service import (
     ConflictError,
     Event,
@@ -214,6 +215,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     audit.add_argument("--after", type=int, default=0)
     audit.add_argument("--limit", type=int, default=100)
+    followup_cli.add_parser(commands)
     return parser
 
 
@@ -409,8 +411,16 @@ def _gaps(conn: psycopg.Connection, arguments: argparse.Namespace) -> int:
 
 def _show_plan(plan: InterviewPlan) -> None:
     print(f"Plan {plan.id} ({plan.status}), {len(plan.topics)} topics")
+    if plan.kind == "follow_up" and plan.limits is not None:
+        print(
+            f"Follow-up from session {plan.parent_session_id}; revision {plan.revision}. "
+            f"Limits: {plan.limits.questions} questions, {plan.limits.model_calls} model calls, "
+            f"{plan.limits.embedding_calls} embedding calls."
+        )
     for position, topic in enumerate(plan.topics, start=1):
         print(f"{position:>3}. {topic.system or '-'}: {topic.label}  ({topic.reason})")
+        if topic.sections is not None:
+            print("       Selected sections: " + ", ".join(topic.sections))
         for question in topic.questions:
             print(f"       Q: {question.text}")
             if question.artifact_id and question.quote:
@@ -493,10 +503,14 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
         if not approver:
             return _fail("nobody to approve the plan: set EKI_EXPERT_NAME or --approve-as", 2)
         _show_plan(plan)
-        view: SessionView = await service.approve(plan_id, approver)
+        view: SessionView = await service.approve(
+            plan_id, approver, expected_revision=plan.revision if plan.kind == "follow_up" else None
+        )
         print(f"Plan approved by {approver}.")
         session_id = view.session.id
     print(HELP)
+    if plan.kind == "follow_up":
+        print("Follow-up: /stop ends further questions and retains captured answers.")
     while True:
         pending = await service.receipts(session_id)
         if pending:
@@ -518,6 +532,12 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
                 f"\nInterview finished: {len(view.notes)} sections noted, "
                 f"{len(view.open_items)} left open."
             )
+            if view.usage is not None:
+                print(json.dumps(view.usage, default=str))
+                print(
+                    f"Review unpublished proposals: eki follow-up proposals --session {session_id}"
+                )
+                print(f"New-topic drafts: eki review --plan {plan_id}")
             return 0
         if view.waiting is None:
             # The process stopped mid-step last time: let the workflow reach its question.
@@ -525,6 +545,12 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
             async for event in stream:
                 _show_event(event)
             continue
+        if view.usage is not None:
+            print(
+                f"Follow-up scope: {', '.join(view.scope)}; "
+                f"questions {view.usage['questions']}/{view.usage['limits']['questions']}, "
+                f"model calls {view.usage['model_calls']}/{view.usage['limits']['model_calls']}."
+            )
         print(f"\n[turn {view.waiting.ordinal}, {view.waiting.section}] {view.waiting.text}")
         try:
             line = input("> ").strip()
@@ -533,6 +559,14 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
         if line == "/quit":
             print(f"Stopped. Continue with: eki interview --plan {plan_id}")
             return 0
+        if line == "/stop" and plan.kind == "follow_up":
+            principal = current_principal()
+            if principal is None:
+                raise AuthenticationError("follow-up identity required")
+            from eki.followup.sessions import FollowUpService
+
+            FollowUpService(service.dsn, service.work_email_domains).stop(session_id, principal)
+            continue
         if line:
             await _say(service, session_id, line)
 
@@ -543,6 +577,25 @@ def _interview_commands(arguments: argparse.Namespace) -> int:
         with connect(settings) as conn:
             print(json.dumps(generation.read(conn, arguments.run, arguments.generation_status)))
         return 0
+    if arguments.command == "interview":
+        with connect(settings) as conn:
+            plan = interviews.load_plan(conn, arguments.plan)
+        if plan is None:
+            raise NotFoundError(f"no plan {arguments.plan}")
+        if plan.kind == "follow_up":
+            principal = followup_cli.principal(settings)
+            with acting_as(principal), audit_context(user_id=principal.subject):
+                from eki.followup.sessions import respondent
+
+                with connect(settings) as conn:
+                    respondent(conn, plan.run_id, principal)
+                if arguments.approve_as and arguments.approve_as != principal.name:
+                    raise ValueError("--approve-as cannot impersonate another expert")
+                service = build_service(settings)
+                try:
+                    return asyncio.run(_interview(service, plan.id, principal.name))
+                finally:
+                    flush_tracer(service.tracer)
     service = build_service(settings)
     try:
         if arguments.command == "plan":
@@ -736,6 +789,10 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
             "SELECT expert_name FROM ingest_runs WHERE id = %s", (plan.run_id,)
         ).fetchone()
         assert row is not None  # noqa: S101 - plan references this run
+    if plan.kind == "follow_up":
+        principal = followup_cli.principal(settings)
+        followup_cli.require_manager(settings, principal, "plans", plan.id)
+        print(f"Mapped proposals: eki follow-up proposals --session {session}")
     if arguments.command == "entries":
         entries = books.list(session)
         unsupported = books.unsupported(session)
@@ -746,7 +803,11 @@ def _entry_commands(arguments: argparse.Namespace) -> int:
             marker += "  (edited by hand)" if stored.edited else ""
             print(f"{entry.id}  {entry.status.value:8}  {entry.title}{marker}")
         if not entries:
-            print("No entries yet. Finish the interview first.")
+            print(
+                "No new-topic draft entries; mapped changes are reviewed through proposals."
+                if plan.kind == "follow_up"
+                else "No entries yet. Finish the interview first."
+            )
         return 0
     credential = settings.api_token
     if credential is None:
@@ -772,6 +833,8 @@ def main(argv: list[str] | None = None) -> int:
 def _main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
+        if arguments.command == "follow-up":
+            return followup_cli.execute(arguments, get_settings())
         if arguments.command in ("search", "ask", "export"):
             settings = get_settings()
             credential = settings.api_token
@@ -923,7 +986,11 @@ def _main(argv: list[str] | None = None) -> int:
         return _fail("valid EKI_API_TOKEN credentials are required", USAGE_ERROR)
     except ConfigError as error:
         return _fail(str(error), USAGE_ERROR)
-    except (IngestError, NotFoundError, ConflictError, ValueError) as error:
+    except accounts.Throttled as error:
+        return _fail(
+            f"follow-up request rate limit reached; retry after {error.retry_after} seconds"
+        )
+    except (IngestError, NotFoundError, ConflictError, PlanError, ValueError) as error:
         return _fail(str(error))
     except ModelError:
         return _fail("the model could not be reached; nothing was lost, run the command again")

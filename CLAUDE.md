@@ -578,11 +578,24 @@ before the updated API and review that queue. Details and route contracts:
 
 
 
-## Proposed Phase 9: follow-up interviews (F22)
+## Phase 9: follow-up interviews (F22)
 
-`docs/plans/phase-9.md` proposes a focused second interview while the original
+`docs/plans/phase-9.md` implements a focused second interview while the original
 expert is reachable. Public open sections and explicitly saved unanswered Ask
 questions feed a reviewed plan, reusing the existing workflow with selected
 section scope and durable session-wide budgets. New answers produce private
 entry proposals and require explicit apply/re-approval with linked citations.
-This is planning only, separate from Phase 8's implemented successor maintenance workflow.
+The browser's Follow-ups tab and authenticated `eki follow-up` commands share the
+HTTP services' authorization, versions and transitions. Finishing a mapped topic
+creates an unpublished proposal; apply selects sections and returns the same entry
+to draft. Approval resolves tracked public open sections only after they contain
+public cited knowledge and no open question. Saved reader questions require an
+explicit reviewer confirmation linked to an approved entry/version, using
+`POST /runs/{run_id}/follow-up-gaps/{gap_id}/resolve` with `expected_revision`,
+`entry_id`, `expected_version` and `confirms_answer: true`.
+
+Faithfulness and correction propagation resolve citations by session and turn,
+using only explicit entry/topic links. Readers receive references without transcript
+access. A stale proposal must be explicitly refreshed and reviewed again; apply and
+approval remain separate. Follow-up capture stays separate from Phase 8's successor
+maintenance workflow. Synthetic acceptance does not establish real-model quality.

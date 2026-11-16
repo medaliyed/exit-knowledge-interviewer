@@ -19,8 +19,9 @@ blocks or changes anything.
 """
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from uuid import UUID
 
 from eki.interview.models import Turn
 from eki.runbook.models import SECTION_NAMES, InterviewTurnCitation, RunbookEntry, SectionName
@@ -84,14 +85,27 @@ class Unsupported:
         return f"{self.section}[{self.index}]: not in the cited answer: " + ", ".join(self.terms)
 
 
-def _sources(claim_citations: Sequence[object], turns: dict[int, Turn]) -> list[str] | None:
+def _key(session: str) -> str:
+    try:
+        return str(UUID(session))
+    except ValueError:
+        return session
+
+
+def _sources(
+    claim_citations: Sequence[object], turns_for: Callable[[str], Mapping[int, Turn] | None]
+) -> list[str] | None:
     """What the cited turns say, or None when one of them cannot be compared.
 
-    A confidential turn is never read here, so nothing about it can show in a result.
+    Each citation resolves against the transcript of the session it names. A
+    confidential turn is never read here, so nothing about it can show in a result.
     """
     texts: list[str] = []
     for citation in claim_citations:
         if not isinstance(citation, InterviewTurnCitation):
+            return None
+        turns = turns_for(citation.session_id)
+        if turns is None:
             return None
         turn = turns.get(citation.turn_index)
         if turn is None or turn.confidential or turn.speaker not in ("expert", "maintainer"):
@@ -103,17 +117,36 @@ def _sources(claim_citations: Sequence[object], turns: dict[int, Turn]) -> list[
     return texts or None
 
 
-def check_entry(entry: RunbookEntry, turns: Iterable[Turn]) -> tuple[Unsupported, ...]:
+def check_entry(
+    entry: RunbookEntry,
+    turns: Iterable[Turn],
+    *,
+    session_id: str | None = None,
+    linked: Mapping[str, Iterable[Turn]] | None = None,
+) -> tuple[Unsupported, ...]:
     """Every claim that says something its cited turns do not, in template order.
 
-    ``turns`` is the transcript of the entry's own session. Claims that cite an
-    artifact, or a turn that is confidential or absent, are left out.
+    ``turns`` is the transcript of the entry's own session, ``session_id``. Citations of
+    a session in ``linked`` (explicitly linked follow-ups) resolve against that session's
+    transcript, so equal ordinals in different sessions never mix. Without
+    ``session_id`` every other citation resolves against ``turns``, as before. Claims
+    that cite an artifact, an unknown session, or a confidential or absent turn are left
+    out.
     """
-    by_ordinal = {turn.ordinal: turn for turn in turns}
+    own = {turn.ordinal: turn for turn in turns}
+    by_session = {_key(s): {t.ordinal: t for t in ts} for s, ts in (linked or {}).items()}
+    home = None if session_id is None else _key(session_id)
+
+    def turns_for(cited: str) -> Mapping[int, Turn] | None:
+        key = _key(cited)
+        if key in by_session:
+            return by_session[key]
+        return own if home is None or key == home else None
+
     found: list[Unsupported] = []
     for name in SECTION_NAMES:
         for index, claim in enumerate(entry.section(name).claims):
-            sources = _sources(claim.citations, by_ordinal)
+            sources = _sources(claim.citations, turns_for)
             if sources is None:
                 continue
             terms = unsupported_terms(claim.text, sources)

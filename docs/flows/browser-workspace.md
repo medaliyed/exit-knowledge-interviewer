@@ -149,3 +149,16 @@ validation is deferred by user request.
 The same browser suite has also passed against the compiled files served by
 FastAPI, using `EKI_TEST_BASE_URL`, with no Content Security Policy violations.
 Dialog scroll locking uses external CSS to preserve the server's strict policy.
+
+Phase 9 adds the owner **Follow-ups** tab, scoped plan/interview controls and private
+proposal review, plus explicit reader Ask saves with chosen-handover routing. Finished
+follow-ups open proposals rather than looking for mapped entries in the second
+session. Apply leads to normal review of the original target entry; approval and
+saved-request resolution stay separate. See [follow-up.md](follow-up.md).
+
+`frontend/e2e/followup.spec.ts` covers private route boundaries, explicit saves and
+resolution, stale proposals, delayed reply locking, source expansion, scoped/partial
+completion, keyboard operation and narrow-layout accessibility. The optional database
+test `tests/test_follow_up_browser.py` drives the built UI through actual cookie-
+authenticated FastAPI/HTTP/SSE services and scripted models in a disposable schema.
+CI installs the existing frontend browser dependencies and runs this path explicitly.

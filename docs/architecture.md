@@ -257,6 +257,9 @@ erDiagram
 | `ingest_runs.artifact_embedding_model` | 0010 | artifact index/query model identity |
 | `plan_generations`, `generation_topics` | 0011 | per-topic drafting progress and recovery |
 | `audit_events` | 0006, 0009, 0011 | model/tool attempts, decisions and delivery/generation transitions |
+| `follow_up_gaps`, `follow_up_throttle` | 0016 | explicit reader requests, owner triage, resolution history and shared-worker request limits |
+| `follow_up_attempts`, `session_usage`, `session_provider_attempts` | 0017 | selected seed outcomes and durable follow-up budgets |
+| `follow_up_proposals` | 0018 | private section proposals and authorized cross-session source lineage |
 | LangGraph checkpoint tables | created by `eki migrate` | the workflow |
 
 Migrations are in `src/eki/migrations/` and are applied in order by
@@ -326,3 +329,16 @@ Q&A excludes overdue entries while search/export label them. New tables are
 (0014) and metadata-safe index invalidation (0015). Shared services enforce run,
 session, entry and flag locking; HTTP and CLI do not authorize by a display name
 in maintenance. See [the maintenance flow](flows/maintenance.md).
+
+## Phase 9: focused follow-up and reviewed publication
+
+Public open sections and explicitly saved reader questions feed a run-scoped
+private queue. The owner maps/selects seeds, freezes a bounded plan and the original
+expert approves it. The existing graph enforces selected sections and per-seed
+attribution with durable question/provider limits. Finishing a mapped topic saves
+a private proposal; applying selected sections revises the same entry to draft and
+invalidates publication. Separate ordinary approval publishes it and resolves
+eligible open-section gaps. Reader requests require explicit reviewer confirmation
+linked to an approved version. Cross-session citations, faithfulness and corrections
+use entry/topic lineage and preserve the actual source session IDs. Browser, CLI
+and HTTP share these transitions and authorization. See [the follow-up flow](flows/follow-up.md).

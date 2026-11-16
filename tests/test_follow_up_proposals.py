@@ -17,8 +17,10 @@ from eki.followup.gaps import GapService, open_section_gap_id
 from eki.followup.sessions import FollowUpService, finish, outcome
 from eki.ingest.redaction import RedactedText
 from eki.interview import store
+from eki.interview.models import Turn
 from eki.runbook import store as entry_store
 from eki.runbook.export import ExportService
+from eki.runbook.faithfulness import check_entry
 from eki.runbook.models import Claim, InterviewTurnCitation, RunbookEntry, Section
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService, validate_sources
@@ -787,3 +789,76 @@ async def test_correction_before_apply_rewrites_pending_proposal(scratch: Scratc
     contact = turn_of(scratch, fid, "Finance operations lead.")
     await correct_follow_up(scratch, fid, contact, "The finance operations lead.")
     assert proposal_state(scratch, pid)[:2] == ("applied", 3)
+
+
+# --- P6: faithfulness resolves (session, ordinal), never an ordinal alone ---
+
+
+def test_check_entry_keys_linked_turns_by_session() -> None:
+    home, linked = str(uuid4()), str(uuid4())
+
+    def turn(ordinal: int, text: str, **extra: Any) -> Turn:
+        return Turn(
+            ordinal=ordinal,
+            topic_id="t",
+            speaker="expert",
+            kind="answer",
+            text=RedactedText(text),
+            **extra,
+        )
+
+    own = [turn(2, "Restart the replicas.")]
+    other = [turn(2, "Restore the export."), turn(3, "A secret value.", confidential=True)]
+
+    def entry(*claims: tuple[str, str, int]) -> RunbookEntry:
+        return RunbookEntry(
+            id=str(uuid4()),
+            topic_id="t",
+            title="T",
+            steps=Section(
+                claims=tuple(
+                    Claim(
+                        text=text,
+                        citations=(InterviewTurnCitation(session_id=s, turn_index=n),),
+                    )
+                    for text, s, n in claims
+                )
+            ),
+        )
+
+    mixed = entry(
+        ("Restart the replicas.", home, 2),
+        ("Restore the export.", linked, 2),
+        ("Restore the export nightly.", linked, 2),
+        ("Anything secret.", linked, 3),
+    )
+    found = check_entry(mixed, own, session_id=home, linked={linked: other})
+    assert [(u.index, u.terms) for u in found] == [(2, ("nightly",))]
+    assert check_entry(mixed, own, session_id=home) == (), "unlinked citations are skipped"
+    legacy = check_entry(entry(("Restart the replicas now.", home, 2)), own)
+    assert [u.terms for u in legacy] == [("now",)], "the legacy call is unchanged"
+
+
+async def test_unsupported_resolves_linked_turns_without_ordinal_collision(
+    scratch: Scratch,
+) -> None:
+    done = await answered_follow_up(scratch)
+    world, fid = done.world, done.session_id
+    books = RunbookService(scratch.dsn)
+    with acting_as(OWNER):
+        (shown,) = books.proposals_for_session(fid)
+    follow_up = {("contacts", 1), ("contacts", 2), ("rollback", 0)}
+    previewed = {(u["section"], u["claim_index"]): u["terms"] for u in shown["unsupported"]}
+    assert {k: v for k, v in previewed.items() if k in follow_up} == {
+        ("contacts", 2): ["signs", "amounts"]
+    }, "follow-up claims are compared with their own follow-up turns"
+    assert ("contacts", 0) in previewed, "home claims are still compared with home turns"
+    apply_all(books, done)
+    found = {
+        (u.section, u.index): u.terms
+        for u in books.unsupported(world.session_id)[str(world.billing)]
+    }
+    assert {k: v for k, v in found.items() if k in follow_up} == {
+        ("contacts", 2): ("signs", "amounts")
+    }
+    assert found[("contacts", 0)] == tuple(previewed[("contacts", 0)])

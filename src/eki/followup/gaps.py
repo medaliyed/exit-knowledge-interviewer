@@ -1,6 +1,7 @@
 """F22 gap intake: live public open sections plus explicitly saved reader questions.
 
-Lock order: run, gap row. Readers only ever see their own request receipts.
+Lock order: run, session, entry, gap rows (ascending id), audit last. Intake and
+triage need only the run and gaps. Readers only see their own safe request receipts.
 """
 
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from eki.auth import Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
 from eki.ingest.redaction import redact
 from eki.interview import store as interviews
+from eki.runbook import store as entry_store
 from eki.runbook.models import SECTION_NAMES, RunbookEntry
 
 GapStatus = Literal["pending", "scheduled", "awaiting_review", "resolved", "deferred", "dismissed"]
@@ -318,6 +320,65 @@ class GapService:
 
     # --- owner triage ---
 
+    def resolve(
+        self,
+        run_id: UUID,
+        gap_id: UUID | str,
+        principal: Principal,
+        *,
+        expected_revision: int,
+        entry_id: UUID,
+        expected_version: int,
+        confirms_answer: bool,
+    ) -> dict[str, Any]:
+        """Explicit reviewer confirmation that an approved version answers a saved request.
+
+        No model judges the answer and approval of an entry never closes a reader's
+        request by itself. The target, authority and optimistic versions are checked
+        again under the same locks used for entry review, including in maintenance.
+        """
+        if confirms_answer is not True or expected_revision < 0 or expected_version < 1:
+            raise ValueError("confirm the approved version answers this request")
+        with acting_as(principal), self._connect() as conn, conn.transaction():
+            owner, _, _, _ = maintenance.lock_run(conn, run_id)
+            if principal.subject != owner:
+                raise NotFoundError("request not found")
+            maintenance.reviewer(conn, run_id, principal.name)
+            access.require_manager(conn, run_id, principal)
+            target = conn.execute(
+                "SELECT e.session_id FROM runbook_entries e JOIN sessions s ON s.id=e.session_id "
+                "JOIN interview_plans p ON p.id=s.plan_id WHERE e.id=%s AND p.run_id=%s",
+                (entry_id, run_id),
+            ).fetchone()
+            if target is None:
+                raise NotFoundError("entry not found")
+            conn.execute("SELECT 1 FROM sessions WHERE id=%s FOR UPDATE", (target[0],))
+            stored = entry_store.load_entry(conn, str(entry_id), lock=True)
+            if stored is None:
+                raise NotFoundError("entry not found")
+            if stored.version != expected_version or stored.entry.status != "approved":
+                raise ConflictError("review the current approved entry version before resolving")
+            row = self.lock_gap(conn, run_id, gap_id, require_live=False)
+            if row["kind"] != "request":
+                raise ValueError("open sections resolve through entry approval")
+            if row["status"] == "resolved":
+                if (
+                    row["resolved_entry_id"] == entry_id
+                    and row["resolved_version"] == expected_version
+                    and row["revision"] in (expected_revision, expected_revision + 1)
+                ):
+                    return _public(row)
+                raise ConflictError("request already resolved; refresh its receipt")
+            if row["revision"] != expected_revision:
+                raise ConflictError("gap changed; refresh before resolving")
+            if row["status"] not in ("pending", "deferred", "awaiting_review"):
+                raise ConflictError("settle the interview or reopen this request before resolving")
+            saved = _resolve_row(
+                conn, row["id"], entry_id, expected_version, principal.subject, self.clock()
+            )
+            audit_resolution(conn, run_id, saved)
+            return _public(saved)
+
     def triage(
         self,
         run_id: UUID,
@@ -397,10 +458,17 @@ class GapService:
                 update.update(status="deferred" if action == "defer" else "dismissed")
                 update["reason"] = self._clean(reason or "")
             elif action == "reopen":
-                if status not in ("deferred", "dismissed"):
-                    raise ConflictError("only deferred or dismissed gaps can be reopened")
+                if status not in ("deferred", "dismissed", "resolved"):
+                    raise ConflictError("only deferred, dismissed or resolved gaps can be reopened")
                 update.update(
-                    status="pending", reason=None if reason is None else self._clean(reason)
+                    status="pending",
+                    reason=None if reason is None else self._clean(reason),
+                    resolved_entry_id=None,
+                    resolved_version=None,
+                    resolved_at=None,
+                    resolved_by_subject=None,
+                    plan_id=None,
+                    group_id=None,
                 )
             else:
                 if group_with is None or str(group_with) == str(row["id"]):
@@ -485,6 +553,71 @@ class GapService:
             if row is None:
                 raise NotFoundError("gap not found")
             return dict(row)
+
+
+def _resolve_row(
+    conn: psycopg.Connection,
+    gap_id: UUID,
+    entry_id: UUID,
+    version: int,
+    subject: str,
+    at: datetime,
+) -> dict[str, Any]:
+    with conn.cursor(row_factory=dict_row) as cursor:
+        saved = cursor.execute(
+            "UPDATE follow_up_gaps SET status='resolved',resolved_entry_id=%s,"
+            "resolved_version=%s,resolved_at=%s,resolved_by_subject=%s,"
+            "revision=revision+1,plan_id=NULL WHERE id=%s RETURNING *",
+            (entry_id, version, at, subject, gap_id),
+        ).fetchone()
+    if saved is None:
+        raise NotFoundError("gap not found")
+    return dict(saved)
+
+
+def audit_resolution(conn: psycopg.Connection, run_id: UUID, saved: dict[str, Any]) -> None:
+    append_event(
+        conn,
+        "review",
+        "completed",
+        AuditDetails(operation="gap_resolved", target_id=saved["id"], version=saved["revision"]),
+        run_id=run_id,
+    )
+
+
+def resolve_approved_sections(
+    conn: psycopg.Connection,
+    run_id: UUID,
+    stored: entry_store.StoredEntry,
+    subject: str,
+    at: datetime,
+) -> None:
+    """Close tracked public open sections only inside an explicit approval transaction.
+
+    Source validation has already proved every claim public and cited. Active plan
+    reservations stay scheduled until the interview settles; reader requests always
+    require their own explicit confirmation. Acquire all gap locks before auditing.
+    """
+    filled = {
+        name
+        for name in SECTION_NAMES
+        if stored.entry.section(name).claims and stored.entry.section(name).open_question is None
+    }
+    if stored.entry.status != "approved" or not filled:
+        return
+    with conn.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(
+            "SELECT * FROM follow_up_gaps WHERE run_id=%s AND kind='open_section' "
+            "AND entry_id=%s AND status NOT IN ('resolved','scheduled') ORDER BY id FOR UPDATE",
+            (run_id, UUID(stored.entry.id)),
+        ).fetchall()
+    saved = [
+        _resolve_row(conn, row["id"], UUID(stored.entry.id), stored.version, subject, at)
+        for row in rows
+        if row["section"] in filled
+    ]
+    for resolved in saved:
+        audit_resolution(conn, run_id, resolved)
 
 
 def _blank_state() -> dict[str, Any]:

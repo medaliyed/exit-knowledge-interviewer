@@ -98,3 +98,20 @@ jobs:
           EKI_MODEL_ANSWERER: ""
           EKI_MODEL_EMBEDDING: ""
         run: uv run python evals/run.py --junit reports/quality.xml
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install real-browser acceptance dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Follow-up browser journey against the real API
+        env:
+          EKI_DATABASE_URL: postgresql://eki:ci-only-not-a-secret@localhost:5432/eki
+        run: uv run pytest -q -m db tests/test_follow_up_browser.py

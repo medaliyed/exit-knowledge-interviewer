@@ -45,6 +45,19 @@ reordering, unsent-answer warnings, confirmations before destructive actions,
 and automated accessibility/layout checks at 360, 768 and 1440 px.
 They supplement the Python HTTP/database tests; they do not validate a live model.
 
+The database-backed browser acceptance test runs the compiled UI against a real
+FastAPI server and disposable Postgres schema, with scripted model doubles. From
+the repository root, after installing the frontend dependencies and browser:
+
+```sh
+.venv/bin/pytest -q -m db tests/test_follow_up_browser.py
+```
+
+It uses installed Google Chrome locally and Playwright Chromium in CI. CI runs
+this path explicitly in addition to the mocked browser suite. It covers reader
+request intake, owner selection, a focused interview, proposal apply, separate
+approval and gap resolution without a provider credential or paid model call.
+
 To check the committed production build under FastAPI's real Content Security
 Policy, start the API and run `EKI_TEST_BASE_URL=http://127.0.0.1:8000 npm run test:e2e`.
 The suite rejects policy violations, including when a dialog opens. Optional
@@ -67,3 +80,38 @@ rendered as React text, not interpreted as markup.
 offering a resend. Saved and processed are separate states. Confidential text
 is cleared when the server acknowledges acceptance; recovery never asks the
 expert to retype an accepted answer. Tests use no real provider credentials.
+
+## Follow-up workflow
+
+Owners have a **Follow-ups** tab at `/workspace/:runId/follow-ups`. The queue
+combines eligible public open sections and explicitly saved reader questions.
+It supports mapping, editing seed questions, priority, grouping, deferral,
+dismissal and reopening. Questions are selected for a finished original
+interview, with visible topic, question, model and embedding limits. Preparation
+does not call a model. Only the available original expert, authenticated as the
+current owner, can approve and answer a follow-up.
+
+The plan screen identifies selected sections, allows seed edits/removal and
+discards unused draft plans with their gap reservations. The interview reuses
+normal message receipts, confidential answers, corrections and recovery. It
+shows selected sections and durable usage; **Stop for now** retains accepted
+work and returns unanswered questions to triage. The composer stays locked
+between acceptance and completion of the streamed reply.
+
+Finished follow-ups open `/workspace/:runId/follow-ups/:sessionId`. Each private
+proposal compares existing statements with additions and lets the reviewer
+expand source answers, select sections, and merge or explicitly replace them.
+A stale comparison requires explicit refresh and review. Apply returns the
+original entry to draft; ordinary entry approval publishes it. New topics have
+their own draft entries on the same completion page. Filled public-section
+gaps resolve on approval; saved reader questions require separate confirmation
+against a specific approved entry version.
+
+An unsupported Ask result offers **Save for a follow-up** only after the reader
+explicitly chooses the destination handover and sees its owner. The saved
+receipt can be refreshed. Evidence changes, context limits, review-required
+results and transport errors have distinct recovery guidance. Readers never
+receive the owner queue, proposals or private transcript access. The follow-up
+browser suite checks these boundaries, proposal conflicts, delayed reply
+locking, partial completion, explicit resolution, keyboard operation and narrow
+layout/accessibility.

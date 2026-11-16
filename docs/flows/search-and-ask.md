@@ -7,6 +7,13 @@ Search alone is `POST /runbook/search` (`src/eki/api/app.py`) or
 `insufficient_evidence`. Nothing is written except the search index and audit
 events.
 
+After `no_supported_answer`, the browser can explicitly save a question for a
+follow-up. The reader chooses a permitted handover and sees its owner; ordinary Ask
+still creates no request history. Evidence/access changes and context limits suggest
+retrying or opening an entry, while overdue knowledge points to maintenance review.
+Saved questions are private triage input and never enter the searchable runbook.
+See [the follow-up flow](follow-up.md) for request receipts and publication.
+
 ## What happens
 
 ```mermaid

@@ -109,9 +109,15 @@ async def test_navigation_lists_only_accessible_data(scratch: Scratch) -> None:
     assert client.get("/runbook/identity", headers=headers("owner")).json()["name"] == OWNER.name
     assert client.get("/runs", headers=headers("stranger")).json() == []
     assert client.get("/runs", headers=headers("owner")).json()[0]["can_manage"]
+    managed = client.get("/runs", headers=headers("owner")).json()[0]
+    assert managed["owner_subject"] == OWNER.subject
+    assert managed["owner_unavailable"] is False
     assert not client.get("/runs", headers=headers("reader")).json()[0]["can_manage"]
+    readable = client.get("/runs", headers=headers("reader")).json()[0]
+    assert "owner_subject" not in readable and "owner_unavailable" not in readable
     plans = client.get(f"/runs/{run}/plans", headers=headers("owner")).json()
     assert plans[0]["session_id"] == str(sid)
+    assert plans[0]["kind"] == "capture" and plans[0]["session_status"] == "finished"
     assert client.get(f"/runs/{run}/plans", headers=headers("reader")).status_code == 404
     listed = client.get(f"/runbook/entries?run_id={run}", headers=headers("reader")).json()
     assert [e["id"] for e in listed] == [public.entry.id]

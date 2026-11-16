@@ -60,20 +60,26 @@ sequenceDiagram
    answered are read, and the claim's words and numbers found in neither are
    listed (`src/eki/runbook/service.py`,
    `src/eki/runbook/faithfulness.py`). It is a word comparison with no
-   model. It is advisory: it never blocks approval.
+   model. Linked follow-up sources resolve against their own session and turn,
+   preventing collisions with ordinals in the original interview. It is advisory:
+   it never blocks approval.
 4. **Reviewer name** (after step 6) - the name in the request body must equal the
    name bound to the token (`src/eki/api/app.py`).
-5. **Locks** (step 8) - session first, then entry, the same order as edits,
+5. **Locks** (step 8) - run first, then session and entry, the same order as edits,
    corrections and synthesis, so they cannot interleave
    (`src/eki/runbook/service.py`).
 6. **Approval rules** (after step 8) - the reviewer is the expert recorded on the
    run; the entry is a draft; no section is empty; every claim has a citation
    (`src/eki/runbook/review.py`).
 7. **Source rules** (step 9) - each citation must point at a turn of this
-   interview, said by the expert, about this topic, not confidential, not a
-   skip and not since corrected (`src/eki/runbook/service.py`).
+   interview or an explicitly linked follow-up topic, said by the expert (or an
+   attributed human edit), not confidential, not a skip and not since corrected.
+   Sharing a run does not authorize a follow-up source (`src/eki/runbook/service.py`).
 8. **Write** (steps 12 and 13) - the entry, the decision and the audit event
-   commit together (`src/eki/runbook/service.py`,
+   commit together. Approval also resolves tracked public open-section gaps only
+   when the approved section contains public cited knowledge and no open question.
+   Saved reader requests need a separate explicit confirmation against an approved
+   entry/version; approval alone cannot resolve them (`src/eki/runbook/service.py`,
    `src/eki/runbook/store.py`).
 
 **Reject** follows the same path with a required reason

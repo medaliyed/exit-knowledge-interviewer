@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useWorkspace } from './workspace';
 import { Badge, Button, Empty, Loading, Modal, Notice, SectionLabel, Source } from './ui';
 import { EntryMaintenance, Freshness, dayAfter, expected } from './Maintenance';
@@ -33,6 +33,7 @@ export function Entries() {
     finally { setBusy(false); }
   }
   if (plans.isPending || (sessionId && entries.isPending)) return <Loading />;
+  if (selectedSession.data?.kind === 'follow_up') return <Navigate to={`/workspace/${run.id}/follow-ups/${sessionId}`} replace />;
   const approved = entries.data?.filter(entry => entry.status === 'approved').length ?? 0;
   const drafts = entries.data?.filter(entry => entry.status === 'draft').length ?? 0;
   const rejected = entries.data?.filter(entry => entry.status === 'rejected').length ?? 0;
@@ -93,7 +94,7 @@ export function EntryView() {
     try {
       const updated = await api.request<Entry>(path, method, { ...(entry ? expected(entry) : {}), ...body });
       cache.setQueryData(['entry', entryId], updated);
-      await Promise.all([cache.invalidateQueries({ queryKey: ['entries'] }), cache.invalidateQueries({ queryKey: ['approved-entries'] }), cache.invalidateQueries({ queryKey: ['session'] })]);
+      await Promise.all([cache.invalidateQueries({ queryKey: ['entries'] }), cache.invalidateQueries({ queryKey: ['approved-entries'] }), cache.invalidateQueries({ queryKey: ['session'] }), cache.invalidateQueries({ queryKey: ['follow-up-targets'] }), cache.invalidateQueries({ queryKey: ['follow-up-gaps'] }), cache.invalidateQueries({ queryKey: ['follow-up-proposals'] })]);
       if (currentEntry.current === entryId) notify(success);
       return true;
     } catch (caught) { if (currentEntry.current === entryId) setError(errorMessage(caught)); return false; }
@@ -155,7 +156,7 @@ export function EntryView() {
       {!entry[name].claims.length && !entry[name].open_question && <p className="gap-state">Not answered</p>}
     </div></section>)}</div>
     {canReview && <div className="page-actions"><div><p className="muted">{entry.status === 'draft' ? 'Approving publishes this entry to permitted colleagues. Open and confidential sections stay visible as labelled gaps.' : entry.status === 'approved' ? 'Editing returns this entry to draft and removes it from reader access until you approve it again.' : 'This rejected entry is excluded from reader access. Edit a section to reopen it as a draft.'}</p>{!entry.maintenance_started_at && identity.name.trim() !== run.expert_name.trim() && entry.status === 'draft' && <p className="small warning-text">Only {run.expert_name} can approve. Your signed-in name is {identity.name}.</p>}</div>{entry.status === 'draft' && <div className="stack"><div className="form-field"><label htmlFor="approval-review-by">Next review by (UTC)</label><input id="approval-review-by" type="date" required min={dayAfter(1)} max={dayAfter(365)} value={reviewBy} onChange={event => setReviewBy(event.target.value)} /></div><div className="toolbar"><Button variant="danger" disabled={busy} onClick={() => { setRejectOpen(true); setReasonError(''); }}>Reject</Button><Button variant="primary" disabled={busy} onClick={() => void approve()}>{busy ? 'Saving…' : 'Approve'}</Button></div></div>}</div>}
-    <Modal title="History" open={historyOpen} onClose={() => setHistoryOpen(false)}><p className="small muted">Current version: {entry.version}. Every decision is recorded below.</p>{entry.decisions?.length ? <ol className="decision-list">{entry.decisions.map((decision, index) => <li key={index}><strong>{decision.action === 'approve' ? 'Approved' : decision.action === 'reject' ? 'Rejected' : decision.action === 'edit' ? 'Edited by hand' : decision.action === 'review' ? 'Reviewed; no changes' : decision.action === 'withdraw' ? 'Withdrawn to draft' : 'Source corrected'}</strong><p className="small muted">{decision.who} · {date(decision.at)}</p>{decision.reason && <p>{decision.reason}</p>}</li>)}</ol> : <p>No decisions have been recorded yet.</p>}</Modal>
+    <Modal title="History" open={historyOpen} onClose={() => setHistoryOpen(false)}><p className="small muted">Current version: {entry.version}. Every decision is recorded below.</p>{entry.decisions?.length ? <ol className="decision-list">{entry.decisions.map((decision, index) => <li key={index}><strong>{decision.action === 'approve' ? 'Approved' : decision.action === 'reject' ? 'Rejected' : decision.action === 'edit' ? 'Edited by hand' : decision.action === 'follow_up_apply' ? 'Follow-up sections applied' : decision.action === 'review' ? 'Reviewed; no changes' : decision.action === 'withdraw' ? 'Withdrawn to draft' : 'Source corrected'}</strong><p className="small muted">{decision.who} · {date(decision.at)}</p>{decision.reason && <p>{decision.reason}</p>}</li>)}</ol> : <p>No decisions have been recorded yet.</p>}</Modal>
     <Modal title="Reject this entry?" open={rejectOpen} onClose={() => { if (!busy) setRejectOpen(false); }}><form className="stack" onSubmit={event => void reject(event)}><p>A rejected entry is excluded from reader access. Your saved answers and this decision stay in the review history.</p><div className="form-field"><label htmlFor="rejection-reason">Reason</label><textarea id="rejection-reason" value={reason} disabled={busy} onChange={event => { setReason(event.target.value); setReasonError(''); }} aria-invalid={Boolean(reasonError)} aria-describedby="rejection-help" /><p className={`field-help ${reasonError ? 'error-text' : ''}`} id="rejection-help">{reasonError || 'Add a short reason so the decision makes sense later.'}</p></div>{error && <Notice error>{error}</Notice>}<div className="toolbar"><Button disabled={busy} onClick={() => setRejectOpen(false)}>Cancel</Button><Button variant="danger" type="submit" disabled={busy}>{busy ? 'Saving decision…' : 'Reject entry'}</Button></div></form></Modal>
     <Modal title={`Edit ${editing ?? 'section'}`} open={editing !== null} onClose={() => { if (!busy) setEditing(null); }}><form className="stack section-editor" onSubmit={event => void saveSection(event)}>
       {entry.status === 'approved' && <Notice error>Saving removes this approved entry from reader access until you approve the updated draft.</Notice>}

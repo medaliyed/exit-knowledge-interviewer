@@ -3,14 +3,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useWorkspace } from './workspace';
 import { Badge, Button, Empty, Loading, Modal, Notice } from './ui';
+import { FollowUpLimitSummary } from './FollowUps';
 import type { Generation, Plan, PlanSummary, Topic, Session as SessionSummary } from './types';
 const message = (error: unknown) => error instanceof Error ? error.message : 'The request could not be completed. Please try again.';
 
-function Questions({ topic }: { topic: Topic }) {
+function Questions({ topic, editable = false, busy = false, edit }: { topic: Topic; editable?: boolean; busy?: boolean; edit?: (body: object, success: string) => Promise<boolean> }) {
   return <div className="stack topic-questions">
     {topic.questions.length === 0 && <p className="muted">{topic.origin === 'expert' ? 'The interviewer starts from your note; no questions are drafted in advance.' : 'No drafted questions passed the source checks. The interviewer will ask about this topic directly.'}</p>}
     {topic.questions.map((question, index) => <div key={index}>
       <p className="claim question-text"><strong>Q</strong> {question.text}</p>
+      {question.origin === 'follow_up' && <><p className="small muted">Selected section: <span>{question.section ?? 'new topic'}</span></p>{editable && edit && question.gap_id && <form className="stack" onSubmit={event => { event.preventDefault(); const text = new FormData(event.currentTarget).get('seed') as string; void edit({ seeds: { [question.gap_id!]: text } }, 'Follow-up question updated.'); }}><label htmlFor={`seed-${question.gap_id}`}>Edit question {index + 1}</label><textarea id={`seed-${question.gap_id}`} name="seed" defaultValue={question.text} required maxLength={2000} disabled={busy} /><div className="toolbar"><Button type="submit" disabled={busy}>Save question</Button><Button disabled={busy} onClick={() => void edit({ remove_gaps: [question.gap_id] }, 'Question removed and its gap returned to triage.')}>Remove question</Button></div></form>}</>}
       {question.quote && <blockquote className="quote"><span className="source-label">{question.artifact_id}</span><q>{question.quote}</q></blockquote>}
     </div>)}
     {topic.dropped.length > 0 && <details className="dropped-questions"><summary>{topic.dropped.length} drafted {topic.dropped.length === 1 ? 'question was' : 'questions were'} left out</summary><ul>{topic.dropped.map((reason, index) => <li className="muted" key={index}>{reason}</li>)}</ul></details>}
@@ -21,17 +23,19 @@ function PlanRow({ summary, number }: { summary: PlanSummary; number: number }) 
   const { api, run } = useWorkspace();
   const detail = useQuery({ queryKey: ['plan', summary.id], queryFn: () => api.request<Plan>(`/plans/${summary.id}`) });
   const session = useQuery({ queryKey: ['session', summary.session_id], queryFn: () => api.request<SessionSummary>(`/sessions/${summary.session_id}`), enabled: Boolean(summary.session_id) });
-  const finished = session.data?.status === 'finished';
+  const finished = session.data?.status === 'finished' || summary.session_status === 'finished';
+  const followUp = detail.data?.kind === 'follow_up' || summary.kind === 'follow_up';
   const label = summary.session_id ? (finished ? 'Interview finished' : 'Interview in progress') : 'Ready for review';
   const contradictions = detail.data?.topics.filter(topic => topic.origin === 'contradiction').length ?? 0;
   return <article className="list-row plan-row">
-    <div className="grow"><h2 className="card-title">Plan {number}</h2>
+    <div className="grow"><h2 className="card-title">{followUp ? 'Follow-up plan' : 'Plan'} {number}</h2>
       <p className="small muted">{detail.data ? `${detail.data.topics.length} topics` : 'Loading topics…'}{contradictions > 0 && ` · ${contradictions} ${contradictions === 1 ? 'contradiction' : 'contradictions'} between sources`}</p>
       {session.data && <p className="small muted">{finished ? `${session.data.notes.filter(note => !note.confidential).length} notes captured · ${session.data.open_items.length} left open` : `Topic ${Math.max(1, (detail.data?.topics.findIndex(topic => topic.topic_id === session.data?.current_topic_id) ?? 0) + 1)} of ${detail.data?.topics.length ?? '…'} · accepted answers are saved`}</p>}
       {(detail.error || session.error) && <p className="small error-text">Some details could not be loaded. Open the plan to try again.</p>}
     </div>
     <Badge status={finished ? 'approved' : summary.session_id ? 'progress' : 'draft'}>{label}</Badge>
-    <Link className="btn" to={summary.session_id ? (finished ? `/workspace/${run.id}/review?session=${summary.session_id}` : `/workspace/${run.id}/interview/${summary.session_id}`) : `/workspace/${run.id}/plans/${summary.id}`}>{summary.session_id ? (finished ? 'Review entries' : 'Continue interview') : 'Review plan'} <span aria-hidden="true">→</span></Link>
+    <Link className="btn" to={summary.session_id ? (finished ? followUp ? `/workspace/${run.id}/follow-ups/${summary.session_id}` : `/workspace/${run.id}/review?session=${summary.session_id}` : `/workspace/${run.id}/interview/${summary.session_id}`) : `/workspace/${run.id}/plans/${summary.id}`}>{summary.session_id ? (finished ? followUp ? 'Review proposals' : 'Review entries' : 'Continue interview') : 'Review plan'} <span aria-hidden="true">→</span></Link>
+    {summary.session_id && finished && !followUp && <Link className="text-link small" to={`/workspace/${run.id}/follow-ups`}>Plan a follow-up</Link>}
     {summary.session_id && <Link className="text-link small" to={`/workspace/${run.id}/plans/${summary.id}`}>View plan</Link>}
   </article>;
 }
@@ -111,16 +115,18 @@ export function PlanReview() {
   const editable = !run.maintenance_started_at && plan?.status === 'draft';
   const partial = generations.data?.some(item => item.id === planId && item.status !== 'completed');
   const ownName = identity.name.trim() === run.expert_name.trim();
+  const followUp = plan?.kind === 'follow_up';
+  const respondent = ownName && !run.owner_unavailable && (run.owner_subject === undefined || run.owner_subject === identity.subject);
 
   async function edit(body: object, success: string) {
     setBusy(true); setError('');
     try {
-      const updated = await api.request<Plan>(`/plans/${planId}`, 'PATCH', body);
+      const updated = await api.request<Plan>(`/plans/${planId}`, 'PATCH', { ...body, ...(followUp ? { expected_revision: plan?.revision } : {}) });
       cache.setQueryData(['plan', planId], updated);
       void cache.invalidateQueries({ queryKey: ['plans', run.id] });
       notify(success);
       return true;
-    } catch (caught) { setError(message(caught)); return false; }
+    } catch (caught) { setError(message(caught)); void planQuery.refetch(); return false; }
     finally { setBusy(false); }
   }
   async function reorder(id: string, target: number) {
@@ -147,7 +153,7 @@ export function PlanReview() {
     if (!plan || partial || !plan.topics.length || busy) return;
     setBusy(true); setError('');
     try {
-      const session = await api.request<{ id: string }>(`/plans/${planId}/approve`, 'POST', { approved_by: identity.name });
+      const session = await api.request<{ id: string }>(`/plans/${planId}/approve`, 'POST', { approved_by: identity.name, ...(followUp ? { expected_revision: plan.revision } : {}) });
       await cache.invalidateQueries({ queryKey: ['plans', run.id] });
       void cache.invalidateQueries({ queryKey: ['plan', planId] });
       if (alive.current && currentPlan.current === planId) {
@@ -165,7 +171,7 @@ export function PlanReview() {
   const number = summaries.data ? summaries.data.length - summaries.data.findIndex(item => item.id === plan.id) : null;
   return <div className="stack page-content">
     <Link className="back-link" to={`/workspace/${run.id}/plans`}>← All plans</Link>
-    <div className="page-heading"><div><div className="inline"><h1>{number && number > 0 ? `Plan ${number}` : 'Interview plan'}</h1><Badge status={editable ? 'draft' : 'approved'}>{editable ? 'Ready for review' : 'Approved'}</Badge></div><p className="page-intro">These are the topics the interviewer will ask about, in this order. Move them, remove what does not matter, and add what is missing. Each drafted question shows the words that prompted it.</p></div></div>
+    <div className="page-heading"><div><div className="inline"><h1>{followUp ? 'Follow-up plan' : number && number > 0 ? `Plan ${number}` : 'Interview plan'}</h1><Badge status={editable ? 'draft' : 'approved'}>{editable ? 'Ready for review' : 'Approved'}</Badge></div><p className="page-intro">{followUp ? 'Review these selected questions and sections. The original expert answers them in a focused interview with the limits below.' : 'These are the topics the interviewer will ask about, in this order. Move them, remove what does not matter, and add what is missing. Each drafted question shows the words that prompted it.'}</p>{followUp && plan.limits && <FollowUpLimitSummary limits={plan.limits} />}</div></div>
     {error && <Notice error>{error}</Notice>}
     {partial && <Notice error>This plan is still being drafted. Finish drafting all topics before approving it. <Link to={`/workspace/${run.id}/plans`}>Return to saved drafting progress</Link></Notice>}
     {!editable && <Notice>This plan is frozen. {plan.approved_by && <>Approved by {plan.approved_by}.</>} {summary?.session_id && <Link to={`/workspace/${run.id}/interview/${summary.session_id}`}>Open the interview</Link>}</Notice>}
@@ -174,13 +180,15 @@ export function PlanReview() {
       {editable && <div className="reorder-controls" aria-label={`Reorder ${topic.label}`}><span className="drag-handle" aria-hidden="true">⠿</span><Button variant="quiet" disabled={busy || index === 0} aria-label={`Move ${topic.label} up`} onClick={() => void reorder(topic.topic_id, index - 1)}>↑</Button><Button variant="quiet" disabled={busy || index === plan.topics.length - 1} aria-label={`Move ${topic.label} down`} onClick={() => void reorder(topic.topic_id, index + 1)}>↓</Button></div>}
       <div className="stack grow"><div className="inline"><span className="eyebrow">Topic {index + 1}</span>{topic.origin === 'contradiction' && <><Badge status="rejected">Sources contradict each other</Badge>{index === 0 && <Badge>Asked first</Badge>}</>}{topic.origin === 'expert' && <Badge>Added by you</Badge>}</div><div><h2>{topic.label}</h2><p className="small muted">{topic.kind}{topic.system && ` · ${topic.system}`}</p></div>
         {topic.origin === 'expert' ? <blockquote className="quote"><span className="source-label">Your note</span>{topic.reason}</blockquote> : <p className="small">{topic.score !== null && <strong>Risk {topic.score.toFixed(1)} of 100: </strong>}{topic.reason}</p>}
-        <Questions topic={topic} />
+        <Questions key={`${topic.topic_id}:${plan.revision ?? 1}`} topic={topic} editable={editable && followUp} busy={busy} edit={edit} />
         {editable && <div><Button variant="quiet" disabled={busy} onClick={() => setRemoving(topic)}>Remove topic</Button></div>}
       </div>
     </li>)}</ol>
-    {editable && <><form className="card stack add-topic" onSubmit={event => void add(event)}><h2>Add a topic</h2><div className="form-field"><label htmlFor="topic-name">Topic name</label><input id="topic-name" required value={label} disabled={busy} onChange={event => setLabel(event.target.value)} /></div><div className="form-field"><label htmlFor="topic-note">A note in your own words</label><textarea id="topic-note" required value={note} disabled={busy} onChange={event => setNote(event.target.value)} aria-describedby="topic-note-help" /><p className="field-help" id="topic-note-help">What should the interviewer know before asking? A sentence is enough.</p></div><div><Button type="submit" disabled={busy || !label.trim() || !note.trim()}>Add topic</Button></div></form>
+    {editable && <>{!followUp && <form className="card stack add-topic" onSubmit={event => void add(event)}><h2>Add a topic</h2><div className="form-field"><label htmlFor="topic-name">Topic name</label><input id="topic-name" required value={label} disabled={busy} onChange={event => setLabel(event.target.value)} /></div><div className="form-field"><label htmlFor="topic-note">A note in your own words</label><textarea id="topic-note" required value={note} disabled={busy} onChange={event => setNote(event.target.value)} aria-describedby="topic-note-help" /><p className="field-help" id="topic-note-help">What should the interviewer know before asking? A sentence is enough.</p></div><div><Button type="submit" disabled={busy || !label.trim() || !note.trim()}>Add topic</Button></div></form>}
+      {followUp && !respondent && <Notice error>{run.owner_unavailable ? 'The original expert is unavailable.' : 'Only the original expert signed in as the current owner can start this follow-up.'} Preparing a plan does not change who can answer.</Notice>}
       {!ownName && <Notice error>You are signed in as {identity.name}. Only the handover expert, {run.expert_name}, can approve this plan. You can still review it.</Notice>}
-      <div className="page-actions"><p className="muted">Approving freezes the plan and opens the interview. Topics cannot be changed afterwards.</p><Button variant="primary" disabled={busy || partial || !plan.topics.length || generations.isPending || generations.isError} onClick={() => setApproveOpen(true)}>Approve plan</Button></div>
+      <div className="page-actions"><p className="muted">Approving freezes the plan and opens the interview. Topics cannot be changed afterwards.</p><Button variant="primary" disabled={busy || partial || !plan.topics.length || generations.isPending || generations.isError || (followUp && !respondent)} onClick={() => setApproveOpen(true)}>Approve plan</Button></div>
+      {followUp && <Button disabled={busy} onClick={async () => { setBusy(true); try { await api.request(`/plans/${plan.id}/discard`, 'POST', { expected_revision: plan.revision }); await cache.invalidateQueries({ queryKey: ['plans', run.id] }); await cache.invalidateQueries({ queryKey: ['follow-up-gaps', run.id] }); navigate(`/workspace/${run.id}/follow-ups`); } catch (caught) { setError(message(caught)); } finally { setBusy(false); } }}>Discard follow-up plan and release gaps</Button>}
       {generations.isError && <Notice error>Drafting status could not be checked. <Button variant="quiet" onClick={() => void generations.refetch()}>Check again</Button></Notice>}
     </>}
     <Modal title="Remove this topic?" open={removing !== null} onClose={() => { if (!busy) setRemoving(null); }}>
