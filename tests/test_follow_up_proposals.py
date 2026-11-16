@@ -17,6 +17,8 @@ from eki.followup.gaps import GapService, open_section_gap_id
 from eki.followup.sessions import FollowUpService, finish, outcome
 from eki.ingest.redaction import RedactedText
 from eki.interview import store
+from eki.runbook import store as entry_store
+from eki.runbook.export import ExportService
 from eki.runbook.models import Claim, InterviewTurnCitation, RunbookEntry, Section
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService, validate_sources
@@ -641,3 +643,55 @@ async def test_apply_replay_and_parallel_apply(scratch: Scratch) -> None:
     assert books.history(entry) == decisions, "a replay records no decision"
     assert len(audit_details(scratch, "follow_up_apply")) == events == 1
     assert [d.action for d in decisions].count("follow_up_apply") == 1
+
+
+# --- P4 / A7: publication is the ordinary explicit approval ---
+
+
+def apply_all(books: RunbookService, done: AnsweredFollowUp) -> entry_store.StoredEntry:
+    pid = proposals.proposal_id(done.session_id, TOPIC_IDS[0])
+    version = books.get(done.world.billing).version
+    with acting_as(OWNER):
+        stored, _ = books.apply_proposal(
+            pid,
+            OWNER.name,
+            {"rollback": "merge", "contacts": "merge"},
+            expected_revision=1,
+            expected_version=version,
+        )
+    return stored
+
+
+async def test_explicit_approval_publishes_revision_with_follow_up_citations(
+    scratch: Scratch,
+) -> None:
+    done = await answered_follow_up(scratch)
+    world, fid = done.world, done.session_id
+    books = RunbookService(scratch.dsn)
+    applied = apply_all(books, done)
+    books.synthesise(world.session_id, overwrite_edits=True)
+    assert books.get(world.billing) == applied, "re-synthesis never drops applied facts"
+    with acting_as(OWNER):
+        approved = books.approve(world.billing, OWNER.name)
+    assert approved.version == applied.version + 1
+    search = SearchService(scratch.dsn)
+    hits = [
+        h for h in search.search(READER, "Restore the pre-run export") if h.section == "rollback"
+    ]
+    assert hits and hits[0].entry.id == str(world.billing)
+    assert hits[0].version == approved.version
+    citations: Any = hits[0].public()["citations"]
+    assert {c["session_id"] for c in citations} == {str(fid)}
+    answer = await AnswerService(search).ask(READER, "How do I roll back the billing export?")
+    cited = {c.session_id for e in answer.evidence for c in e.citations if hasattr(c, "session_id")}
+    assert answer.status == "answered", answer
+    assert str(fid) in cited
+    markdown = ExportService(scratch.dsn).entry(READER, world.billing).replace("\\", "")
+    assert ROLLBACK_ANSWER in markdown and str(fid) in markdown
+    with scratch.connect() as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM runbook_entries e JOIN sessions s ON s.id=e.session_id "
+            "JOIN interview_plans p ON p.id=s.plan_id WHERE p.run_id=%s AND e.topic_id=%s "
+            "AND e.status='approved'",
+            (world.run_id, TOPIC_IDS[0]),
+        ).fetchone() == (1,)

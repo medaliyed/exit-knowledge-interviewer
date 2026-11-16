@@ -129,6 +129,8 @@ def synthesise(
             if previous is not None and (
                 previous.entry.status != EntryStatus.DRAFT
                 or (previous.edited and not overwrite_edits)
+                # Rebuilding from this session's notes would drop applied follow-up facts.
+                or proposals.applied_to(conn, previous.entry.id)
             ):
                 continue
             entry = build_entry(session_id, topic, notes, opened)
