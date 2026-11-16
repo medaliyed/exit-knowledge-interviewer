@@ -97,13 +97,29 @@ def test_same_title_in_different_systems_does_not_merge() -> None:
     assert topics_of(TopicKind.INCIDENT, topics) == []
 
 
-def test_incidents_and_tasks_are_separate_kinds() -> None:
+def test_incidents_and_tasks_with_the_same_title_are_one_incident_topic() -> None:
+    """The same work filed as incidents and as tasks is asked about once, not twice."""
     topics = build(
         [
             ticket("T1", "gateway", "Rotate the certificate", kind="incident"),
             ticket("T2", "gateway", "Rotate the certificate", kind="incident"),
             ticket("T3", "gateway", "Rotate the certificate", kind="task"),
-            ticket("T4", "gateway", "Rotate the certificate", kind="task"),
+            ticket("T4", "gateway", "Rotate the certificate", kind="request"),
+        ]
+    )
+    (incident,) = topics_of(TopicKind.INCIDENT, topics)
+    assert incident.artifact_ids == ("T1", "T2", "T3", "T4")
+    assert incident.label == "Rotate the certificate"
+    assert topics_of(TopicKind.PROCEDURE, topics) == []
+
+
+def test_incidents_and_tasks_with_different_titles_stay_separate() -> None:
+    topics = build(
+        [
+            ticket("T1", "gateway", "Rotate the certificate", kind="incident"),
+            ticket("T2", "gateway", "Rotate the certificate", kind="incident"),
+            ticket("T3", "gateway", "Add a request-id header to upstream calls", kind="task"),
+            ticket("T4", "gateway", "Add a request-id header to upstream calls", kind="task"),
         ]
     )
     assert [t.artifact_ids for t in topics_of(TopicKind.INCIDENT, topics)] == [("T1", "T2")]

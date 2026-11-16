@@ -6,7 +6,9 @@ topics when gaps are scored.
 
 * system: one per repo or ticket system that has at least one artifact of the expert.
 * incident: tickets of type ``incident`` in one system, grouped by title similarity.
-* procedure (tickets): tickets of type ``task`` or ``request``, grouped the same way.
+* procedure (tickets): tickets of type ``task`` or ``request``, grouped the same way. A
+  group whose label equals an incident group's label in the same system joins that
+  incident topic instead: it is the same work filed under another ticket type.
 * procedure (commits): the expert's single-path commits, grouped by (repo, path) and then
   by message similarity with digits ignored; a cluster of 3 or more is a procedure.
 * decision: each pull request whose review by the expert was ``rejected`` or
@@ -92,6 +94,7 @@ def build_topics(snapshot: Snapshot, embedder: Embedder) -> tuple[Topic, ...]:
         drafts.append((TopicKind.SYSTEM, system, system, [a.id for a in by_system[system]]))
 
     tickets = [a for a in artifacts if a.kind == "ticket" and a.system is not None]
+    incidents: dict[tuple[str, str], list[str]] = {}
     for kind, is_incident in ((TopicKind.INCIDENT, True), (TopicKind.PROCEDURE, False)):
         for system in sorted({t.system for t in tickets if t.system}):
             pool = [
@@ -105,7 +108,13 @@ def build_topics(snapshot: Snapshot, embedder: Embedder) -> tuple[Topic, ...]:
                 if len(members) >= MIN_TICKET_GROUP:
                     group = [pool[i] for i in members]
                     label = _most_common([t.title for t in group])
-                    drafts.append((kind, system, label, [t.id for t in group]))
+                    ids = [t.id for t in group]
+                    if not is_incident and (system, label) in incidents:
+                        incidents[(system, label)].extend(ids)  # the same work, asked once
+                        continue
+                    if is_incident:
+                        incidents[(system, label)] = ids
+                    drafts.append((kind, system, label, ids))
 
     singles: dict[tuple[str, str], list[Artifact]] = defaultdict(list)
     for artifact in artifacts:
