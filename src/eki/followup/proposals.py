@@ -26,7 +26,9 @@ from eki.audit import AuditDetails, append_event
 from eki.interview import store as interviews
 from eki.interview.models import Note, OpenItem, PlannedTopic
 from eki.runbook import review
+from eki.runbook.faithfulness import Unsupported
 from eki.runbook.models import SECTION_NAMES, Claim, RunbookEntry, Section, SectionName
+from eki.runbook.store import StoredEntry
 from eki.runbook.synthesis import CONFIDENTIAL, public_claims
 
 ApplyMode = Literal["merge", "replace"]
@@ -239,3 +241,65 @@ def linked_entries(conn: psycopg.Connection, session_id: UUID) -> tuple[str, ...
         (session_id,),
     ).fetchall()
     return tuple(str(r[0]) for r in rows)
+
+
+def view(
+    row: Mapping[str, Any],
+    current: StoredEntry,
+    info: Mapping[str, Any],
+    unsupported: Sequence[Unsupported],
+) -> dict[str, Any]:
+    """The owner's comparison: current base, added facts and both apply results per section.
+
+    Only public note claims and the fixed confidential marker can appear here.
+    """
+    patch = parse_patch(row["patch"])
+    entry = current.entry
+    pending = row["status"] == "pending"
+    sections = []
+    for name, add in patch.items():
+        base = entry.section(name)
+        open_question = None if add.clears_open else base.open_question
+        sections.append(
+            {
+                "section": name,
+                "gap_ids": list(add.gap_ids),
+                "clears_open": add.clears_open,
+                "replaces_existing_claims": bool(base.claims),
+                "base": base.model_dump(mode="json"),
+                "added": [c.model_dump(mode="json") for c in add.claims],
+                "merged": Section(
+                    claims=base.claims + add.claims, open_question=open_question
+                ).model_dump(mode="json"),
+                "replaced": Section(claims=add.claims, open_question=open_question).model_dump(
+                    mode="json"
+                ),
+            }
+        )
+    return {
+        "id": str(row["id"]),
+        "session_id": str(row["session_id"]),
+        "entry_id": str(row["entry_id"]),
+        "topic_id": row["topic_id"],
+        "title": entry.title,
+        "status": row["status"],
+        "revision": row["revision"],
+        "base_version": row["base_version"],
+        "entry_version": current.version,
+        "entry_status": entry.status.value,
+        "maintenance_revision": info.get("maintenance_revision"),
+        "stale": pending
+        and (current.version != row["base_version"] or entry.status.value == "rejected"),
+        "edited": current.edited,
+        "can_apply": pending and bool(info.get("can_review")),
+        "gap_ids": [str(g) for g in row["gap_ids"]],
+        "sections": sections,
+        "unchanged_sections": [name for name in SECTION_NAMES if name not in patch],
+        "unsupported": [
+            {"section": u.section, "claim_index": u.index, "terms": list(u.terms)}
+            for u in unsupported
+        ],
+        "applied_version": row["applied_version"],
+        "applied_sections": row["applied_sections"],
+        "applied_at": None if row["applied_at"] is None else row["applied_at"].isoformat(),
+    }

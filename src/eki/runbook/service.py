@@ -1,14 +1,16 @@
 """Runbook operations shared by HTTP and CLI, independent of model configuration."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from eki import maintenance
+from eki.audit import AuditDetails, append_event
 from eki.auth import current_principal
 from eki.errors import ConflictError, NotFoundError
 from eki.followup import proposals
@@ -258,7 +260,7 @@ class RunbookService:
                 previous.session_id,
                 changed,
                 rejection_reason=reason,
-                edited=True if action == "edit" else None,
+                edited=True if action in ("edit", "follow_up_apply") else None,
             )
             if action == "approve":
                 review_metadata.reviewed(conn, entry_id, self._clean(by), self.clock(), review_by)
@@ -379,6 +381,161 @@ class RunbookService:
             expected_version=expected_version,
             expected_maintenance_revision=expected_maintenance_revision,
         )
+
+    # --- F22 9c: follow-up proposals ---
+
+    def _proposal_view(self, conn: psycopg.Connection, row: dict[str, Any]) -> dict[str, Any]:
+        current = store.load_entry(conn, str(row["entry_id"]))
+        if current is None:
+            raise NotFoundError("proposal not found")
+        info = review_metadata.info(conn, row["entry_id"], self.clock())
+        return proposals.view(row, current, info, ())
+
+    def proposal(self, proposal_id: UUID) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = proposals.load(conn, proposal_id)
+            if row is None:
+                raise NotFoundError("proposal not found")
+            return self._proposal_view(conn, row)
+
+    def proposals_for_session(self, session_id: UUID) -> tuple[dict[str, Any], ...]:
+        """The private comparison of each proposal a follow-up session produced."""
+        with self._connect() as conn:
+            if interviews.load_session(conn, session_id) is None:
+                raise NotFoundError(f"no session {session_id}")
+            rows = proposals.for_session(conn, session_id)
+            return tuple(self._proposal_view(conn, row) for row in rows)
+
+    def apply_proposal(
+        self,
+        proposal_id: UUID,
+        by: str,
+        sections: Mapping[SectionName, proposals.ApplyMode],
+        *,
+        expected_revision: int,
+        expected_version: int,
+        expected_maintenance_revision: int | None = None,
+    ) -> tuple[store.StoredEntry, bool]:
+        """Apply the chosen sections of a reviewed proposal to its entry, as a new draft.
+
+        Returns the stored entry and whether this was an identical replay. Every check is
+        repeated under lock; on any conflict nothing is written and the proposal is kept.
+        """
+        if not sections or any(
+            name not in SECTION_NAMES or mode not in ("merge", "replace")
+            for name, mode in sections.items()
+        ):
+            raise ValueError("choose at least one proposed section, each to merge or replace")
+        fingerprint = proposals.fingerprint(sections, expected_revision, expected_version)
+        with self._connect() as conn, conn.transaction():
+            row = proposals.load(conn, proposal_id)
+            if row is None:
+                raise NotFoundError("proposal not found")
+            maintenance.reviewer(conn, maintenance_run(conn, row["session_id"]), by)
+            # Applied is terminal, so this unlocked read cannot see it change back.
+            if row["status"] == "applied":
+                if row["applied_fingerprint"] != fingerprint:
+                    raise ConflictError("proposal already applied")
+                stored = store.load_entry(conn, str(row["entry_id"]))
+                if stored is None:
+                    raise NotFoundError("proposal not found")
+                return stored, True
+
+        def apply(
+            conn: psycopg.Connection, previous: store.StoredEntry, expert: str
+        ) -> RunbookEntry:
+            locked = proposals.load(conn, proposal_id, lock=True)
+            if locked is None or str(locked["entry_id"]) != previous.entry.id:
+                raise NotFoundError("proposal not found")
+            if locked["status"] != "pending":
+                raise ConflictError("proposal already applied")
+            if locked["revision"] != expected_revision:
+                raise ConflictError("proposal changed; refresh the comparison")
+            if (
+                previous.version != locked["base_version"]
+                or previous.entry.status == EntryStatus.REJECTED
+            ):
+                raise ConflictError("target changed; refresh the proposal")
+            patch = proposals.parse_patch(locked["patch"])
+            if not set(sections) <= set(patch):
+                raise ValueError("a selected section is not part of this proposal")
+            principal = current_principal()
+            conn.execute(
+                "UPDATE follow_up_proposals SET status='applied', applied_version=%s, "
+                "applied_sections=%s, applied_fingerprint=%s, applied_at=%s, "
+                "applied_by_subject=%s, revision=revision+1 WHERE id=%s",
+                (
+                    previous.version + 1,
+                    Jsonb(dict(sections)),
+                    fingerprint,
+                    self.clock(),
+                    None if principal is None else principal.subject,
+                    proposal_id,
+                ),
+            )
+            # Seeds of sections the reviewer did not apply go back to triage.
+            applied = {UUID(g) for name in sections for g in patch[name].gap_ids}
+            released = [g for g in locked["gap_ids"] if g not in applied]
+            if released:
+                conn.execute(
+                    "UPDATE follow_up_gaps SET status='pending', plan_id=NULL, "
+                    "revision=revision+1 WHERE (id = ANY(%s) OR group_id = ANY(%s)) "
+                    "AND status='awaiting_review'",
+                    (released, released),
+                )
+            return proposals.selected(previous.entry, patch, sections)
+
+        stored = self._change(
+            UUID(str(row["entry_id"])),
+            by,
+            "follow_up_apply",
+            apply,
+            expected_version=expected_version,
+            expected_maintenance_revision=expected_maintenance_revision,
+        )
+        return stored, False
+
+    def refresh_proposal(
+        self, proposal_id: UUID, by: str, *, expected_revision: int, expected_version: int
+    ) -> dict[str, Any]:
+        """Rebase a pending proposal on the entry's current version, after the owner saw it.
+
+        Claims are never recomputed and human edits are never merged automatically.
+        """
+        with self._connect() as conn, conn.transaction():
+            row = proposals.load(conn, proposal_id)
+            if row is None:
+                raise NotFoundError("proposal not found")
+            entry_id = str(row["entry_id"])
+            stored = store.load_entry(conn, entry_id)
+            if stored is None:
+                raise NotFoundError("proposal not found")
+            maintenance.reviewer(conn, maintenance_run(conn, stored.session_id), by)
+            conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (stored.session_id,))
+            stored = store.load_entry(conn, entry_id, lock=True)
+            row = proposals.load(conn, proposal_id, lock=True)
+            if stored is None or row is None:
+                raise NotFoundError("proposal not found")
+            if row["status"] != "pending":
+                raise ConflictError("proposal already applied")
+            if row["revision"] != expected_revision or stored.version != expected_version:
+                raise ConflictError("proposal or entry changed; refresh the comparison")
+            if stored.entry.status == EntryStatus.REJECTED:
+                raise ConflictError("edit the rejected entry to reopen it before refreshing")
+            conn.execute(
+                "UPDATE follow_up_proposals SET base_version=%s, revision=revision+1 WHERE id=%s",
+                (stored.version, proposal_id),
+            )
+            append_event(
+                conn,
+                "review",
+                "completed",
+                AuditDetails(
+                    operation="follow_up_refreshed", target_id=proposal_id, version=stored.version
+                ),
+                run_id=maintenance_run(conn, stored.session_id),
+            )
+        return self.proposal(proposal_id)
 
     def metadata(self, entry_id: UUID) -> dict[str, Any]:
         with self._connect() as conn:

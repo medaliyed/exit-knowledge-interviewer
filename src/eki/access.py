@@ -47,6 +47,10 @@ def resource_run(conn: psycopg.Connection, resource: str, resource_id: UUID) -> 
             "SELECT p.run_id FROM runbook_entries e JOIN sessions s ON s.id = e.session_id "
             "JOIN interview_plans p ON p.id = s.plan_id WHERE e.id = %s"
         ),
+        "follow-up-proposals": (
+            "SELECT p.run_id FROM follow_up_proposals f JOIN sessions s ON s.id = f.session_id "
+            "JOIN interview_plans p ON p.id = s.plan_id WHERE f.id = %s"
+        ),
     }
     row = conn.execute(queries[resource], (resource_id,)).fetchone()
     return None if row is None else UUID(str(row[0]))

@@ -20,7 +20,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from eki import __version__, access, accounts
@@ -167,6 +167,22 @@ class Rejection(_Body):
     expected_maintenance_revision: int | None = None
     rejected_by: str
     reason: str
+
+
+class ProposalApply(_Body):
+    """Apply the chosen sections of a follow-up proposal: merge adds, replace swaps claims."""
+
+    applied_by: str
+    sections: dict[SectionName, Literal["merge", "replace"]] = Field(min_length=1)
+    expected_revision: int = Field(ge=1)
+    expected_version: int = Field(ge=1)
+    expected_maintenance_revision: int | None = None
+
+
+class ProposalRefresh(_Body):
+    refreshed_by: str
+    expected_revision: int = Field(ge=1)
+    expected_version: int = Field(ge=1)
 
 
 def _entry_summary(stored: StoredEntry, unsupported: Sequence[Unsupported]) -> dict[str, Any]:
@@ -458,6 +474,49 @@ def create_app(
             )
         )
         return await detail(books, entry_id)
+
+    @app.get("/sessions/{session_id}/follow-up-proposals")
+    async def follow_up_proposals(session_id: UUID, books: Runbooks) -> dict[str, Any]:
+        """Private comparisons of the entry proposals a finished follow-up produced (F22)."""
+        found = await operation(lambda: books.proposals_for_session(session_id))
+        return {"session_id": str(session_id), "proposals": found}
+
+    @app.post("/follow-up-proposals/{proposal_id}/apply")
+    async def apply_proposal(
+        proposal_id: UUID, body: ProposalApply, books: Runbooks, request: Request
+    ) -> dict[str, Any]:
+        """Apply selected sections as a new draft; publication still needs approval."""
+        actor(request, body.applied_by)
+        stored, replayed = await operation(
+            lambda: books.apply_proposal(
+                proposal_id,
+                body.applied_by,
+                body.sections,
+                expected_revision=body.expected_revision,
+                expected_version=body.expected_version,
+                expected_maintenance_revision=body.expected_maintenance_revision,
+            )
+        )
+        return {
+            "entry": await detail(books, UUID(stored.entry.id)),
+            "proposal": await operation(lambda: books.proposal(proposal_id)),
+            "replayed": replayed,
+        }
+
+    @app.post("/follow-up-proposals/{proposal_id}/refresh")
+    async def refresh_proposal(
+        proposal_id: UUID, body: ProposalRefresh, books: Runbooks, request: Request
+    ) -> dict[str, Any]:
+        """Rebase a pending proposal on the entry version the owner has now reviewed."""
+        actor(request, body.refreshed_by)
+        return await operation(
+            lambda: books.refresh_proposal(
+                proposal_id,
+                body.refreshed_by,
+                expected_revision=body.expected_revision,
+                expected_version=body.expected_version,
+            )
+        )
 
     def error(status: int) -> Any:
         async def handler(request: Request, exc: Exception) -> JSONResponse:

@@ -62,6 +62,7 @@ def install_security(
             "auth",
             "flags",
             "follow-up-requests",
+            "follow-up-proposals",
         ):
             return await following(request)
 

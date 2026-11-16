@@ -3,10 +3,13 @@
 import json
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
+from eki import access, accounts
+from eki.auth import acting_as
+from eki.errors import ConflictError, NotFoundError
 from eki.followup import proposals
 from eki.followup.gaps import GapService, open_section_gap_id
 from eki.followup.sessions import FollowUpService, finish, outcome
@@ -19,6 +22,7 @@ from eki.search.answers import AnswerService
 from eki.search.service import SearchService
 from tests.conftest import Scratch
 from tests.followup_support import (
+    CONTACT_ANSWERS,
     OPEN_REASON,
     ROLLBACK_ANSWER,
     answer_follow_up,
@@ -30,6 +34,8 @@ from tests.interview_support import TOPIC_IDS
 from tests.search_support import OWNER, READER
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
+ORIGIN = "https://testserver"
+PASSWORD = "correct horse battery staple 42"
 
 
 def queue(scratch: Scratch, run_id: UUID, filter: str = "open") -> dict[str, dict[str, Any]]:
@@ -268,3 +274,188 @@ async def test_sources_accept_only_explicitly_linked_follow_up_turns(scratch: Sc
         )
         with pytest.raises(ValueError, match="linked follow-up"):
             validate_sources(conn, home, citing(billing.entry, str(fid), corrected))
+
+
+# --- P3 / A7: explicit apply of selected sections ---
+
+
+def gap_statuses(scratch: Scratch, run_id: UUID) -> dict[str, str]:
+    return {g: v["status"] for g, v in queue(scratch, run_id, "all").items()}
+
+
+async def test_apply_selected_sections_preserves_everything_else(scratch: Scratch) -> None:
+    done = await answered_follow_up(scratch)
+    world, fid = done.world, done.session_id
+    books = RunbookService(scratch.dsn)
+    pid = proposals.proposal_id(fid, TOPIC_IDS[0])
+    assert SearchService(scratch.dsn).search(READER, "Noted contacts billing")
+    assert index_count(scratch, world.billing) > 0
+    base = books.get(world.billing)
+    books.edit(world.billing, OWNER.name, {"steps": SectionEdit(claims=("Run it twice.",))})
+    edited = books.get(world.billing)
+    with acting_as(OWNER):
+        (stale,) = books.proposals_for_session(fid)
+        assert stale["stale"] is True and stale["base_version"] == base.version
+        with pytest.raises(ConflictError, match="refresh"):
+            books.apply_proposal(
+                pid,
+                OWNER.name,
+                {"rollback": "merge"},
+                expected_revision=1,
+                expected_version=edited.version,
+            )
+        refreshed = books.refresh_proposal(
+            pid, OWNER.name, expected_revision=1, expected_version=edited.version
+        )
+    assert refreshed["revision"] == 2 and refreshed["base_version"] == edited.version
+    assert refreshed["stale"] is False
+    review_by = books.metadata(world.billing)["review_by"]
+    with acting_as(OWNER):
+        stored, replayed = books.apply_proposal(
+            pid,
+            OWNER.name,
+            {"rollback": "merge"},
+            expected_revision=2,
+            expected_version=edited.version,
+        )
+    assert replayed is False
+    assert stored.entry.id == str(world.billing) and stored.version == edited.version + 1
+    assert stored.entry.status == "draft" and stored.edited is True
+    assert stored.entry.approved_by is None and stored.entry.approved_at is None
+    for name in ("trigger", "diagnosis", "steps", "contacts", "pitfalls", "rationale"):
+        assert stored.entry.section(name) == edited.entry.section(name), name
+    assert stored.entry.steps.claims[0].text == "Run it twice.", "the hand edit is kept"
+    (claim,) = stored.entry.rollback.claims
+    assert claim.text == ROLLBACK_ANSWER and stored.entry.rollback.open_question is None
+    assert claim.citations[0].session_id == str(fid)  # type: ignore[union-attr]
+    assert index_count(scratch, world.billing) == 0
+    with scratch.connect() as conn, pytest.raises(NotFoundError):
+        access.approved_entry(conn, world.billing, READER)
+    statuses = gap_statuses(scratch, world.run_id)
+    assert statuses[done.request_gap] == "pending", "unapplied contacts work returns to triage"
+    assert statuses[done.rollback_gap] == "awaiting_review"
+    actions = [d.action for d in books.history(world.billing)]
+    assert actions.count("follow_up_apply") == 1 and actions[-1] == "follow_up_apply"
+    assert books.metadata(world.billing)["review_by"] == review_by
+    ((_, _, _, _, status, revision, _, _),) = proposal_rows(scratch, fid)
+    assert (status, revision) == ("applied", 3)
+
+
+async def test_replace_is_explicit_and_section_scoped(scratch: Scratch) -> None:
+    done = await answered_follow_up(scratch)
+    books = RunbookService(scratch.dsn)
+    pid = proposals.proposal_id(done.session_id, TOPIC_IDS[0])
+    base = books.get(done.world.billing)
+    bad_choices: list[Any] = [{}, {"steps": "merge"}, {"contacts": "overwrite"}]
+    for bad in bad_choices:
+        with acting_as(OWNER), pytest.raises(ValueError):
+            books.apply_proposal(
+                pid, OWNER.name, bad, expected_revision=1, expected_version=base.version
+            )
+    with acting_as(OWNER):
+        stored, _ = books.apply_proposal(
+            pid,
+            OWNER.name,
+            {"contacts": "replace", "rollback": "merge"},
+            expected_revision=1,
+            expected_version=base.version,
+        )
+    assert [c.text for c in stored.entry.contacts.claims] == list(CONTACT_ANSWERS)
+    assert stored.entry.trigger == base.entry.trigger
+    assert stored.entry.pitfalls == base.entry.pitfalls, "the confidential marker stays"
+    assert gap_statuses(scratch, done.world.run_id)[done.request_gap] == "awaiting_review"
+
+
+async def test_http_proposal_routes(scratch: Scratch) -> None:
+    from fastapi.testclient import TestClient
+
+    from eki.api.app import create_app
+    from eki.config import Settings
+
+    done = await answered_follow_up(scratch)
+    world, fid = done.world, done.session_id
+    pid = proposals.proposal_id(fid, TOPIC_IDS[0])
+    owner_token = "proposal-owner-token-0000000000000000001"
+    reader_token = "proposal-reader-token-000000000000000001"
+    with scratch.connect() as conn:
+        account = accounts.create_account(
+            conn,
+            email="nadia@example.com",
+            name=OWNER.name,
+            subject=OWNER.subject,
+            work_domains=frozenset({"example.com"}),
+        )
+        accounts.set_password(conn, account.id, PASSWORD, now=datetime.now(UTC))
+    settings = Settings(
+        _env_file=None,
+        database_url=scratch.dsn,
+        public_origin=ORIGIN,
+        api_tokens=json.dumps(
+            [
+                {"token": owner_token, "subject": OWNER.subject, "name": OWNER.name},
+                {"token": reader_token, "subject": READER.subject, "name": READER.name},
+            ]
+        ),
+    )
+    app = create_app(runbook_service=RunbookService(scratch.dsn), settings=settings)
+    client = TestClient(app, base_url=ORIGIN)
+    owner = {"Authorization": "Bearer " + owner_token}
+    reader = {"Authorization": "Bearer " + reader_token}
+    listing = f"/sessions/{fid}/follow-up-proposals"
+    apply, refresh = f"/follow-up-proposals/{pid}/apply", f"/follow-up-proposals/{pid}/refresh"
+    version = RunbookService(scratch.dsn).get(world.billing).version
+    body = {
+        "applied_by": OWNER.name,
+        "sections": {"rollback": "merge"},
+        "expected_revision": 1,
+        "expected_version": version,
+    }
+    refresh_body = {"refreshed_by": OWNER.name, "expected_revision": 1, "expected_version": 1}
+    for path, payload in ((apply, body), (refresh, refresh_body)):
+        assert client.post(path, json=payload).status_code == 401
+        assert client.post(path, headers=reader, json=payload).status_code == 404
+    assert client.get(listing).status_code == 401
+    assert client.get(listing, headers=reader).status_code == 404
+    unknown = f"/follow-up-proposals/{uuid4()}/apply"
+    assert client.post(unknown, headers=owner, json=body).status_code == 404
+    shown = client.get(listing, headers=owner)
+    assert shown.status_code == 200, shown.text
+    (proposal,) = shown.json()["proposals"]
+    assert proposal["id"] == str(pid) and proposal["status"] == "pending"
+    assert proposal["can_apply"] is True and proposal["stale"] is False
+    assert {s["section"] for s in proposal["sections"]} == {"rollback", "contacts"}
+    rollback = next(s for s in proposal["sections"] if s["section"] == "rollback")
+    assert rollback["clears_open"] is True and rollback["base"]["open_question"] == OPEN_REASON
+    assert rollback["merged"]["open_question"] is None
+    assert "Secret" not in shown.text and "confidential" not in json.dumps(proposal["sections"])
+    for wrong in (
+        {**body, "sections": {}},
+        {**body, "sections": {"steps": "merge"}},
+        {**body, "sections": {"rollback": "overwrite"}},
+        {**body, "sections": {"rollback": ""}},
+        {**body, "applied_by": "Someone Else"},
+    ):
+        assert client.post(apply, headers=owner, json=wrong).status_code == 422, wrong
+    stale = {**body, "expected_version": version + 5}
+    assert client.post(apply, headers=owner, json=stale).status_code == 409
+    browser = TestClient(app, base_url=ORIGIN)
+    signed_in = browser.post(
+        "/auth/login",
+        headers={"Origin": ORIGIN},
+        json={"email": "nadia@example.com", "password": PASSWORD},
+    )
+    assert signed_in.status_code == 200, signed_in.text
+    assert (
+        browser.post(apply, headers={"Origin": "https://evil.test"}, json=body).status_code == 403
+    )
+    applied = client.post(apply, headers=owner, json=body)
+    assert applied.status_code == 200, applied.text
+    result = applied.json()
+    assert result["replayed"] is False and result["proposal"]["status"] == "applied"
+    assert result["entry"]["version"] == version + 1 and result["entry"]["status"] == "draft"
+    assert result["entry"]["decisions"][-1]["action"] == "follow_up_apply"
+    again = client.post(apply, headers=owner, json=body)
+    assert again.status_code == 200 and again.json()["replayed"] is True
+    other = {**body, "sections": {"contacts": "merge"}}
+    assert client.post(apply, headers=owner, json=other).status_code == 409
+    assert client.post(refresh, headers=owner, json=refresh_body).status_code == 409
