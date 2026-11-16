@@ -26,6 +26,11 @@ class FollowUpRequest(BaseModel):
     limits: FollowUpLimits | None = None
 
 
+class Discard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+
+
 class SaveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
@@ -121,6 +126,16 @@ def install_followup(
             return plan.model_dump(mode="json")
 
         return await operation(work)
+
+    @app.post("/plans/{plan_id}/discard")
+    async def discard_follow_up(plan_id: UUID, body: Discard, request: Request) -> dict[str, Any]:
+        return await operation(
+            lambda: (
+                FollowUpService(dsn(), domains())
+                .discard(plan_id, identity(request), expected_revision=body.expected_revision)
+                .model_dump(mode="json")
+            )
+        )
 
     @app.post("/sessions/{session_id}/stop")
     async def stop_session(session_id: UUID, request: Request) -> dict[str, Any]:

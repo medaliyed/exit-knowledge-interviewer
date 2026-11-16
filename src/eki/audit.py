@@ -55,6 +55,7 @@ Operation = Literal[
     "gap_triaged",
     "follow_up_prepared",
     "follow_up_finished",
+    "follow_up_discarded",
     "sign_in",
     "sign_out",
     "session_expired",

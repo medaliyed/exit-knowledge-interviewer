@@ -230,7 +230,11 @@ def outcome(conn: psycopg.Connection, session_id: UUID, gap_id: str) -> tuple[st
 
 
 def finish(
-    conn: psycopg.Connection, session_id: UUID, reason: CompletionReason | None = None
+    conn: psycopg.Connection,
+    session_id: UUID,
+    reason: CompletionReason | None = None,
+    *,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Finish a follow-up: completion reason, one outcome per seed and gap statuses.
 
@@ -262,7 +266,7 @@ def finish(
         store.finish_session(conn, session_id)
         set_completion_reason(conn, session_id, reason or "complete")
         synthesise(conn, session_id)
-        now = datetime.now(UTC)
+        now = now or datetime.now(UTC)
         for topic in plan.topics:
             for question in topic.questions:
                 if question.gap_id is None:
@@ -592,6 +596,51 @@ class FollowUpService:
             ),
         )
 
+    def discard(
+        self, plan_id: UUID, principal: Principal, *, expected_revision: int
+    ) -> InterviewPlan:
+        """Abandon a draft follow-up: empty its plan and return every selected gap to triage.
+
+        Only an owner or administrator may discard; an approved follow-up is stopped instead.
+        Discarding an already empty draft is a harmless no-op.
+        """
+        with acting_as(principal), self._connect() as conn, conn.transaction():
+            row = conn.execute(
+                "SELECT run_id FROM interview_plans WHERE id = %s AND kind = 'follow_up'",
+                (plan_id,),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("plan not found")
+            run_id = UUID(str(row[0]))
+            maintenance.active(conn, principal)
+            maintenance.lock_run(conn, run_id)
+            from eki.access import require_manager
+
+            require_manager(conn, run_id, principal)
+            conn.execute("SELECT 1 FROM interview_plans WHERE id = %s FOR UPDATE", (plan_id,))
+            plan = store.load_plan(conn, plan_id)
+            if plan is None:
+                raise NotFoundError("plan not found")
+            if plan.status != "draft":
+                raise ConflictError("an approved follow-up cannot be discarded; stop it instead")
+            if not plan.topics:
+                return plan
+            if plan.revision != expected_revision:
+                raise ConflictError("plan changed; refresh before discarding")
+            emptied = plan.model_copy(update={"topics": ()})
+            store.save_plan(conn, emptied)
+            release(conn, plan, emptied)
+            append_event(
+                conn,
+                "review",
+                "completed",
+                AuditDetails(operation="follow_up_discarded", target_id=plan_id),
+                run_id=run_id,
+            )
+            saved = store.load_plan(conn, plan_id)
+            assert saved is not None  # noqa: S101 - just saved
+            return saved
+
     def stop(self, session_id: UUID, principal: Principal) -> dict[str, Any]:
         """The respondent stops further questions; accepted work is kept and settled first."""
         with acting_as(principal), self._connect() as conn:
@@ -625,6 +674,6 @@ class FollowUpService:
                                     STOPPED,
                                     turn=None,
                                 )
-                    return finish(conn, session_id, "expert_stopped")
+                    return finish(conn, session_id, "expert_stopped", now=self.clock())
             finally:
                 store.unlock(conn, session.plan_id)

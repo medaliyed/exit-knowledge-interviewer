@@ -112,6 +112,12 @@ class PlanEdit(_Body):
     expected_revision: int | None = None
 
 
+class PlanApproval(_Body):
+    approved_by: str
+    expected_revision: int | None = None
+    """The plan revision the approver reviewed; a later edit makes approval conflict."""
+
+
 class Approval(_Body):
     approved_by: str
     expected_version: int | None = None
@@ -563,7 +569,7 @@ def create_app(
 
     @app.post("/plans/{plan_id}/approve")
     async def approve_plan(
-        plan_id: UUID, approval: Approval, service: Service, request: Request
+        plan_id: UUID, approval: PlanApproval, service: Service, request: Request
     ) -> dict[str, Any]:
         """Freeze the plan and open its session. Returns the session with the first question."""
         actor(request, approval.approved_by)
@@ -584,7 +590,7 @@ def create_app(
             await service.approve(
                 plan_id,
                 approval.approved_by,
-                expected_revision=approval.expected_version,
+                expected_revision=approval.expected_revision,
             )
         )
 

@@ -182,16 +182,18 @@ class AnswerService:
         def abstain(
             *, include_open: bool = True, reason: AbstentionReason = "no_supported_answer"
         ) -> Answer:
+            # A specific cause (changed evidence, bounded context) outranks the generic
+            # "needs review" hint, which only replaces the plain no-supported-answer case.
             if not include_open:
                 reason = "evidence_changed"
-            elif needs_review:
+            elif needs_review and reason == "no_supported_answer":
                 reason = "review_required"
             return Answer(
                 status="insufficient_evidence",
                 reason=reason,
                 answer=(
                     "No supported answer is available; matching permitted entries need review."
-                    if needs_review and include_open
+                    if reason == "review_required"
                     else (
                         "The approved entries do not provide enough evidence "
                         "to answer this question."
