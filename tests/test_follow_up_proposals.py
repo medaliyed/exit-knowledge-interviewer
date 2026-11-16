@@ -2,10 +2,12 @@
 
 import json
 from datetime import UTC, datetime
+from threading import Barrier, Thread
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from psycopg.conninfo import make_conninfo
 
 from eki import access, accounts
 from eki.auth import acting_as
@@ -25,12 +27,13 @@ from tests.followup_support import (
     CONTACT_ANSWERS,
     OPEN_REASON,
     ROLLBACK_ANSWER,
+    AnsweredFollowUp,
     answer_follow_up,
     answered_follow_up,
     gap_world,
     triaged_world,
 )
-from tests.interview_support import TOPIC_IDS
+from tests.interview_support import TOPIC_IDS, make_service, say
 from tests.search_support import OWNER, READER
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
@@ -459,3 +462,182 @@ async def test_http_proposal_routes(scratch: Scratch) -> None:
     other = {**body, "sections": {"contacts": "merge"}}
     assert client.post(apply, headers=owner, json=other).status_code == 409
     assert client.post(refresh, headers=owner, json=refresh_body).status_code == 409
+
+
+# --- P3 / A8: conflicts preserve the proposal; refresh then apply succeeds ---
+
+
+def proposal_state(scratch: Scratch, pid: UUID) -> tuple[Any, ...]:
+    with scratch.connect() as conn:
+        row = conn.execute(
+            "SELECT status, revision, base_version, patch FROM follow_up_proposals WHERE id=%s",
+            (pid,),
+        ).fetchone()
+    assert row is not None
+    return tuple(row)
+
+
+def versions(books: RunbookService, entry_id: UUID) -> tuple[int, int]:
+    return books.get(entry_id).version, books.metadata(entry_id)["maintenance_revision"]
+
+
+async def concurrent_change(
+    scratch: Scratch, done: AnsweredFollowUp, books: RunbookService, change: str
+) -> None:
+    entry = done.world.billing
+    with acting_as(OWNER):
+        if change == "edit":
+            books.edit(entry, OWNER.name, {"steps": SectionEdit(claims=("Changed step.",))})
+        elif change == "reject":
+            books.reject(entry, OWNER.name, "Outdated")
+        elif change in ("approve", "withdraw"):
+            books.approve(entry, OWNER.name)
+            if change == "withdraw":
+                version, revision = versions(books, entry)
+                books.withdraw(
+                    entry,
+                    OWNER.name,
+                    "Check again",
+                    expected_version=version,
+                    expected_maintenance_revision=revision,
+                )
+        elif change == "parent_correction":
+            home = books.get(entry).session_id
+            with scratch.connect() as conn:
+                answer = next(
+                    t.ordinal
+                    for t in store.load_turns(conn, home)
+                    if t.kind == "answer" and t.topic_id == TOPIC_IDS[0]
+                )
+            interviews = make_service(scratch.dsn, agent=None)
+            events = await say(
+                interviews, home, "Corrected answer.", action="correct", corrects=answer
+            )
+            assert events[0]["type"] == "corrected", events
+        else:
+            # Another proposal for the same entry is applied first.
+            other = proposals.proposal_id(books.get(entry).session_id, TOPIC_IDS[0])
+            version, _ = versions(books, entry)
+            with scratch.connect() as conn:
+                conn.execute(
+                    "INSERT INTO follow_up_proposals (id, session_id, topic_id, entry_id, "
+                    "base_version, patch, gap_ids, created_at) SELECT %s, %s, topic_id, entry_id, "
+                    "%s, patch, '{}', now() FROM follow_up_proposals WHERE session_id=%s",
+                    (other, books.get(entry).session_id, version, done.session_id),
+                )
+            books.apply_proposal(
+                other,
+                OWNER.name,
+                {"contacts": "merge"},
+                expected_revision=1,
+                expected_version=version,
+            )
+
+
+@pytest.mark.parametrize(
+    "change", ["edit", "reject", "approve", "withdraw", "parent_correction", "other_proposal"]
+)
+async def test_apply_conflicts_after_concurrent_change(scratch: Scratch, change: str) -> None:
+    done = await answered_follow_up(scratch)
+    books = RunbookService(scratch.dsn)
+    entry = done.world.billing
+    pid = proposals.proposal_id(done.session_id, TOPIC_IDS[0])
+    version, revision = versions(books, entry)
+    with acting_as(OWNER):
+        # Start from a draft so that every decision is possible, then refresh to it.
+        books.withdraw(
+            entry,
+            OWNER.name,
+            "Start over",
+            expected_version=version,
+            expected_maintenance_revision=revision,
+        )
+        version, _ = versions(books, entry)
+        books.refresh_proposal(pid, OWNER.name, expected_revision=1, expected_version=version)
+    kept = proposal_state(scratch, pid)
+    assert kept[:3] == ("pending", 2, version)
+    await concurrent_change(scratch, done, books, change)
+    current, _ = versions(books, entry)
+    assert current > version
+    with acting_as(OWNER):
+        for expected_version in (version, current):
+            with pytest.raises(ConflictError):
+                books.apply_proposal(
+                    pid,
+                    OWNER.name,
+                    {"rollback": "merge"},
+                    expected_revision=2,
+                    expected_version=expected_version,
+                )
+    assert proposal_state(scratch, pid) == kept, "nothing is written on conflict"
+    with acting_as(OWNER):
+        if change == "reject":
+            with pytest.raises(ConflictError, match="rejected"):
+                books.refresh_proposal(
+                    pid, OWNER.name, expected_revision=2, expected_version=current
+                )
+            books.edit(entry, OWNER.name, {"steps": SectionEdit(claims=("Reopened.",))})
+            current, _ = versions(books, entry)
+        books.refresh_proposal(pid, OWNER.name, expected_revision=2, expected_version=current)
+        stored, replayed = books.apply_proposal(
+            pid,
+            OWNER.name,
+            {"rollback": "merge"},
+            expected_revision=3,
+            expected_version=current,
+        )
+    assert stored.version == current + 1 and replayed is False
+    assert stored.entry.rollback.claims[-1].text == ROLLBACK_ANSWER
+
+
+# --- P3 / A8 / C1: identical replays and parallel applies ---
+
+
+async def test_apply_replay_and_parallel_apply(scratch: Scratch) -> None:
+    done = await answered_follow_up(scratch)
+    entry = done.world.billing
+    dsn = make_conninfo(
+        scratch.dsn, options=f"-c search_path={scratch.schema},public -c lock_timeout=5s"
+    )
+    books = RunbookService(dsn)
+    pid = proposals.proposal_id(done.session_id, TOPIC_IDS[0])
+    version = books.get(entry).version
+    choice: dict[Any, Any] = {"rollback": "merge"}
+    barrier = Barrier(2)
+    outcomes: list[str] = []
+
+    def attempt() -> None:
+        with acting_as(OWNER):
+            barrier.wait()
+            try:
+                _, replayed = books.apply_proposal(
+                    pid, OWNER.name, choice, expected_revision=1, expected_version=version
+                )
+                outcomes.append("replayed" if replayed else "applied")
+            except ConflictError:
+                outcomes.append("conflict")
+
+    threads = [Thread(target=attempt) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(outcomes) in (["applied", "conflict"], ["applied", "replayed"])
+    decisions = books.history(entry)
+    events = len(audit_details(scratch, "follow_up_apply"))
+    with acting_as(OWNER):
+        stored, replayed = books.apply_proposal(
+            pid, OWNER.name, choice, expected_revision=1, expected_version=version
+        )
+        assert replayed is True and stored.version == version + 1
+        with pytest.raises(ConflictError, match="already applied"):
+            books.apply_proposal(
+                pid,
+                OWNER.name,
+                {"contacts": "merge"},
+                expected_revision=1,
+                expected_version=version,
+            )
+    assert books.history(entry) == decisions, "a replay records no decision"
+    assert len(audit_details(scratch, "follow_up_apply")) == events == 1
+    assert [d.action for d in decisions].count("follow_up_apply") == 1
