@@ -13,9 +13,10 @@ from eki.followup.gaps import GapService
 from eki.followup.sessions import FollowUpService
 from tests.conftest import Scratch
 from tests.fakes import ScriptedModel, tool_reply
+from tests.followup_support import ask, prepare, triaged_world
 from tests.interview_support import make_service
 from tests.search_support import ADMIN, OWNER, READER
-from tests.test_follow_up_sessions import IMPOSTOR, ask, prepare, triaged_world
+from tests.test_follow_up_sessions import IMPOSTOR
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
 

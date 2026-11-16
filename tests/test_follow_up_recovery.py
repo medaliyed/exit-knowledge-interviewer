@@ -24,9 +24,9 @@ from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
 from tests.conftest import Scratch
 from tests.fakes import ScriptedModel, tool_reply
+from tests.followup_support import ask, note, prepare, triaged_world
 from tests.interview_support import make_service, say
 from tests.search_support import OWNER, READER
-from tests.test_follow_up_sessions import ask, note, prepare, triaged_world
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
 

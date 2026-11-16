@@ -149,14 +149,49 @@ class GapService:
                 ).fetchall()
             states = {str(r["id"]): _public(r) for r in rows if r["kind"] == "open_section"}
             merged: list[dict[str, Any]] = []
+            live_ids: set[str] = set()
             for live in candidates(conn, run_id):
+                live_ids.add(live["id"])
                 state = states.get(live["id"])
+                status = state["status"] if state else "pending"
+                # A resolved section that a later edit reopened is a new pending gap.
+                reopened = status == "resolved"
                 merged.append(
                     {
                         **_blank_state(),
                         **(state or {}),
                         **live,
-                        "status": state["status"] if state else "pending",
+                        "status": "pending" if reopened else status,
+                        "live": True,
+                        **({"reopened": True} if reopened else {}),
+                    }
+                )
+            # Answered, scheduled and resolved work stays visible after its section
+            # fills; untouched pending, deferred and dismissed history does not (A1).
+            settled = [
+                state
+                for gap_id, state in states.items()
+                if gap_id not in live_ids
+                and state["status"] in ("scheduled", "awaiting_review", "resolved")
+            ]
+            entries = {
+                str(r[0]): r[1:]
+                for r in conn.execute(
+                    "SELECT id,title,status,version FROM runbook_entries WHERE id = ANY(%s)",
+                    ([UUID(s["entry_id"]) for s in settled],),
+                ).fetchall()
+            }
+            for state in settled:
+                title, entry_status, version = entries.get(state["entry_id"], (None, None, None))
+                merged.append(
+                    {
+                        **_blank_state(),
+                        **state,
+                        "entry_title": title,
+                        "entry_status": entry_status,
+                        "entry_version": version,
+                        "open_question": None,
+                        "live": False,
                     }
                 )
             for r in rows:
@@ -403,9 +438,19 @@ class GapService:
             return {**_blank_state(), **_public(saved), **live, "status": saved["status"]}
 
     def lock_gap(
-        self, conn: psycopg.Connection, run_id: UUID, gap_id: UUID | str
+        self,
+        conn: psycopg.Connection,
+        run_id: UUID,
+        gap_id: UUID | str,
+        *,
+        require_live: bool = True,
     ) -> dict[str, Any]:
-        """Lock a gap row, creating the state row of a live open-section candidate first."""
+        """Lock a gap row, creating the state row of a live open-section candidate first.
+
+        A resolved open section that a later edit reopened is reset to pending here, keeping
+        its revision so the queue's expected revision still matches; the caller's change
+        bumps it and audits.
+        """
         with conn.cursor(row_factory=dict_row) as cursor:
             row = cursor.execute(
                 "SELECT * FROM follow_up_gaps WHERE id=%s AND run_id=%s FOR UPDATE",
@@ -414,7 +459,17 @@ class GapService:
             live = next((c for c in candidates(conn, run_id) if c["id"] == str(gap_id)), None)
             if row is not None:
                 if row["kind"] == "open_section" and live is None:
-                    raise ConflictError("the selected section is no longer a public open gap")
+                    if require_live:
+                        raise ConflictError("the selected section is no longer a public open gap")
+                    return dict(row)
+                if row["kind"] == "open_section" and row["status"] == "resolved":
+                    row = cursor.execute(
+                        "UPDATE follow_up_gaps SET status='pending',resolved_entry_id=NULL,"
+                        "resolved_version=NULL,resolved_at=NULL,resolved_by_subject=NULL,"
+                        "plan_id=NULL WHERE id=%s RETURNING *",
+                        (row["id"],),
+                    ).fetchone()
+                    assert row is not None  # noqa: S101 - locked above
                 return dict(row)
             if live is None:
                 raise NotFoundError("gap not found")

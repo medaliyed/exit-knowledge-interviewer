@@ -1,7 +1,6 @@
 """F22 9b: deterministic follow-up plans, respondent authority, scope and durable budgets."""
 
 import json
-from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -9,7 +8,7 @@ import pytest
 from eki import maintenance
 from eki.auth import AuthenticationError, Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
-from eki.followup.gaps import GapService, open_section_gap_id
+from eki.followup.gaps import GapService
 from eki.followup.sessions import DEFAULT_LIMITS, FollowUpService
 from eki.interview.models import FollowUpLimits
 from eki.interview.plan import remove_topic
@@ -17,64 +16,12 @@ from eki.llm import ModelError, Reply
 from eki.runbook.service import RunbookService
 from tests.conftest import Scratch
 from tests.fakes import ScriptedModel, tool_reply
-from tests.followup_support import GapWorld, gap_world
+from tests.followup_support import ask, gap_world, note, prepare, triaged_world
 from tests.interview_support import TOPIC_IDS, make_service, say
 from tests.search_support import ADMIN, OWNER, READER
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
 IMPOSTOR = Principal("impostor", OWNER.name)
-
-
-def ask(question: str, section: str, gap_id: str | None = None) -> tuple[str, dict[str, Any]]:
-    arguments: dict[str, Any] = {"question": question, "section": section}
-    if gap_id is not None:
-        arguments["gap_id"] = gap_id
-    return ("ask_expert", arguments)
-
-
-def note(section: str, text: str) -> tuple[str, dict[str, Any]]:
-    return ("record_note", {"section": section, "text": text})
-
-
-async def triaged_world(scratch: Scratch) -> tuple[GapWorld, str, str]:
-    """The gap world plus one reader question mapped to billing/contacts. Returns both gap IDs."""
-    world = await gap_world(scratch)
-    service = GapService(scratch.dsn)
-    saved, _ = service.save_request(
-        world.run_id,
-        READER,
-        request_id=uuid4(),
-        question="Who authorises reopening a closed period?",
-    )
-    service.triage(
-        world.run_id,
-        saved["id"],
-        OWNER,
-        action="map",
-        expected_revision=saved["revision"],
-        target_entry_id=world.billing,
-        target_section="contacts",
-    )
-    return world, str(open_section_gap_id(world.billing, "rollback")), saved["id"]
-
-
-def prepare(
-    scratch: Scratch,
-    world: GapWorld,
-    gap_ids: list[str],
-    *,
-    who: Principal = OWNER,
-    request_id: UUID | None = None,
-    limits: FollowUpLimits | None = None,
-) -> Any:
-    return FollowUpService(scratch.dsn).prepare(
-        world.run_id,
-        who,
-        request_id=request_id or uuid4(),
-        parent_session_id=world.session_id,
-        gap_ids=gap_ids,
-        limits=limits,
-    )
 
 
 def tool_results(model: ScriptedModel, call_index: int) -> list[str]:
