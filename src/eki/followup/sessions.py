@@ -19,6 +19,7 @@ from eki.audit import AuditDetails, AuditError, AuditRecorder, Kind, Phase, appe
 from eki.auth import AuthenticationError, Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
 from eki.followup import gaps as gap_store
+from eki.followup import proposals
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import delivery, store
 from eki.interview.models import (
@@ -267,25 +268,27 @@ def finish(
         set_completion_reason(conn, session_id, reason or "complete")
         synthesise(conn, session_id)
         now = now or datetime.now(UTC)
-        for topic in plan.topics:
-            for question in topic.questions:
-                if question.gap_id is None:
-                    continue
-                result, turn = outcome(conn, session_id, question.gap_id)
-                conn.execute(
-                    "INSERT INTO follow_up_attempts (gap_id, session_id, outcome, question_turn, "
-                    "recorded_at) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (gap_id, session_id) "
-                    "DO UPDATE SET outcome = EXCLUDED.outcome, "
-                    "question_turn = EXCLUDED.question_turn",
-                    (UUID(question.gap_id), session_id, result, turn, now),
-                )
-                status = "awaiting_review" if result == "answered" else "pending"
-                conn.execute(
-                    "UPDATE follow_up_gaps SET status = %s, revision = revision + 1, "
-                    "plan_id = CASE WHEN %s = 'awaiting_review' THEN plan_id ELSE NULL END "
-                    "WHERE (id = %s OR group_id = %s) AND status = 'scheduled'",
-                    (status, status, UUID(question.gap_id), UUID(question.gap_id)),
-                )
+        seeds = [q for topic in plan.topics for q in topic.questions if q.gap_id is not None]
+        # Pure reads first; then rows are written in the global lock order (session,
+        # entries via proposal foreign keys, gaps) and the audit lock is taken last.
+        results = {str(q.gap_id): outcome(conn, session_id, str(q.gap_id)) for q in seeds}
+        created = proposals.ensure(conn, session_id, {g: r[0] for g, r in results.items()}, now=now)
+        for gap_id, (result, turn) in results.items():
+            conn.execute(
+                "INSERT INTO follow_up_attempts (gap_id, session_id, outcome, question_turn, "
+                "recorded_at) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (gap_id, session_id) "
+                "DO UPDATE SET outcome = EXCLUDED.outcome, "
+                "question_turn = EXCLUDED.question_turn",
+                (UUID(gap_id), session_id, result, turn, now),
+            )
+            status = "awaiting_review" if result == "answered" else "pending"
+            conn.execute(
+                "UPDATE follow_up_gaps SET status = %s, revision = revision + 1, "
+                "plan_id = CASE WHEN %s = 'awaiting_review' THEN plan_id ELSE NULL END "
+                "WHERE (id = %s OR group_id = %s) AND status = 'scheduled'",
+                (status, status, UUID(gap_id), UUID(gap_id)),
+            )
+        proposals.audit_proposed(conn, session.run_id, created)
         append_event(
             conn,
             "review",

@@ -1,16 +1,30 @@
 """F22 9c: entry proposals, source lineage, correction propagation and G7 gap resolution."""
 
+import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import pytest
 
+from eki.followup import proposals
 from eki.followup.gaps import GapService, open_section_gap_id
+from eki.followup.sessions import FollowUpService, finish, outcome
+from eki.interview import store
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
+from eki.search.answers import AnswerService
+from eki.search.service import SearchService
 from tests.conftest import Scratch
-from tests.followup_support import OPEN_REASON, answered_follow_up, gap_world
-from tests.search_support import OWNER
+from tests.followup_support import (
+    OPEN_REASON,
+    answer_follow_up,
+    answered_follow_up,
+    gap_world,
+    triaged_world,
+)
+from tests.interview_support import TOPIC_IDS
+from tests.search_support import OWNER, READER
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
 
@@ -84,3 +98,106 @@ async def test_reopened_section_after_resolution_is_triageable_again(scratch: Sc
     )
     assert triaged["status"] == "deferred" and triaged["revision"] == 4
     assert triaged["resolved_version"] is None and triaged["resolved_at"] is None
+
+
+# --- P1 / A7: finishing a follow-up creates one private proposal ---
+
+
+def proposal_rows(scratch: Scratch, session_id: UUID) -> list[tuple[Any, ...]]:
+    with scratch.connect() as conn:
+        return conn.execute(
+            "SELECT id, entry_id, topic_id, base_version, status, revision, patch, gap_ids "
+            "FROM follow_up_proposals WHERE session_id=%s ORDER BY id",
+            (session_id,),
+        ).fetchall()
+
+
+def audit_details(scratch: Scratch, operation: str) -> list[dict[str, Any]]:
+    with scratch.connect() as conn:
+        return [
+            r[0]
+            for r in conn.execute(
+                "SELECT details FROM audit_events WHERE details->>'operation'=%s ORDER BY id",
+                (operation,),
+            ).fetchall()
+        ]
+
+
+def index_count(scratch: Scratch, entry_id: UUID) -> int:
+    with scratch.connect() as conn:
+        row = conn.execute(
+            "SELECT count(*) FROM runbook_index WHERE entry_id=%s", (entry_id,)
+        ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+async def test_finish_creates_one_private_proposal_and_leaves_entry_untouched(
+    scratch: Scratch,
+) -> None:
+    world, rollback_gap, request_gap = await triaged_world(scratch)
+    search = SearchService(scratch.dsn)
+    books = RunbookService(scratch.dsn)
+    assert search.search(READER, "Noted contacts billing"), "index the approved entry first"
+    before = books.get(world.billing)
+    indexed = index_count(scratch, world.billing)
+    decisions = books.history(world.billing)
+    assert indexed > 0
+    done = await answer_follow_up(scratch, world, rollback_gap, request_gap)
+    assert books.get(world.billing) == before, "content, version and status are unchanged"
+    assert index_count(scratch, world.billing) == indexed
+    assert books.history(world.billing) == decisions
+    hits = search.search(READER, "Restore the pre-run export rollback")
+    assert all("pre-run" not in h.snippet for h in hits)
+    assert all(h.version == before.version for h in hits if h.entry.id == str(world.billing))
+    answer = await AnswerService(search).ask(READER, "How do I roll back billing?")
+    assert "pre-run" not in answer.model_dump_json()
+    ((pid, entry_id, topic_id, base_version, status, revision, patch, gap_ids),) = proposal_rows(
+        scratch, done.session_id
+    )
+    assert pid == proposals.proposal_id(done.session_id, TOPIC_IDS[0])
+    assert (entry_id, topic_id) == (world.billing, TOPIC_IDS[0])
+    assert (base_version, status, revision) == (before.version, "pending", 1)
+    assert set(patch) == {"rollback", "contacts"}
+    assert patch["rollback"]["clears_open"] is True
+    assert sorted(str(g) for g in gap_ids) == sorted([rollback_gap, request_gap])
+    (event,) = audit_details(scratch, "follow_up_proposed")
+    assert event["target_id"] == str(pid) and event["version"] == before.version
+    assert event["count"] == 2
+    assert "pre-run" not in json.dumps(event) and "CFO" not in json.dumps(event)
+
+
+# --- P1 / A8: replays never duplicate a proposal ---
+
+
+async def test_finish_replays_create_no_duplicates(scratch: Scratch) -> None:
+    done = await answered_follow_up(scratch)
+    books = RunbookService(scratch.dsn)
+    decisions = books.history(done.world.billing)
+    with scratch.connect() as conn:
+        finish(conn, done.session_id)
+        session = store.load_session(conn, done.session_id)
+        assert session is not None
+        outcomes = {
+            q.gap_id: outcome(conn, done.session_id, q.gap_id)[0]
+            for t in (store.load_plan(conn, session.plan_id) or pytest.fail()).topics
+            for q in t.questions
+            if q.gap_id
+        }
+        with conn.transaction():
+            assert proposals.ensure(conn, done.session_id, outcomes, now=datetime.now(UTC)) == ()
+    assert FollowUpService(scratch.dsn).stop(done.session_id, OWNER)["status"] == "finished"
+    books.synthesise(done.session_id)
+    books.synthesise(done.session_id)
+    assert len(proposal_rows(scratch, done.session_id)) == 1
+    assert len(audit_details(scratch, "follow_up_proposed")) == 1
+    assert books.list(done.session_id) == (), "a mapped topic never gets a second entry"
+    assert books.history(done.world.billing) == decisions, "no decision is recorded"
+    with scratch.connect() as conn:
+        # A session finished before migration 0018 has no proposal; explicit synthesis
+        # in capture mode backfills it once.
+        conn.execute("DELETE FROM follow_up_proposals WHERE session_id=%s", (done.session_id,))
+    books.synthesise(done.session_id)
+    books.synthesise(done.session_id)
+    assert len(proposal_rows(scratch, done.session_id)) == 1
+    assert len(audit_details(scratch, "follow_up_proposed")) == 2

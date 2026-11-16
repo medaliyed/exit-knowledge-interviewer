@@ -13,11 +13,17 @@ This module never imports ``eki.runbook.service`` or ``eki.followup.sessions``.
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid5
 
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
 
+from eki.audit import AuditDetails, append_event
+from eki.interview import store as interviews
 from eki.interview.models import Note, OpenItem, PlannedTopic
 from eki.runbook import review
 from eki.runbook.models import SECTION_NAMES, Claim, RunbookEntry, Section, SectionName
@@ -109,3 +115,127 @@ def fingerprint(
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def ensure(
+    conn: psycopg.Connection, session_id: UUID, outcomes: Mapping[str, str], *, now: datetime
+) -> tuple[UUID, ...]:
+    """Create the proposals of a finished follow-up once; return only the inserted ids.
+
+    The caller holds the follow-up session row lock and audits the result last
+    (``audit_proposed``). Targets outside the run, or no longer of the planned topic,
+    are skipped, and so are topics without public facts. Replays insert nothing.
+    """
+    session = interviews.load_session(conn, session_id)
+    if session is None or session.status != "finished":
+        return ()
+    plan = interviews.load_plan(conn, session.plan_id)
+    if plan is None or plan.kind != "follow_up":
+        return ()
+    notes = interviews.load_notes(conn, session_id)
+    opened = interviews.load_open_items(conn, session_id)
+    created: list[UUID] = []
+    for topic in plan.topics:
+        if topic.target_entry_id is None or topic.base_version is None:
+            continue
+        row = conn.execute(
+            "SELECT e.content FROM runbook_entries e JOIN sessions s ON s.id=e.session_id "
+            "JOIN interview_plans p ON p.id=s.plan_id "
+            "WHERE e.id=%s AND p.run_id=%s AND e.topic_id=%s",
+            (UUID(topic.target_entry_id), session.run_id, topic.topic_id),
+        ).fetchone()
+        if row is None:
+            continue
+        patch = build_patch(
+            session_id, topic, notes, opened, outcomes, RunbookEntry.model_validate(row[0])
+        )
+        if not patch:
+            continue
+        pid = proposal_id(session_id, topic.topic_id)
+        inserted = conn.execute(
+            "INSERT INTO follow_up_proposals (id, session_id, topic_id, entry_id, base_version, "
+            "patch, gap_ids, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (session_id, topic_id) DO NOTHING RETURNING id",
+            (
+                pid,
+                session_id,
+                topic.topic_id,
+                UUID(topic.target_entry_id),
+                topic.base_version,
+                Jsonb(dump_patch(patch)),
+                [UUID(q.gap_id) for q in topic.questions if q.gap_id],
+                now,
+            ),
+        ).fetchone()
+        if inserted is not None:
+            created.append(pid)
+    return tuple(created)
+
+
+def audit_proposed(conn: psycopg.Connection, run_id: UUID, ids: Sequence[UUID]) -> None:
+    """One metadata-only event per created proposal: id, base version, section count."""
+    for pid in ids:
+        row = load(conn, pid)
+        if row is None:
+            continue
+        append_event(
+            conn,
+            "review",
+            "completed",
+            AuditDetails(
+                operation="follow_up_proposed",
+                target_id=pid,
+                version=row["base_version"],
+                count=len(row["patch"]),
+            ),
+            run_id=run_id,
+        )
+
+
+def load(conn: psycopg.Connection, pid: UUID, *, lock: bool = False) -> dict[str, Any] | None:
+    with conn.cursor(row_factory=dict_row) as cursor:
+        query = (
+            "SELECT * FROM follow_up_proposals WHERE id=%s FOR UPDATE"
+            if lock
+            else "SELECT * FROM follow_up_proposals WHERE id=%s"
+        )
+        row = cursor.execute(query, (pid,)).fetchone()
+    return None if row is None else dict(row)
+
+
+def for_session(conn: psycopg.Connection, session_id: UUID) -> list[dict[str, Any]]:
+    with conn.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(
+            "SELECT * FROM follow_up_proposals WHERE session_id=%s ORDER BY id", (session_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def applied_to(conn: psycopg.Connection, entry_id: str) -> bool:
+    """Whether reviewed follow-up facts were applied; re-synthesis must then keep the entry."""
+    return (
+        conn.execute(
+            "SELECT 1 FROM follow_up_proposals WHERE entry_id=%s AND status='applied' LIMIT 1",
+            (UUID(entry_id),),
+        ).fetchone()
+        is not None
+    )
+
+
+def linked_sessions(conn: psycopg.Connection, entry_id: str, topic_id: str) -> tuple[UUID, ...]:
+    """Follow-up sessions explicitly linked to an entry by a proposal of its own topic (P5)."""
+    rows = conn.execute(
+        "SELECT DISTINCT session_id FROM follow_up_proposals WHERE entry_id=%s AND topic_id=%s "
+        "ORDER BY session_id",
+        (UUID(entry_id), topic_id),
+    ).fetchall()
+    return tuple(UUID(str(r[0])) for r in rows)
+
+
+def linked_entries(conn: psycopg.Connection, session_id: UUID) -> tuple[str, ...]:
+    """Entries a follow-up session proposed facts for (P6 correction propagation)."""
+    rows = conn.execute(
+        "SELECT DISTINCT entry_id FROM follow_up_proposals WHERE session_id=%s ORDER BY entry_id",
+        (session_id,),
+    ).fetchall()
+    return tuple(str(r[0]) for r in rows)

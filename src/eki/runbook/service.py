@@ -11,6 +11,7 @@ import psycopg
 from eki import maintenance
 from eki.auth import current_principal
 from eki.errors import ConflictError, NotFoundError
+from eki.followup import proposals
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
 from eki.runbook import maintenance as review_metadata
@@ -116,8 +117,35 @@ class RunbookService:
         self, session_id: UUID, *, overwrite_edits: bool = False
     ) -> tuple[store.StoredEntry, ...]:
         with self._connect() as conn:
-            maintenance.capture(conn, maintenance_run(conn, session_id))
-            return synthesise(conn, session_id, overwrite_edits=overwrite_edits)
+            run_id = maintenance_run(conn, session_id)
+            maintenance.capture(conn, run_id)
+            result = synthesise(conn, session_id, overwrite_edits=overwrite_edits)
+            self._backfill_proposals(conn, run_id, session_id)
+            return result
+
+    def _backfill_proposals(self, conn: psycopg.Connection, run_id: UUID, session_id: UUID) -> None:
+        """Explicit, idempotent proposal creation for a follow-up finished before 9c.
+
+        Capture mode only (the caller checked); finishing already creates them otherwise.
+        """
+        from eki.followup.sessions import outcome
+
+        with conn.transaction():
+            conn.execute("SELECT 1 FROM sessions WHERE id = %s FOR UPDATE", (session_id,))
+            session = interviews.load_session(conn, session_id)
+            if session is None or session.kind != "follow_up" or session.status != "finished":
+                return
+            plan = interviews.load_plan(conn, session.plan_id)
+            if plan is None:
+                return
+            outcomes = {
+                str(q.gap_id): outcome(conn, session_id, str(q.gap_id))[0]
+                for topic in plan.topics
+                for q in topic.questions
+                if q.gap_id is not None
+            }
+            created = proposals.ensure(conn, session_id, outcomes, now=self.clock())
+            proposals.audit_proposed(conn, run_id, created)
 
     def list(self, session_id: UUID) -> tuple[store.StoredEntry, ...]:
         with self._connect() as conn:

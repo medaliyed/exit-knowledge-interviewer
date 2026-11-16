@@ -176,6 +176,13 @@ class AnsweredFollowUp:
 async def answered_follow_up(scratch: Scratch) -> AnsweredFollowUp:
     """A finished follow-up on billing: rollback answered once, contacts answered twice."""
     world, rollback_gap, request_gap = await triaged_world(scratch)
+    return await answer_follow_up(scratch, world, rollback_gap, request_gap)
+
+
+async def answer_follow_up(
+    scratch: Scratch, world: GapWorld, rollback_gap: str, request_gap: str
+) -> AnsweredFollowUp:
+    """Prepare, approve and answer the billing follow-up of an already triaged world."""
     plan = prepare(scratch, world, [rollback_gap, request_gap])
     seed1, seed2 = (q.text for q in plan.topics[0].questions)
     model = ScriptedModel(

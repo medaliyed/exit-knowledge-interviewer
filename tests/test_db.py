@@ -47,6 +47,7 @@ TABLES = {
     "session_usage",
     "session_provider_attempts",
     "follow_up_attempts",
+    "follow_up_proposals",
 }
 MIGRATIONS = [
     "0001_init.sql",
@@ -66,6 +67,7 @@ MIGRATIONS = [
     "0015_maintenance_index.sql",
     "0016_follow_up_gaps.sql",
     "0017_follow_up_sessions.sql",
+    "0018_follow_up_proposals.sql",
 ]
 
 

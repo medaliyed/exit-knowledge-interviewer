@@ -13,7 +13,9 @@ from eki.auth import current_principal
 from eki.ingest.redaction import RedactedText
 from eki.runbook.models import RunbookEntry
 
-DecisionAction = Literal["approve", "reject", "edit", "correction", "review", "withdraw"]
+DecisionAction = Literal[
+    "approve", "reject", "edit", "correction", "review", "withdraw", "follow_up_apply"
+]
 
 
 @dataclass(frozen=True)
