@@ -29,8 +29,7 @@ from eki.runbook.models import (
     Section,
     SectionName,
 )
-from eki.runbook.steps import claim_texts
-from eki.runbook.synthesis import build_entry
+from eki.runbook.synthesis import build_entry, replace_cited
 
 
 def validate_sources(conn: psycopg.Connection, session_id: UUID, entry: RunbookEntry) -> None:
@@ -619,45 +618,54 @@ def correct_entries(
 ) -> None:
     """Update cited text and reopen approval atomically with the transcript correction.
 
-    The caller holds the session row lock, so approval cannot race this operation.
-    Sections and claims with unrelated sources remain as the expert reviewed them.
+    The caller holds the corrected session's row lock. Affected entries are this session's
+    own and those a follow-up proposal links it to (P6); each is locked and re-read, then
+    pending proposals are locked, before any write, and audit comes last. Each entry is
+    saved under its own home session. Claims with unrelated sources stay as reviewed.
     """
-    for previous in store.list_entries(conn, session_id):
+    targets = sorted(
+        {s.entry.id for s in store.list_entries(conn, session_id)}
+        | set(proposals.linked_entries(conn, session_id))
+    )
+    locked = [e for e in (store.load_entry(conn, t, lock=True) for t in targets) if e]
+    pending = proposals.lock_pending(conn, session_id)
+    reopened: list[str] = []
+    for previous in locked:
         changed: dict[SectionName, Section] = {}
         for name in SECTION_NAMES:
-            section = previous.entry.section(name)
-            claims: list[Claim] = []
-            replaced = False
-            for claim in section.claims:
-                cites_target = any(
-                    isinstance(c, InterviewTurnCitation)
-                    and c.session_id == str(session_id)
-                    and c.turn_index == corrected_turn
-                    for c in claim.citations
-                )
-                if cites_target:
-                    if not replaced:
-                        claims.extend(
-                            Claim(
-                                text=step,
-                                citations=(
-                                    InterviewTurnCitation(
-                                        session_id=str(session_id), turn_index=correction_turn
-                                    ),
-                                ),
-                            )
-                            for step in claim_texts(name, text)
-                        )
-                    replaced = True
-                else:
-                    claims.append(claim)
-            if replaced:
-                changed[name] = Section(claims=tuple(claims), open_question=section.open_question)
+            section = replace_cited(
+                name,
+                previous.entry.section(name),
+                session_id,
+                corrected_turn,
+                correction_turn,
+                text,
+            )
+            if section is not None:
+                changed[name] = section
         if changed:
             entry = review.edit(previous.entry, changed)
-            validate_sources(conn, session_id, entry)
-            store.save_entry(conn, session_id, entry)
-            store.add_decision(conn, entry.id, "correction", by, at)
+            validate_sources(conn, previous.session_id, entry)
+            store.save_entry(conn, previous.session_id, entry)
+            reopened.append(entry.id)
+    rewritten = proposals.correct(pending, session_id, corrected_turn, correction_turn, text)
+    for proposal_id, patch in rewritten:
+        conn.execute(
+            "UPDATE follow_up_proposals SET patch=%s, revision=revision+1 WHERE id=%s",
+            (Jsonb(patch), proposal_id),
+        )
+    for entry_id in reopened:
+        store.add_decision(conn, entry_id, "correction", by, at)
+    if rewritten:
+        run_id = maintenance_run(conn, session_id)
+        for proposal_id, _ in rewritten:
+            append_event(
+                conn,
+                "review",
+                "completed",
+                AuditDetails(operation="correction", target_id=proposal_id),
+                run_id=run_id,
+            )
 
 
 def maintenance_run(conn: psycopg.Connection, session_id: UUID) -> UUID:

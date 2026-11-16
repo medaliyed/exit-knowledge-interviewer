@@ -23,13 +23,14 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
 
 from eki.audit import AuditDetails, append_event
+from eki.ingest.redaction import RedactedText
 from eki.interview import store as interviews
 from eki.interview.models import Note, OpenItem, PlannedTopic
 from eki.runbook import review
 from eki.runbook.faithfulness import Unsupported
 from eki.runbook.models import SECTION_NAMES, Claim, RunbookEntry, Section, SectionName
 from eki.runbook.store import StoredEntry
-from eki.runbook.synthesis import CONFIDENTIAL, public_claims
+from eki.runbook.synthesis import CONFIDENTIAL, public_claims, replace_cited
 
 ApplyMode = Literal["merge", "replace"]
 
@@ -303,3 +304,47 @@ def view(
         "applied_sections": row["applied_sections"],
         "applied_at": None if row["applied_at"] is None else row["applied_at"].isoformat(),
     }
+
+
+def lock_pending(conn: psycopg.Connection, session_id: UUID) -> list[dict[str, Any]]:
+    """Lock a session's pending proposals in id order; applied ones are immutable history."""
+    with conn.cursor(row_factory=dict_row) as cursor:
+        rows = cursor.execute(
+            "SELECT * FROM follow_up_proposals WHERE session_id=%s AND status='pending' "
+            "ORDER BY id FOR UPDATE",
+            (session_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def correct(
+    rows: Sequence[Mapping[str, Any]],
+    session_id: UUID,
+    corrected_turn: int,
+    correction_turn: int,
+    text: RedactedText,
+) -> list[tuple[UUID, dict[str, Any]]]:
+    """Rewrite pending patches whose claims cite a corrected turn, with the entry rule.
+
+    Returns only the proposals that changed, with their new patch; the caller stores
+    them with ``revision + 1`` so a comparison reviewed before the correction conflicts.
+    """
+    changed: list[tuple[UUID, dict[str, Any]]] = []
+    for row in rows:
+        patch = parse_patch(row["patch"])
+        rewritten = False
+        for name, section in patch.items():
+            replaced = replace_cited(
+                name,
+                Section(claims=section.claims),
+                session_id,
+                corrected_turn,
+                correction_turn,
+                text,
+            )
+            if replaced is not None and replaced.claims:
+                patch[name] = section.model_copy(update={"claims": replaced.claims})
+                rewritten = True
+        if rewritten:
+            changed.append((UUID(str(row["id"])), dump_patch(patch)))
+    return changed

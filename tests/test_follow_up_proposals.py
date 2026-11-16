@@ -695,3 +695,95 @@ async def test_explicit_approval_publishes_revision_with_follow_up_citations(
             "AND e.status='approved'",
             (world.run_id, TOPIC_IDS[0]),
         ).fetchone() == (1,)
+
+
+# --- P6 / A9: corrections of cited follow-up answers propagate ---
+
+
+async def correct_follow_up(scratch: Scratch, fid: UUID, turn: int, text: str) -> list[Any]:
+    interviews = make_service(scratch.dsn, agent=None)
+    with acting_as(OWNER):
+        return await say(interviews, fid, text, action="correct", corrects=turn)
+
+
+async def test_correcting_cited_follow_up_answer_reopens_linked_entry(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eki.audit import AuditError
+    from eki.runbook import store as module
+
+    done = await answered_follow_up(scratch)
+    world, fid = done.world, done.session_id
+    books = RunbookService(scratch.dsn)
+    applied = apply_all(books, done)
+    with acting_as(OWNER):
+        approved = books.approve(world.billing, OWNER.name)
+    assert SearchService(scratch.dsn).search(READER, "Restore the pre-run export")
+    assert index_count(scratch, world.billing) > 0
+    answer = turn_of(scratch, fid, ROLLBACK_ANSWER)
+    with scratch.connect() as conn:
+        turns_before = len(store.load_turns(conn, fid))
+        notes_before = store.load_notes(conn, fid)
+    monkeypatch.setattr(module, "append_event", lambda *a, **k: (_ for _ in ()).throw(AuditError()))
+    with pytest.raises(AuditError):
+        await correct_follow_up(scratch, fid, answer, "Restore the export twice.")
+    monkeypatch.undo()
+    assert books.get(world.billing) == approved, "the failed correction changed nothing"
+    with scratch.connect() as conn:
+        assert len(store.load_turns(conn, fid)) == turns_before
+        assert store.load_notes(conn, fid) == notes_before
+    events = await correct_follow_up(scratch, fid, answer, "Restore the export twice.")
+    assert events[0]["type"] == "corrected", events
+    corrected = books.get(world.billing)
+    assert corrected.session_id == world.session_id, "the entry keeps its own home session"
+    assert corrected.version == approved.version + 1
+    assert corrected.entry.status == "draft" and corrected.entry.approved_by is None
+    (claim,) = corrected.entry.rollback.claims
+    assert claim.text == "Restore the export twice."
+    assert claim.citations[0] == InterviewTurnCitation(
+        session_id=str(fid), turn_index=events[0]["turn"]
+    )
+    assert corrected.entry.contacts == applied.entry.contacts, "unrelated claims are kept"
+    assert corrected.entry.trigger == applied.entry.trigger
+    assert index_count(scratch, world.billing) == 0
+    assert [d.action for d in books.history(world.billing)][-1] == "correction"
+
+
+async def test_correction_before_apply_rewrites_pending_proposal(scratch: Scratch) -> None:
+    done = await answered_follow_up(scratch)
+    world, fid = done.world, done.session_id
+    books = RunbookService(scratch.dsn)
+    pid = proposals.proposal_id(fid, TOPIC_IDS[0])
+    version = books.get(world.billing).version
+    answer = turn_of(scratch, fid, ROLLBACK_ANSWER)
+    events = await correct_follow_up(scratch, fid, answer, "Restore the export twice.")
+    assert books.get(world.billing).version == version, "a pending proposal is not the entry"
+    status, revision, base_version, patch = proposal_state(scratch, pid)
+    assert (status, revision, base_version) == ("pending", 2, version)
+    assert [c["text"] for c in patch["rollback"]["claims"]] == ["Restore the export twice."]
+    assert patch["rollback"]["claims"][0]["citations"][0]["turn_index"] == events[0]["turn"]
+    assert len(patch["contacts"]["claims"]) == 2, "unrelated proposed facts are kept"
+    (event,) = [e for e in audit_details(scratch, "correction") if e["target_id"] == str(pid)]
+    assert "twice" not in json.dumps(event)
+    with acting_as(OWNER):
+        with pytest.raises(ConflictError, match="proposal changed"):
+            books.apply_proposal(
+                pid,
+                OWNER.name,
+                {"rollback": "merge"},
+                expected_revision=1,
+                expected_version=version,
+            )
+        (shown,) = books.proposals_for_session(fid)
+        stored, _ = books.apply_proposal(
+            pid,
+            OWNER.name,
+            {"rollback": "merge"},
+            expected_revision=shown["revision"],
+            expected_version=version,
+        )
+    assert stored.entry.rollback.claims[-1].text == "Restore the export twice."
+    # An applied proposal is immutable history: a later correction leaves it alone.
+    contact = turn_of(scratch, fid, "Finance operations lead.")
+    await correct_follow_up(scratch, fid, contact, "The finance operations lead.")
+    assert proposal_state(scratch, pid)[:2] == ("applied", 3)
