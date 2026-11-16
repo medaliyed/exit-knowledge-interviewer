@@ -10,14 +10,17 @@ import pytest
 from eki.followup import proposals
 from eki.followup.gaps import GapService, open_section_gap_id
 from eki.followup.sessions import FollowUpService, finish, outcome
+from eki.ingest.redaction import RedactedText
 from eki.interview import store
+from eki.runbook.models import Claim, InterviewTurnCitation, RunbookEntry, Section
 from eki.runbook.review import SectionEdit
-from eki.runbook.service import RunbookService
+from eki.runbook.service import RunbookService, validate_sources
 from eki.search.answers import AnswerService
 from eki.search.service import SearchService
 from tests.conftest import Scratch
 from tests.followup_support import (
     OPEN_REASON,
+    ROLLBACK_ANSWER,
     answer_follow_up,
     answered_follow_up,
     gap_world,
@@ -201,3 +204,67 @@ async def test_finish_replays_create_no_duplicates(scratch: Scratch) -> None:
     books.synthesise(done.session_id)
     assert len(proposal_rows(scratch, done.session_id)) == 1
     assert len(audit_details(scratch, "follow_up_proposed")) == 2
+
+
+# --- P5 / A9: claims may cite only explicitly linked follow-up turns ---
+
+
+def turn_of(scratch: Scratch, session_id: UUID, text: str, kind: str = "answer") -> int:
+    with scratch.connect() as conn:
+        turns = store.load_turns(conn, session_id)
+    return next(t.ordinal for t in turns if t.kind == kind and t.text == text)
+
+
+def citing(entry: RunbookEntry, session_id: str, turn: int) -> RunbookEntry:
+    claim = Claim(
+        text="Restore the pre-run export.",
+        citations=(InterviewTurnCitation(session_id=session_id, turn_index=turn),),
+    )
+    return entry.model_copy(update={"rollback": Section(claims=(claim,))})
+
+
+async def test_sources_accept_only_explicitly_linked_follow_up_turns(scratch: Scratch) -> None:
+    done = await answered_follow_up(scratch)
+    world, fid = done.world, done.session_id
+    books = RunbookService(scratch.dsn)
+    billing = books.get(world.billing)
+    home = billing.session_id
+    answer = turn_of(scratch, fid, ROLLBACK_ANSWER)
+    with scratch.connect() as conn:
+        validate_sources(conn, home, billing.entry)
+        validate_sources(conn, home, citing(billing.entry, str(fid), answer))
+        validate_sources(conn, home, citing(billing.entry, str(fid).upper(), answer))
+        topic = billing.entry.topic_id
+        secret = store.add_expert_turn(
+            conn, fid, topic, "answer", RedactedText("Secret."), confidential=True
+        )
+        skipped = store.add_expert_turn(conn, fid, topic, "skip", RedactedText("(skipped)"))
+        edited = store.add_expert_turn(conn, fid, topic, "edit", RedactedText("rollback: x"))
+        other = store.add_expert_turn(conn, fid, TOPIC_IDS[1], "answer", RedactedText("Other."))
+        question = next(t.ordinal for t in store.load_turns(conn, fid) if t.kind == "question")
+        rejected = {
+            "forged ordinal": (str(fid), 999),
+            "confidential": (str(fid), secret),
+            "skip": (str(fid), skipped),
+            "edit turn in a linked session": (str(fid), edited),
+            "another topic": (str(fid), other),
+            "interviewer": (str(fid), question),
+            "malformed session": ("not-a-session", answer),
+        }
+        for why, (session, turn) in rejected.items():
+            with pytest.raises(ValueError):
+                validate_sources(conn, home, citing(billing.entry, session, turn))
+                pytest.fail(why)
+        corrected = store.add_expert_turn(
+            conn, fid, topic, "correction", RedactedText("Restore it twice."), corrects=answer
+        )
+        with pytest.raises(ValueError, match="corrected"):
+            validate_sources(conn, home, citing(billing.entry, str(fid), answer))
+        validate_sources(conn, home, citing(billing.entry, str(fid), corrected))
+        # A follow-up in the same run that has no proposal for this entry is not lineage.
+        conn.execute(
+            "UPDATE follow_up_proposals SET entry_id=%s WHERE session_id=%s",
+            (world.ledger, fid),
+        )
+        with pytest.raises(ValueError, match="linked follow-up"):
+            validate_sources(conn, home, citing(billing.entry, str(fid), corrected))

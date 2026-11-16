@@ -14,6 +14,7 @@ from eki.errors import ConflictError, NotFoundError
 from eki.followup import proposals
 from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
+from eki.interview.models import Turn
 from eki.runbook import maintenance as review_metadata
 from eki.runbook import review, store
 from eki.runbook.faithfulness import Unsupported, check_entry
@@ -31,17 +32,50 @@ from eki.runbook.synthesis import build_entry
 
 
 def validate_sources(conn: psycopg.Connection, session_id: UUID, entry: RunbookEntry) -> None:
-    """Every claim must refer to a non-confidential expert turn of the same topic."""
+    """Every claim must refer to a non-confidential expert turn of the same topic.
+
+    ``session_id`` is the entry's own (home) interview. A follow-up session counts as a
+    source only when a proposal explicitly links it to this entry and topic (F22 P5).
+    """
+    validate_claims(conn, session_id, entry)
+
+
+def validate_claims(conn: psycopg.Connection, home: UUID, entry: RunbookEntry) -> None:
+    """Check each citation against the session it cites: home or an explicitly linked one.
+
+    A linked follow-up can only supply the expert's own answers and corrections; its
+    edit turns, skips, confidential answers and interviewer turns never qualify.
+    """
+    wrong_session = "claims must cite this interview or a linked follow-up"
+    allowed = {str(home)} | {
+        str(s) for s in proposals.linked_sessions(conn, entry.id, entry.topic_id)
+    }
+    turns: dict[str, dict[int, Turn]] = {}
+    corrected: dict[str, set[int]] = {}
     for section in SECTION_NAMES:
         for claim in entry.section(section).claims:
             if not claim.citations:
                 raise ValueError("every claim needs a citation")
             for citation in claim.citations:
-                if not isinstance(citation, InterviewTurnCitation) or citation.session_id != str(
-                    session_id
-                ):
-                    raise ValueError("claims must cite this interview")
-                turn = interviews.load_turn(conn, session_id, citation.turn_index)
+                if not isinstance(citation, InterviewTurnCitation):
+                    raise ValueError(wrong_session)
+                try:
+                    cited = str(UUID(citation.session_id))
+                except ValueError:
+                    raise ValueError(wrong_session) from None
+                if cited not in allowed:
+                    raise ValueError(wrong_session)
+                if cited not in turns:
+                    turns[cited] = {t.ordinal: t for t in interviews.load_turns(conn, UUID(cited))}
+                    corrected[cited] = {
+                        int(r[0])
+                        for r in conn.execute(
+                            "SELECT corrects FROM turns WHERE session_id = %s "
+                            "AND corrects IS NOT NULL",
+                            (UUID(cited),),
+                        ).fetchall()
+                    }
+                turn = turns[cited].get(citation.turn_index)
                 if (
                     turn is None
                     or turn.speaker not in ("expert", "maintainer")
@@ -50,15 +84,16 @@ def validate_sources(conn: psycopg.Connection, session_id: UUID, entry: RunbookE
                     or turn.topic_id != entry.topic_id
                 ):
                     raise ValueError("citation must refer to a public expert turn of this topic")
+                if cited != str(home) and (
+                    turn.speaker != "expert" or turn.kind not in ("answer", "correction")
+                ):
+                    raise ValueError("a linked follow-up citation must be the expert's answer")
                 if turn.speaker == "maintainer" and (
                     citation.author_subject != turn.author_subject
                     or citation.author_name != turn.author_name
                 ):
                     raise ValueError("maintainer citation attribution does not match its source")
-                if conn.execute(
-                    "SELECT 1 FROM turns WHERE session_id = %s AND corrects = %s",
-                    (session_id, citation.turn_index),
-                ).fetchone():
+                if citation.turn_index in corrected[cited]:
                     raise ValueError("citation refers to a corrected turn")
 
 
