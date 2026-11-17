@@ -152,6 +152,11 @@ def _parser() -> argparse.ArgumentParser:
         user_commands.add_parser(command, help=help_text).add_argument("--email", required=True)
     user_commands.add_parser("list", help="list accounts and their sign-in status")
     search = commands.add_parser("search", help="search accessible approved runbook entries")
+    index = commands.add_parser(
+        "index-runbook", help="process durable search-index jobs (local operator)"
+    )
+    index.add_argument("--once", action="store_true", help="process a bounded batch and exit")
+    index.add_argument("--limit", type=int, default=1000)
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=5)
     search.add_argument("--json", action="store_true")
@@ -202,6 +207,8 @@ def _main(argv: list[str] | None = None) -> int:
     try:
         if arguments.command == "follow-up":
             return followup_cli.execute(arguments, get_settings())
+        if arguments.command == "index-runbook":
+            return knowledge.index_jobs(arguments, get_settings())
         if arguments.command in ("search", "ask", "export"):
             return knowledge.execute(arguments, get_settings())
         if arguments.command in ("entries", "review"):

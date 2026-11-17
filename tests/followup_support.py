@@ -101,6 +101,9 @@ async def gap_world(scratch: Scratch) -> GapWorld:
     entries = books.list(session)
     for stored in entries[:2]:
         books.approve(UUID(stored.entry.id), OWNER.name)
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch)
     with scratch.connect() as conn:
         access.set_owner(conn, run, OWNER.subject, ADMIN)
         access.set_readers(conn, run, [READER.subject], OWNER)

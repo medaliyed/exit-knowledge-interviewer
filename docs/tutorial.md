@@ -574,6 +574,11 @@ name must match the expert; in maintenance its subject must be the current owner
 
 **9c. Search.**
 
+First prepare newly approved entries with `uv run eki index-runbook --once`.
+The API runs this worker automatically while it is open; for CLI-only use, keep
+`uv run eki index-runbook` running to process future approvals and retries.
+Search uses prepared indexes and does not build them during the request.
+
 ```bash
 uv run eki search "rounding invoice"
 ```

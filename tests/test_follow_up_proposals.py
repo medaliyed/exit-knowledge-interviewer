@@ -675,6 +675,9 @@ async def test_explicit_approval_publishes_revision_with_follow_up_citations(
     assert books.get(world.billing) == applied, "re-synthesis never drops applied facts"
     with acting_as(OWNER):
         approved = books.approve(world.billing, OWNER.name)
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch)
     assert approved.version == applied.version + 1
     search = SearchService(scratch.dsn)
     hits = [
@@ -720,6 +723,9 @@ async def test_correcting_cited_follow_up_answer_reopens_linked_entry(
     applied = apply_all(books, done)
     with acting_as(OWNER):
         approved = books.approve(world.billing, OWNER.name)
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch)
     assert SearchService(scratch.dsn).search(READER, "Restore the pre-run export")
     assert index_count(scratch, world.billing) > 0
     answer = turn_of(scratch, fid, ROLLBACK_ANSWER)

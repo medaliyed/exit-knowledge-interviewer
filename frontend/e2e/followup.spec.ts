@@ -443,7 +443,7 @@ test('accepted answer stays locked until its delayed reply finishes', async ({ p
   await expect(composer).toBeEnabled();
 });
 
-for (const reason of ['evidence_changed', 'context_limit', 'review_required']) {
+for (const reason of ['evidence_changed', 'context_limit', 'review_required', 'indexing']) {
   test(`Ask distinguishes ${reason} without creating a knowledge-gap request`, async ({ page }) => {
     const mock = await followUpMock(page);
     await page.route('**/runbook/ask', route =>
@@ -467,7 +467,9 @@ for (const reason of ['evidence_changed', 'context_limit', 'review_required']) {
         ? 'changed while answering'
         : reason === 'context_limit'
           ? 'exceeds the answer context'
-          : 'needs review',
+          : reason === 'indexing'
+            ? 'being prepared for search'
+            : 'needs review',
     );
     await expect(
       page.getByRole('button', { name: 'Save for a follow-up', exact: true }),

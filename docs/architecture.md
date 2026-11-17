@@ -252,7 +252,8 @@ erDiagram
 | `sessions`, `turns`, `notes`, `open_items` | 0002 | the interview |
 | `runbook_entries`, `entry_decisions` | 0003, 0008 | synthesis and review |
 | `run_readers`, `ingest_runs.owner_subject` | 0004 | `eki access`, access routes |
-| `runbook_index` | 0005 | first search after an approval |
+| `runbook_index` | 0005 | background indexing worker after an approval |
+| `runbook_index_models`, `runbook_index_jobs` | 0019 | approval triggers, worker registration/backfill and durable retries |
 | `message_receipts`, `interview_replies` | 0009 | durable acceptance and replay of redacted model replies |
 | `ingest_runs.artifact_embedding_model` | 0010 | artifact index/query model identity |
 | `plan_generations`, `generation_topics` | 0011 | per-topic drafting progress and recovery |

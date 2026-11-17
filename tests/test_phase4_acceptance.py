@@ -115,6 +115,9 @@ async def test_selected_mail_to_approved_runbook_and_audited_access(scratch: Scr
         f"/entries/{entry.id}/approve", headers=headers("owner"), json={"approved_by": OWNER.name}
     )
     assert approved.status_code == 200
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch)
     search = client.post(
         "/runbook/search", headers=headers("reader"), json={"query": "ledger-db backup"}
     )

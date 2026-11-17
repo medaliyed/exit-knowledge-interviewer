@@ -34,6 +34,8 @@ TABLES = {
     "auth_throttle",
     "run_readers",
     "runbook_index",
+    "runbook_index_models",
+    "runbook_index_jobs",
     "audit_events",
     "message_receipts",
     "interview_replies",
@@ -68,6 +70,7 @@ MIGRATIONS = [
     "0016_follow_up_gaps.sql",
     "0017_follow_up_sessions.sql",
     "0018_follow_up_proposals.sql",
+    "0019_runbook_index_jobs.sql",
 ]
 
 

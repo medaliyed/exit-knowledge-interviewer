@@ -5,6 +5,7 @@ ACLs determine which data is visible. Posting a message returns a Server-Sent Ev
 the interviewer did, ending with its next question, ``done`` or ``error``.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -48,6 +49,7 @@ from eki.interview.service import (
 from eki.llm import ModelError
 from eki.runbook.service import RunbookService
 from eki.search.answers import AnswerService, build_answers
+from eki.search.jobs import IndexWorker
 from eki.search.service import SearchService, build_search
 from eki.web.routes import install_browser
 
@@ -118,7 +120,15 @@ def create_app(
                     )
 
             await db(check_subjects)
-        yield
+        search = get_search()
+        worker = IndexWorker(search.dsn, search.embedder, search.work_email_domains)
+        stop = asyncio.Event()
+        task = asyncio.create_task(worker.serve(stop))
+        try:
+            yield
+        finally:
+            stop.set()
+            await task
 
     app = AuthenticatedAPI(
         title="Exit-Knowledge Interviewer", version=__version__, lifespan=lifespan
@@ -152,7 +162,7 @@ def create_app(
 
     @lru_cache
     def configured() -> InterviewService:
-        return build_service(get_settings())
+        return build_service(configuration())
 
     def get_service() -> InterviewService:
         return service if service is not None else configured()
@@ -162,7 +172,7 @@ def create_app(
             return runbook_service
         if service is not None:
             return RunbookService(service.dsn, service.work_email_domains)
-        settings = get_settings()
+        settings = configuration()
         return RunbookService(settings.database_url.get_secret_value(), work_domains(settings))
 
     def get_search() -> SearchService:
@@ -174,14 +184,14 @@ def create_app(
             return SearchService(service.dsn, service.work_email_domains)
         if runbook_service is not None:
             return SearchService(runbook_service.dsn, runbook_service.work_email_domains)
-        return build_search(get_settings())
+        return build_search(configuration())
 
     def get_answers() -> AnswerService:
         if answer_service is not None:
             return answer_service
         if search_service is not None or service is not None or runbook_service is not None:
             return AnswerService(get_search())
-        return build_answers(get_settings(), get_search())
+        return build_answers(configuration(), get_search())
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:

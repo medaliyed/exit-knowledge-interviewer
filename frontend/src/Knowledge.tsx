@@ -30,6 +30,12 @@ export function Knowledge() {
     queryKey: ['approved-entries', run.id],
     queryFn: () => api.request<EntrySummary[]>(`/runbook/entries?run_id=${run.id}`),
   });
+  const indexing = useQuery({
+    queryKey: ['runbook-indexing', run.id],
+    queryFn: () =>
+      api.request<{ pending_count: number; entries: Record<string, string> }>('/runbook/indexing'),
+    refetchInterval: 5000,
+  });
 
   async function ask(event: FormEvent) {
     event.preventDefault();
@@ -108,6 +114,18 @@ export function Knowledge() {
         </Button>
       </div>
       {downloadError && <Notice error>{downloadError}</Notice>}
+      {indexing.error && (
+        <Notice error>
+          Search preparation status is unavailable.{' '}
+          <Button onClick={() => void indexing.refetch()}>Check again</Button>
+        </Notice>
+      )}
+      {Boolean(indexing.data?.pending_count) && (
+        <Notice>
+          Some approved entries are still being prepared for search. Results and answers may be
+          incomplete. You can open or download approved entries below.
+        </Notice>
+      )}
       <section className="knowledge-section stack" aria-labelledby="ask-title">
         <div>
           <h2 id="ask-title">Ask</h2>
@@ -221,13 +239,15 @@ export function Knowledge() {
               <>
                 <p className="gap-state">
                   <strong>
-                    {answer.reason === 'review_required'
-                      ? 'Matching knowledge needs review before it can support an answer.'
-                      : answer.reason === 'evidence_changed'
-                        ? 'The evidence or your access changed while answering. Ask again using current approved knowledge.'
-                        : answer.reason === 'context_limit'
-                          ? 'The relevant procedure exceeds the answer context. Open its entry or narrow your question.'
-                          : 'The approved runbook does not cover this yet.'}
+                    {answer.reason === 'indexing'
+                      ? 'Approved knowledge is still being prepared for search. Try again shortly.'
+                      : answer.reason === 'review_required'
+                        ? 'Matching knowledge needs review before it can support an answer.'
+                        : answer.reason === 'evidence_changed'
+                          ? 'The evidence or your access changed while answering. Ask again using current approved knowledge.'
+                          : answer.reason === 'context_limit'
+                            ? 'The relevant procedure exceeds the answer context. Open its entry or narrow your question.'
+                            : 'The approved runbook does not cover this yet.'}
                   </strong>
                 </p>
                 <p className="muted">
@@ -242,9 +262,9 @@ export function Knowledge() {
                     )}
                   </p>
                 ) : (
-                  !['evidence_changed', 'context_limit'].includes(answer.reason ?? '') && (
-                    <SaveFollowUp key={lastQuestion} question={lastQuestion} />
-                  )
+                  !['evidence_changed', 'context_limit', 'indexing'].includes(
+                    answer.reason ?? '',
+                  ) && <SaveFollowUp key={lastQuestion} question={lastQuestion} />
                 )}
               </>
             )}
@@ -364,6 +384,14 @@ export function Knowledge() {
                     <span>v{entry.version}</span>
                     <Freshness value={entry} />
                     <Badge status="approved">Approved</Badge>
+                    {indexing.data?.entries[entry.id] &&
+                      indexing.data.entries[entry.id] !== 'ready' && (
+                        <span>
+                          {indexing.data.entries[entry.id] === 'retrying'
+                            ? 'Search preparation delayed — retrying'
+                            : 'Preparing search'}
+                        </span>
+                      )}
                   </div>
                 </div>
                 <Button

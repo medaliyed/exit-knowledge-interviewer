@@ -18,7 +18,6 @@ from eki.ingest.redaction import RedactedText, redact
 from eki.runbook.maintenance import infos
 from eki.runbook.models import RunbookEntry, SectionName
 from eki.search.embedding import SearchEmbedder, build_embedder, checked_vectors
-from eki.search.index import refresh
 
 STOP_WORDS = frozenset(
     [
@@ -106,29 +105,31 @@ class SearchService:
         if not query_tokens(clean):
             return []
         with pool.connection(self.dsn) as conn:
-            refresh(
-                conn,
-                principal,
-                self.embedder,
-                self.work_email_domains,
-                review_after=self.clock().astimezone(UTC).date() if fresh_only else None,
-            )
             run_ids = conn.execute(
                 sql.SQL(
                     "SELECT DISTINCT r.id FROM ingest_runs r "
                     "JOIN interview_plans p ON p.run_id = r.id "
                     "JOIN sessions s ON s.plan_id = p.id "
                     "JOIN runbook_entries e ON e.session_id = s.id "
-                    "WHERE e.status = 'approved' AND (NOT %s OR e.review_by >= %s) AND "
+                    "JOIN runbook_index i ON i.entry_id=e.id AND i.version=e.version "
+                    "WHERE i.model=%s AND e.status='approved' "
+                    "AND (NOT %s OR e.review_by >= %s) AND "
                 )
                 + sql.SQL(VISIBLE_RUN),
-                (fresh_only, self.clock().astimezone(UTC).date(), *visible_params(principal)),
+                (
+                    self.embedder.name,
+                    fresh_only,
+                    self.clock().astimezone(UTC).date(),
+                    *visible_params(principal),
+                ),
             ).fetchall()
-            if not run_ids:
-                return []
-            with audit_context(user_id=principal.subject, run_ids=tuple(r[0] for r in run_ids)):
-                (vector,) = checked_vectors(self.embedder.embed([clean]), 1)
-            literal = to_vector_literal(vector)
+        if not run_ids:
+            return []
+        # No borrowed request connection is held during provider latency.
+        with audit_context(user_id=principal.subject, run_ids=tuple(r[0] for r in run_ids)):
+            (vector,) = checked_vectors(self.embedder.embed([clean]), 1)
+        literal = to_vector_literal(vector)
+        with pool.connection(self.dsn) as conn:
             rows = conn.execute(
                 sql.SQL("""WITH eligible AS MATERIALIZED (
                     SELECT i.*, e.content FROM runbook_index i
@@ -187,6 +188,29 @@ class SearchService:
                 SearchHit(entry, r[1], r[2], r[3], float(r[4]), metadata.get(entry.id, {}))
                 for entry, r in zip(entries, rows, strict=True)
             ]
+
+    def indexing(self, principal: Principal) -> dict[str, Any]:
+        """Approved-only readiness for the current model, with live run ACLs."""
+        with pool.connection(self.dsn) as conn:
+            rows = conn.execute(
+                sql.SQL(
+                    "SELECT e.id,CASE WHEN EXISTS (SELECT 1 FROM runbook_index i "
+                    "WHERE i.entry_id=e.id AND i.version=e.version AND i.model=%s) "
+                    "THEN 'ready' WHEN j.status='processing' THEN 'processing' "
+                    "WHEN j.status='retrying' THEN 'retrying' ELSE 'pending' END "
+                    "FROM runbook_entries e JOIN sessions s ON s.id=e.session_id "
+                    "JOIN interview_plans p ON p.id=s.plan_id JOIN ingest_runs r ON r.id=p.run_id "
+                    "LEFT JOIN runbook_index_jobs j ON j.entry_id=e.id AND j.version=e.version "
+                    "AND j.model=%s WHERE e.status='approved' AND "
+                )
+                + sql.SQL(VISIBLE_RUN),
+                (self.embedder.name, self.embedder.name, *visible_params(principal)),
+            ).fetchall()
+        return {
+            "model": self.embedder.name,
+            "pending_count": sum(r[1] != "ready" for r in rows),
+            "entries": {str(r[0]): r[1] for r in rows},
+        }
 
     def has_overdue(self, principal: Principal, query: str) -> bool:
         with pool.connection(self.dsn) as conn:

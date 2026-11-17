@@ -3,13 +3,29 @@
 import argparse
 import asyncio
 import json
+from contextlib import suppress
 
 from eki.auth import AuthenticationError, TokenAuthenticator
 from eki.cli.common import fail
 from eki.config import Settings, work_domains
 from eki.runbook.export import ExportService
 from eki.search.answers import build_answers
+from eki.search.jobs import IndexWorker
 from eki.search.service import build_search
+
+
+def index_jobs(arguments: argparse.Namespace, settings: Settings) -> int:
+    if not 1 <= arguments.limit <= 10000:
+        raise ValueError("limit must be between 1 and 10000")
+    search = build_search(settings)
+    worker = IndexWorker(search.dsn, search.embedder, search.work_email_domains)
+    if arguments.once:
+        counts = worker.drain(limit=arguments.limit)
+        print(json.dumps(counts))
+        return 1 if counts["retrying"] else 0
+    with suppress(KeyboardInterrupt):
+        asyncio.run(worker.serve(asyncio.Event()))
+    return 0
 
 
 def execute(arguments: argparse.Namespace, settings: Settings) -> int:
@@ -56,6 +72,7 @@ def execute(arguments: argparse.Namespace, settings: Settings) -> int:
                 {
                     "results": [h.public() for h in hits],
                     "embedding_model": search.embedder.name,
+                    "indexing": search.indexing(principal),
                 }
             )
         )
@@ -63,5 +80,11 @@ def execute(arguments: argparse.Namespace, settings: Settings) -> int:
         for hit in hits:
             print(f"{hit.entry.title} [{hit.entry.id}] ({hit.section})\n  {hit.snippet}")
         if not hits:
-            print("No matching approved entries.")
+            print(
+                "Approved entries are still being prepared for search; "
+                "run eki index-runbook --once "
+                "or keep the API worker running."
+                if search.indexing(principal)["pending_count"]
+                else "No matching approved entries."
+            )
     return 0

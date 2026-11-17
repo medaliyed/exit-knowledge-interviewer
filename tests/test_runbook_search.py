@@ -11,7 +11,7 @@ from eki.runbook.service import RunbookService
 from eki.search.service import SearchService
 from tests.conftest import Scratch
 from tests.interview_support import make_service, say
-from tests.search_support import OWNER, READER, STRANGER, search_world
+from tests.search_support import OWNER, READER, STRANGER, index_runbook, search_world
 from tests.support import FAKE_CREDENTIALS
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
@@ -48,6 +48,7 @@ async def test_edit_correction_and_acl_revocation_remove_results(scratch: Scratc
     books.edit(world.billing, OWNER.name, {"steps": SectionEdit(claims=("Changed procedure.",))})
     assert world.billing not in [UUID(h.entry.id) for h in search.search(READER, "reconciliation")]
     books.approve(world.billing, OWNER.name)
+    index_runbook(scratch)
     assert search.search(READER, "reconciliation")
     entry = books.get(world.billing).entry
     citation = entry.steps.claims[0].citations[0]
@@ -84,6 +85,7 @@ async def test_vector_only_match_uses_the_configured_embedding_space(scratch: Sc
 
     world = await search_world(scratch)
     service = SearchService(scratch.dsn, embedder=SemanticFake())
+    index_runbook(scratch, service.embedder)
     hits = service.search(READER, "undo")
     assert [UUID(h.entry.id) for h in hits] == [world.billing]
     assert hits[0].section == "rollback"
@@ -135,7 +137,6 @@ async def test_provider_failure_cannot_leave_a_partially_indexed_entry(scratch: 
 
     from eki.ingest.embedding import HashingEmbedder
     from eki.ingest.redaction import RedactedText
-    from eki.llm import ModelError
 
     world = await search_world(scratch)
     books = RunbookService(scratch.dsn)
@@ -150,6 +151,9 @@ async def test_provider_failure_cannot_leave_a_partially_indexed_entry(scratch: 
         },
     )
     books.approve(world.billing, OWNER.name)
+    index_runbook(scratch)
+
+    from eki.llm import ModelError
 
     class FlakyEmbedder(HashingEmbedder):
         name = "test-failing-batches"
@@ -164,18 +168,24 @@ async def test_provider_failure_cannot_leave_a_partially_indexed_entry(scratch: 
 
     embedder = FlakyEmbedder()
     service = SearchService(scratch.dsn, embedder=embedder)
-    with pytest.raises(ModelError):
-        service.search(READER, "reconcile")
+    from eki.search.jobs import IndexWorker
+
+    worker = IndexWorker(scratch.dsn, embedder)
+    assert worker.drain()["retrying"] == 1
     with scratch.connect() as conn:
         assert conn.execute(
-            "SELECT count(*) FROM runbook_index WHERE entry_id = %s", (world.billing,)
+            "SELECT count(*) FROM runbook_index WHERE entry_id = %s AND model=%s",
+            (world.billing, embedder.name),
         ).fetchone() == (0,)
     embedder.fail = False
+    with scratch.connect() as conn:
+        conn.execute("UPDATE runbook_index_jobs SET available_at=now()")
+    assert worker.drain()["ready"] == 1
     assert service.search(READER, "reconcile")
     with scratch.connect() as conn:
         count = conn.execute(
-            "SELECT count(*) FROM runbook_index WHERE entry_id = %s AND section = 'steps'",
-            (world.billing,),
+            "SELECT count(*) FROM runbook_index WHERE entry_id=%s AND section='steps' AND model=%s",
+            (world.billing, embedder.name),
         ).fetchone()
         assert count is not None and count[0] == 130
 
@@ -211,6 +221,7 @@ async def test_long_entry_cannot_starve_other_matching_entries(scratch: Scratch)
         def embed(self, texts: Sequence[RedactedText]) -> list[list[float]]:
             return [[1.0] + [0.0] * 255 for _ in texts]
 
+    index_runbook(scratch, SameVectors())
     hits = SearchService(scratch.dsn, embedder=SameVectors()).search(
         READER, "gateway certificate renewal", limit=2
     )

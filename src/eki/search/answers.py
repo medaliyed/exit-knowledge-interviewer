@@ -45,7 +45,7 @@ class OpenQuestion(BaseModel):
 
 
 AbstentionReason = Literal[
-    "no_supported_answer", "evidence_changed", "context_limit", "review_required"
+    "no_supported_answer", "evidence_changed", "context_limit", "review_required", "indexing"
 ]
 """Why Ask abstained, safely: never a client-supplied claim and never a hidden entry's presence."""
 
@@ -216,11 +216,18 @@ class AnswerService:
                 self.search.has_overdue, principal, clean
             ):
                 reason = "review_required"
+            elif (
+                reason == "no_supported_answer"
+                and (await asyncio.to_thread(self.search.indexing, principal))["pending_count"]
+            ):
+                reason = "indexing"
             return Answer(
                 status="insufficient_evidence",
                 reason=reason,
                 answer=(
-                    "No supported answer is available; matching permitted entries need review."
+                    "Approved knowledge is still being prepared for search. Try again shortly."
+                    if reason == "indexing"
+                    else "No supported answer is available; matching permitted entries need review."
                     if reason == "review_required"
                     else (
                         "The approved entries do not provide enough evidence "

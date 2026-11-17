@@ -251,7 +251,13 @@ export interface Answer {
   evidence: Evidence[];
   open_questions: { entry_id: string; version: number; section: SectionName; text: string }[];
   mode: 'extractive' | 'model_selected';
-  reason?: 'review_required' | 'no_supported_answer' | 'evidence_changed' | 'context_limit' | null;
+  reason?:
+    | 'review_required'
+    | 'no_supported_answer'
+    | 'evidence_changed'
+    | 'context_limit'
+    | 'indexing'
+    | null;
 }
 export interface SearchResult extends ReviewMetadata {
   id: string;

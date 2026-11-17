@@ -5,11 +5,14 @@ from uuid import UUID
 
 from eki import access
 from eki.auth import Principal
+from eki.ingest.embedding import HashingEmbedder
 from eki.interview import store as interviews
 from eki.runbook import store
 from eki.runbook.models import SECTION_NAMES
 from eki.runbook.review import SectionEdit
 from eki.runbook.service import RunbookService
+from eki.search.embedding import SearchEmbedder
+from eki.search.jobs import IndexWorker
 from tests.conftest import Scratch
 from tests.test_workflow_synthesis import finished
 
@@ -28,7 +31,11 @@ class SearchWorld:
     draft: UUID
 
 
-async def search_world(scratch: Scratch) -> SearchWorld:
+def index_runbook(scratch: Scratch, embedder: SearchEmbedder | None = None) -> dict[str, int]:
+    return IndexWorker(scratch.dsn, embedder or HashingEmbedder()).drain()
+
+
+async def search_world(scratch: Scratch, *, indexed: bool = True) -> SearchWorld:
     session = await finished(scratch)
     books = RunbookService(scratch.dsn)
     entries = books.list(session)
@@ -68,4 +75,6 @@ async def search_world(scratch: Scratch) -> SearchWorld:
         assert view is not None
         access.set_owner(conn, view.run_id, OWNER.subject, ADMIN)
         access.set_readers(conn, view.run_id, [READER.subject], OWNER)
+    if indexed:
+        index_runbook(scratch)
     return SearchWorld(view.run_id, session, *(UUID(e.entry.id) for e in entries))

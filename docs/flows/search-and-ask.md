@@ -1,129 +1,114 @@
 # Search the runbook and ask a question
 
-**Trigger:** `POST /runbook/ask` (`src/eki/api/knowledge.py`) or `eki ask "..."`.
-Search alone is `POST /runbook/search` (`src/eki/api/knowledge.py`) or
-`eki search "..."`; it is steps 1 to 9 of this flow.
-**Outcome:** an answer made of exact approved claims with their citations, or
-`insufficient_evidence`. Nothing is written except the search index and audit
-events.
+**Trigger:** `POST /runbook/search`, `POST /runbook/ask`, `eki search` or `eki ask`.
+**Outcome:** results from prepared approved indexes, or exact approved claims with
+citations. An unsupported answer is distinct from knowledge still being prepared.
+Search never creates indexing jobs or embeds entry content.
 
-After `no_supported_answer`, the browser can explicitly save a question for a
-follow-up. The reader chooses a permitted handover and sees its owner; ordinary Ask
-still creates no request history. Evidence/access changes and context limits suggest
-retrying or opening an entry, while overdue knowledge points to maintenance review.
-Saved questions are private triage input and never enter the searchable runbook.
-See [the follow-up flow](follow-up.md) for request receipts and publication.
+## Prepare indexes independently
 
-## What happens
+Apply migration `0019_runbook_index_jobs.sql` with `uv run eki migrate` before
+starting the updated API. The API starts one bounded worker per process during
+lifespan and waits for its current job on shutdown. For standalone CLI use:
+
+```sh
+uv run eki index-runbook                 # long-running worker; Ctrl-C to stop
+uv run eki index-runbook --once          # up to 1000 currently due jobs, then exit
+uv run eki index-runbook --once --limit 10
+```
+
+This is a trusted local operator command using database credentials, like
+migrations. It does not need a reader bearer token. A one-shot batch reports
+ready/retrying/obsolete counts and exits 1 if a provider/audit failure was deferred.
+Failed jobs wait for their due time; run a persistent worker for automatic retries.
+No external queue service or new dependency is required.
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor Reader
-    participant API as API and middleware
-    participant Ans as Search and answer services
-    participant Emb as Embedder
-    participant LLM as Answerer model
+    actor Reviewer
     participant DB as Postgres
-
-    Reader->>API: POST /runbook/ask {question} with bearer token
-    Note over API: token to identity, from EKI_API_TOKENS
-    API->>Ans: ask(identity, question)
-    Note over Ans: redact the question
-    Ans->>DB: approved entries the caller may see that are not indexed yet
-    opt some entries are not indexed
-        Ans->>Emb: embed their sections, 64 at a time
-        Emb-->>Ans: vectors
-        Ans->>DB: recheck approval and access under lock, write index rows
-    end
-    Ans->>Emb: embed the question
-    Ans->>DB: keyword and vector ranking over permitted approved rows
-    DB-->>Ans: up to 5 entries
-    Ans->>DB: still approved, same version, still permitted?
-    alt no answerer model configured
-        Note over Ans: pick claims from the best entry, or abstain
-    else answerer model configured
-        Ans->>DB: audit "model started"
-        Ans->>LLM: question and evidence as data, no tools
-        LLM-->>Ans: evidence IDs, or abstain
-    end
-    Ans->>DB: still approved, same version, still permitted?
-    Note over Ans: expand a selected step to the whole procedure
-    Ans-->>API: answered or insufficient_evidence
-    API-->>Reader: claim text, evidence, citations
+    participant Worker as Index worker
+    participant Emb as Embedder
+    actor Reader
+    participant Search as Search / Ask
+    Reviewer->>DB: approve an entry version
+    Note over DB: approval + jobs commit together
+    Worker->>DB: claim entry/version/model with an advisory lock
+    Worker->>Emb: embed redacted sections in batches of 64
+    Worker->>DB: lock run and entry; recheck approval/version/content
+    Worker->>DB: atomically publish complete index + mark ready
+    Reader->>Search: search / ask
+    Search->>DB: find permitted prepared approved entries
+    Note over Search: return request connection before embedding
+    Search->>Emb: embed redacted query only
+    Search->>DB: rank current approved versions with live ACLs
+    Search-->>Reader: results / cited claims / abstention
 ```
 
-## Walkthrough
+Approval and substantive entry changes enqueue jobs transactionally for registered
+model identities. Drafts, corrections and withdrawals obsolete older jobs and
+invalidate indexes immediately. Unchanged reviews and reader flags preserve
+embeddings. Workers register the configured model and backfill existing approved
+versions; reconciliation repeats every 30 seconds to cover registration/approval
+races. Existing valid indexes are preserved, including during migration.
 
-1. **Access is applied in SQL** - `/runbook` routes have no resource ID, so the
-   middleware only authenticates (`src/eki/api/security.py`). Which runs the
-   caller may see is a predicate inside every query: admin, owner or listed
-   reader (`src/eki/access.py`).
-2. **Redaction** (after step 2) - the question is redacted and must be 1 to 2000
-   characters (`src/eki/search/service.py`).
-3. **Lazy indexing** (steps 3 to 6) - every search first indexes any approved
-   entry the caller may see that has no index rows for its current version and
-   the configured embedder (`src/eki/search/index.py`).
-4. **Provider work outside the transaction** (steps 4 and 6) - vectors are
-   fetched first; then, under row locks, approval, version and access are
-   checked again before the rows are replaced (`src/eki/search/index.py`).
-   An entry is indexed completely or not at all.
-5. **Hybrid ranking** (step 8) - one SQL statement. It filters to permitted,
-   approved, current-version rows first, then ranks by full-text relevance and
-   by cosine distance, takes each entry's best chunk per channel, and combines
-   the two ranks by reciprocal rank fusion (`src/eki/search/service.py`).
-6. **First freshness check** (step 10) - the hits are re-read; if any entry is
-   no longer approved, changed version or is no longer permitted, the answer
-   is `insufficient_evidence` (`src/eki/search/answers.py`).
-7. **Default answer, no model** (after step 10) - claims are scored against the
-   question; the best entry must share at least 60% of the question's topical
-   words, otherwise the service abstains (`src/eki/search/answers.py`).
-8. **Model-selected answer** (steps 11 to 13) - the model receives the question
-   and bounded evidence and may only return IDs of that evidence or abstain.
-   It writes no prose and has no tools. Unknown IDs, duplicates or a
-   contradictory reply are rejected (`src/eki/search/answers.py`).
-9. **Second freshness check** (step 14) - the same check again, because a
-   model call takes time (`src/eki/search/answers.py`).
-10. **Whole procedures** (after step 14) - if a step was selected, every step of
-    that entry is returned in order; if any step did not fit the evidence
-    budget, the service abstains rather than return a partial procedure
-    (`src/eki/search/answers.py`).
-11. **The answer is assembled by code** - exact claim text followed by its
-    evidence ID (`src/eki/search/answers.py`).
+A session advisory lock excludes another worker for the same entry/version/model
+throughout provider work, without holding a transaction or request-pool connection.
+Its dedicated connection closes on completion or process death. Abandoned
+`processing` jobs are reclaimed by the next worker. Different embedding models
+have separate jobs and index rows. Retired model registrations remain stored;
+only a worker configured for a matching identity processes that model's jobs.
 
-## Failure modes
+Provider work completes before short run/entry row locks. The worker then checks
+that the entry is still approved with the same version and content. Stale work
+never publishes; selected vectors and job completion commit together. Provider
+and audit errors store only a fixed error code, retrying after 5 seconds with
+exponential backoff capped at 300 seconds. An interruption before completion may
+repeat provider work on recovery; concurrent workers do not duplicate it.
 
-| When | Behaviour | Where |
-| --- | --- | --- |
-| No or unknown token | 401 | `src/eki/api/security.py` |
-| Empty or over-long question | 422 | `src/eki/search/service.py` |
-| Question has only common words | no hits; `insufficient_evidence` | `src/eki/search/service.py` |
-| Embedding provider fails | 502; the entry being indexed keeps no partial rows | `src/eki/search/embedding.py` |
-| Answerer returns invalid or made-up evidence IDs | 502; no answer | `src/eki/search/answers.py` |
-| An entry changed while answering | `insufficient_evidence`, without open questions | `src/eki/search/answers.py` |
-| Audit storage is down | 503 before any provider call. With no provider models configured, nothing is audited here and the request succeeds | `src/eki/audit.py` |
+## Readiness and recovery
 
-## Notes
+`GET /runbook/indexing` returns the configured model, pending count and an
+entry-to-state mapping: `pending`, `processing`, `retrying` or `ready`. It includes
+only approved entries in runs the caller can currently access. No drafts, private
+proposals, worker errors, attempts or provider payloads are exposed. Search JSON
+responses also include this readiness metadata.
 
-- **The first search after approvals is slower**, and can fail on a provider
-  error, because indexing happens on the search path. There is no background
-  indexer.
-- **Without `EKI_MODEL_EMBEDDING` the vector channel is not semantic.** The
-  local hashing embedder matches shared words (`src/eki/search/embedding.py`).
-- **The vector ranking is exact, not approximate.** `runbook_index` has a
-  full-text index but no vector index; every permitted row is compared. That
-  is correct under access filtering, and its cost grows with the number of
-  approved sections.
-- **Access changes take effect on the next request.** A request already past
-  step 10 may have sent previously permitted evidence to the answerer.
-- **Search and answer services never read the interview transcript.** Their
-  citations are returned as references (session and turn number), not expanded.
-  The browser's owner-only review view can separately request a permitted
-  session to expand a citation; this does not grant transcript access to readers.
+The browser labels approved entries while preparing or retrying and reports that
+results may be incomplete. Entries remain directly readable and exportable during
+preparation. If Ask has no supported answer while permitted approved entries
+are pending, it returns `reason: indexing`; the browser offers retry guidance
+instead of claiming a confirmed knowledge gap or offering to save a follow-up.
+This is conservative across the caller's handovers: pending entries may be
+unrelated to the question. Retry after preparation completes.
 
-- **Nothing typed reaches the server log.** Search and ask both take their
-  text in the request body. The web server logs each request's URL before the
-  application runs, so the access log is filtered to keep only the path; a
-  query string anyone sends is replaced by `[query not logged]`
-  (`src/eki/api/access_log.py`). Until 2026-11-14 search took `?q=` in the
-  URL and a secret in a search reached the log unredacted.
+## Ranking and answers
+
+1. Redact and validate the query (1–2000 characters). Only prepared current-version
+   indexes belonging to approved, permitted entries qualify. Empty eligible sets
+   return without a query provider call.
+2. Release the pooled connection, embed the query, then borrow another connection.
+   Live SQL approval, version and ACL predicates apply again before ranking.
+3. Rank each entry's best keyword/vector chunk and combine ranks with reciprocal
+   rank fusion. Vector comparison is exact; its cost grows with approved sections.
+4. Ask rereads the hits' approval, version, access and review freshness before and
+   after model latency. Overdue entries remain searchable/exportable but are not
+   answer evidence. Changed evidence returns `reason: evidence_changed`.
+5. Without an answerer model, select relevant exact claims or abstain. With one,
+   provide bounded approved evidence as untrusted data and accept only validated
+   evidence IDs. The model writes no answer prose and receives no tools.
+6. Expand a selected procedure to every prerequisite step in order. If the bounded
+   evidence omitted a step, abstain with `reason: context_limit`.
+7. Render exact claims and citations. Search/Ask never read the private transcript.
+   Only `no_supported_answer` offers an explicit reader follow-up request; overdue
+   matches point to review. No search or Ask request creates reader history.
+
+Authentication failures return 401; invalid input returns 422. Query-embedding
+failures return 502, while entry-embedding failures remain background retries.
+Audit failures prevent provider calls. Search/query text stays in request bodies,
+never URLs or logs. API responses are private and uncached.
+
+Implementation: `eki.search.jobs`, `eki.search.index`, `eki.search.service`,
+`eki.search.answers`, migration 0019. Coverage: `tests/test_index_jobs.py` and the
+search/answer, maintenance, follow-up and browser suites. Real-provider quality
+remains unverified by explicit user choice.

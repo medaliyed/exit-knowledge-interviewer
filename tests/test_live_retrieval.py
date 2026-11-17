@@ -39,6 +39,9 @@ async def test_live_semantic_retrieval_handles_operator_paraphrases(scratch: Scr
     settings = live_settings(scratch, "embedding")
     world = await search_world(scratch)
     service = build_search(settings)
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch, service.embedder)
     for query, expected in (
         ("Undo the end-of-month balancing operation", world.billing),
         ("Replace the expiring gateway TLS credential after the vendor agrees", world.gateway),
@@ -52,6 +55,9 @@ async def test_live_selector_returns_grounded_rollback_and_abstains(scratch: Scr
     settings = live_settings(scratch, "answerer")
     world = await search_world(scratch)
     service = build_answers(settings, build_search(settings))
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch, service.search.embedder)
     result = await service.ask(READER, "How do I roll back month-end reconciliation?")
     assert result.status == "answered"
     assert "Restore the reconciliation table from the pre-run export" in result.answer

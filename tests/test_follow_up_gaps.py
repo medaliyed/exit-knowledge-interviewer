@@ -101,6 +101,9 @@ async def test_ask_reports_a_safe_abstention_reason_and_writes_no_history(
             "(content->'steps'->'claims') || (content->'steps'->'claims')) WHERE id=%s",
             (world.ledger,),
         )
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch)
     limited = await service.ask(READER, "What are the steps for incident:ledger:drift?")
     assert limited.status == "insufficient_evidence"
     assert limited.reason == "context_limit"

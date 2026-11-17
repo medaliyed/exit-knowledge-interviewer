@@ -49,6 +49,7 @@ def test_api_routes_are_exactly_these() -> None:
         "/runbook/entries",
         "/runs/{run_id}/audit",
         "/runbook/search",
+        "/runbook/indexing",
         "/runbook/ask",
         "/runbook/export",
         "/entries/{entry_id}/markdown",

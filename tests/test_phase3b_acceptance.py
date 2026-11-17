@@ -10,7 +10,7 @@ from eki.api.app import create_app
 from eki.runbook.service import RunbookService
 from eki.search.service import SearchService
 from tests.fakes import SimulatedExpert, expert_answers
-from tests.search_support import ADMIN, OWNER
+from tests.search_support import ADMIN, OWNER, index_runbook
 from tests.support import FAKE_CREDENTIALS
 from tests.test_api_access import authenticator, headers
 from tests.test_phase2_acceptance import World, reviewed_plan
@@ -54,6 +54,7 @@ async def test_real_fixture_search_answers_and_exports(world: World) -> None:
     for gap in ("G1", "G2", "G3", "G7"):
         books.approve(UUID(entries[world.topic_of(gap)].id), OWNER.name)
     books.approve(UUID(entries[confidential_topic].id), OWNER.name)
+    index_runbook(world.scratch)
     with world.scratch.connect() as conn:
         access.set_owner(conn, world.run_id, OWNER.subject, ADMIN)
         access.set_readers(conn, world.run_id, ["reader"], OWNER)

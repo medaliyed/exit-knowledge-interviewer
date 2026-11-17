@@ -307,3 +307,36 @@ for (const width of [360, 768, 1440]) {
     await check();
   });
 }
+
+test('approved entries show search preparation and retry status until ready', async ({ page }) => {
+  await mockWorkspace(page, { approvedEntry: true });
+  let state = 'pending';
+  await page.route('**/runbook/indexing', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        pending_count: state === 'ready' ? 0 : 1,
+        entries: { [ids.entry]: state },
+      }),
+    }),
+  );
+  await signIn(page, `${workspace}/knowledge`);
+  await expect(
+    page.getByText('Some approved entries are still being prepared for search.', { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText('Preparing search', { exact: true })).toBeVisible();
+  state = 'retrying';
+  await expect(
+    page.getByText('Search preparation delayed — retrying', { exact: true }),
+  ).toBeVisible({ timeout: 8000 });
+  state = 'ready';
+  await expect(
+    page.getByText('Search preparation delayed — retrying', { exact: true }),
+  ).toHaveCount(0, { timeout: 8000 });
+  await expect(
+    page.getByText('Some approved entries are still being prepared for search.', { exact: false }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'Month-end reconciliation', exact: true }),
+  ).toBeVisible();
+});

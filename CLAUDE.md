@@ -244,8 +244,17 @@ Keyword ranking uses English full-text search; vectors use cosine distance and
 reciprocal rank fusion combines the channels. Each channel ranks entries after
 selecting its best chunk, so a long entry cannot crowd out other matches. The
 vector channel is exact over
-the permitted set, avoiding approximate-index post-filter starvation. The first
-search lazily indexes permitted approved sections in bounded provider batches.
+the permitted set, avoiding approximate-index post-filter starvation. Approval
+triggers queue durable indexing jobs (migration 0019); the API lifespan worker
+and `eki index-runbook` prepare complete indexes in bounded provider batches.
+Session advisory locks exclude duplicate concurrent work for an entry/version/model,
+and a dead process releases its claim. Failures back off from 5 to 300 seconds.
+Workers use dedicated connections during provider calls; search releases its
+request-pool borrow before query embedding. `GET /runbook/indexing` reports
+approved-only ACL-filtered readiness. Ask can abstain with reason `indexing`
+until approved knowledge is prepared. Model registration backfills existing
+approvals and reconciles missing jobs every 30 seconds. Retired model identities
+remain registered; only a matching configured worker spends provider calls.
 Each entry is stored atomically, so interrupted provider calls can be retried.
 An update invalidates all its index rows immediately; queries additionally join
 the live version/status. ACL changes take effect on the next request.

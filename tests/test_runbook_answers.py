@@ -14,7 +14,7 @@ from eki.search.answers import AnswerService
 from eki.search.service import SearchService
 from tests.conftest import Scratch
 from tests.fakes import ScriptedModel
-from tests.search_support import OWNER, READER, STRANGER, search_world
+from tests.search_support import OWNER, READER, STRANGER, index_runbook, search_world
 from tests.support import FAKE_CREDENTIALS
 
 pytestmark = [pytest.mark.db, pytest.mark.anyio]
@@ -44,6 +44,7 @@ async def test_only_open_questions_produce_no_procedural_answer(scratch: Scratch
         {s: SectionEdit(open_question="I don't remember reconciliation") for s in SECTION_NAMES},
     )
     books.approve(world.billing, OWNER.name)
+    index_runbook(scratch)
     result = await AnswerService(SearchService(scratch.dsn)).ask(READER, "reconciliation")
     assert result.status == "insufficient_evidence" and not result.evidence
     assert result.open_questions
@@ -107,6 +108,7 @@ async def test_selected_procedure_keeps_prerequisites_and_step_order(scratch: Sc
         },
     )
     books.approve(world.billing, OWNER.name)
+    index_runbook(scratch)
 
     def select(messages: object, tools: object) -> Reply:
         # A selector may prefer the middle action; code must still include the full procedure.
@@ -184,6 +186,7 @@ async def test_edit_during_model_call_suppresses_old_answer(scratch: Scratch) ->
             world.billing, OWNER.name, {"rollback": SectionEdit(claims=("Changed rollback",))}
         )
         books.approve(world.billing, OWNER.name)
+        index_runbook(scratch)
         return Reply(text='{"evidence_ids":["E1"],"abstain":false}')
 
     answer = await AnswerService(SearchService(scratch.dsn), ScriptedModel(select)).ask(

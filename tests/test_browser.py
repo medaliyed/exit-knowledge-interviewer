@@ -204,6 +204,9 @@ def test_complete_browser_api_workflow(scratch: Scratch) -> None:
     assert (
         client.post(f"/entries/{eid}/approve", json={"approved_by": OWNER.name}).status_code == 200
     )
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch)
     search = client.post("/runbook/search", json={"query": "billing worker"}).json()
     assert search["results"][0]["id"] == eid
     answer = client.post(

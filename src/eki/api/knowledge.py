@@ -26,6 +26,10 @@ def install_knowledge(app: FastAPI, ctx: ApiContext) -> None:
     Search = Annotated[SearchService, Depends(ctx.search)]
     Answers = Annotated[AnswerService, Depends(ctx.answers)]
 
+    @app.get("/runbook/indexing")
+    async def indexing(request: Request, search: Search) -> dict[str, Any]:
+        return await operation(lambda: search.indexing(identity(request)))
+
     @app.post("/runbook/search")
     async def search_entries(
         body: RunbookSearch, request: Request, search: Search
@@ -34,7 +38,11 @@ def install_knowledge(app: FastAPI, ctx: ApiContext) -> None:
         hits = await operation(
             lambda: search.search(identity(request), body.query, limit=body.limit)
         )
-        return {"results": [h.public() for h in hits], "embedding_model": search.embedder.name}
+        return {
+            "results": [h.public() for h in hits],
+            "embedding_model": search.embedder.name,
+            "indexing": await operation(lambda: search.indexing(identity(request))),
+        }
 
     @app.post("/runbook/ask")
     async def ask_runbook(

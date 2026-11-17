@@ -451,6 +451,11 @@ export async function mockWorkspace(page: Page, options: MockOptions = {}) {
       }
       return json(route, entry);
     }
+    if (path === '/runbook/indexing')
+      return json(route, {
+        pending_count: 0,
+        entries: entry.status === 'approved' ? { [entry.id]: 'ready' } : {},
+      });
     if (path === '/runbook/entries')
       return json(
         route,

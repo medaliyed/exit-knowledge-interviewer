@@ -46,6 +46,9 @@ async def test_context_limit_is_not_hidden_by_review_required(
             "(content->'steps'->'claims') || (content->'steps'->'claims')) WHERE id=%s",
             (world.ledger,),
         )
+    from tests.search_support import index_runbook
+
+    index_runbook(scratch)
     answer = await AnswerService(SearchService(scratch.dsn)).ask(
         READER, "What are the steps for incident:ledger:drift?"
     )

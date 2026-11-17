@@ -101,6 +101,14 @@ uv run eki export --run RUN_ID --output runbook.md
 Only approved entries are found. `eki ask` answers with exact approved claims
 and their citations, or says the runbook does not cover the question.
 
+Apply migrations before running the updated API. Migration 0019 queues durable
+search-index jobs when entries are approved. The API processes them in the
+background; the browser shows preparation/retry status until they are searchable.
+For CLI-only use, run `uv run eki index-runbook --once` before searching newly
+approved entries, or keep `uv run eki index-runbook` running for automatic retries.
+Entry downloads remain available during indexing. See the
+[search and indexing flow](docs/flows/search-and-ask.md).
+
 ### Artifact retrieval
 
 Blank `EKI_MODEL_ARTIFACT_EMBEDDING` uses offline hashing. Set it to a LiteLLM

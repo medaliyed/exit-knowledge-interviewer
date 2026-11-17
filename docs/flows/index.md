@@ -51,8 +51,9 @@ Things the flow pages flag. Each is cited on its page.
 - **Real-provider calls interrupted before their result is persisted may repeat**
   on recovery. Accepted messages and stored replies survive.
   ([message-delivery.md](message-delivery.md))
-- **Indexing happens on the search path** and the vector comparison is exact,
-  so cost grows with the number of approved sections.
+- **Search preparation is asynchronous.** Approved entries can be opened and
+  exported before indexing finishes. The UI reports preparation/retry status.
+  Vector comparison remains exact, so ranking cost grows with approved sections.
   ([search-and-ask.md](search-and-ask.md))
 - **Artifact retrieval is lexical by default.** A separately configured semantic
   model is supported; its real-provider quality remains unverified.
