@@ -72,7 +72,7 @@ async def test_selected_mail_to_approved_runbook_and_audited_access(scratch: Scr
             tracer=tracer,
         )
         plan = await service.draft_plan(run_id)
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         # Confidential content is retained privately, but never becomes model/audit/runbook data.
         await say(
             service,

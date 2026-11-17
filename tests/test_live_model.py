@@ -70,7 +70,7 @@ async def test_real_model_follows_up_leaves_open_and_asks_about_the_contradictio
         tracer=tracer,
     )
     plan = await service.draft_plan(run_id)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     experts: dict[str, SimulatedExpert] = {}
     answers = expert_answers()
     for _ in range(60):

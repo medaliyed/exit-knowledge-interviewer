@@ -22,7 +22,7 @@ pytestmark = [pytest.mark.db, pytest.mark.anyio, pytest.mark.eval]
 async def test_real_fixture_search_answers_and_exports(world: World) -> None:
     plan, _ = await reviewed_plan(world)
     service = world.service()
-    view = await service.approve(plan.id, OWNER.name)
+    view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     experts: dict[str, SimulatedExpert] = {}
     answers = expert_answers()
     private_text = "Confidential handover detail that must never reach retrieval"

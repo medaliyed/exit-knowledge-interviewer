@@ -82,6 +82,7 @@ test('removing a topic asks for confirmation that names the topic', async ({ pag
   await expect(page.locator('.topic-list > li', { hasText: 'Backup ownership' })).toHaveCount(0);
   expect(mock.requests.find(request => request.method === 'PATCH')?.body).toEqual({
     remove: ['topic:backup'],
+    expected_revision: 1,
   });
 });
 
@@ -94,6 +95,65 @@ test('an entry page highlights the tab it belongs to', async ({ page }) => {
   await signIn(page, `${workspace}/entries/${ids.entry}`, 'reader-token');
   await expect(page.locator('.tabs a.active')).toHaveText('Approved knowledge');
 });
+
+for (const action of ['edit', 'approve'] as const) {
+  test(`a stale original plan ${action} refreshes the plan and requires an explicit retry`, async ({
+    page,
+  }) => {
+    const mock = await mockWorkspace(page);
+    await signIn(page, `${workspace}/plans/${ids.plan}`);
+    await expect(
+      page.getByRole('heading', { name: 'Month-end reconciliation', exact: true }),
+    ).toBeVisible();
+    // Another tab changes the saved plan after this tab has displayed revision 1.
+    mock.plan.revision += 1;
+    mock.plan.topics[0].label = 'Updated reconciliation procedure';
+    async function submit() {
+      if (action === 'approve') {
+        await page.getByRole('button', { name: 'Approve plan', exact: true }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Approve and start' }).click();
+      } else {
+        const card = page.locator('.topic-list > li', { hasText: 'Backup ownership' });
+        await card.getByRole('button', { name: 'Remove topic', exact: true }).click();
+        await page
+          .getByRole('dialog')
+          .getByRole('button', { name: 'Remove topic', exact: true })
+          .click();
+      }
+    }
+    await submit();
+    await expect(
+      page.getByText(
+        'This plan changed or is no longer editable. Refresh and review it before trying again.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Updated reconciliation procedure', exact: true }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(`${workspace}/plans/${ids.plan}`);
+    expect(mock.plan.status).toBe('draft');
+    expect(mock.plan.topics).toHaveLength(2);
+    const mutations = () =>
+      mock.requests.filter(request =>
+        action === 'approve'
+          ? request.path === `/plans/${ids.plan}/approve`
+          : request.path === `/plans/${ids.plan}` && request.method === 'PATCH',
+      );
+    expect(mutations()).toHaveLength(1);
+    expect(mutations()[0].body?.expected_revision).toBe(1);
+    await submit();
+    if (action === 'approve') {
+      await expect(page).toHaveURL(`${workspace}/interview/${ids.session}`);
+    } else {
+      await expect(page.locator('.topic-list > li', { hasText: 'Backup ownership' })).toHaveCount(
+        0,
+      );
+    }
+    expect(mutations()).toHaveLength(2);
+    expect(mutations()[1].body?.expected_revision).toBe(2);
+  });
+}
 
 test('the review page names conversations without internal identifiers', async ({ page }) => {
   await mockWorkspace(page, { approvedPlan: true });

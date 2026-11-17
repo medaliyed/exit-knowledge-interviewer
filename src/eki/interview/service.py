@@ -223,7 +223,7 @@ class InterviewService:
         plan_id: UUID,
         edit: Callable[[InterviewPlan], InterviewPlan],
         *,
-        expected_revision: int | None = None,
+        expected_revision: int,
     ) -> InterviewPlan:
         """Apply an edit from ``eki.interview.plan``. Raises ``PlanFrozenError`` once approved."""
 
@@ -240,7 +240,7 @@ class InterviewService:
                 plan = store.load_plan(conn, plan_id)
                 if plan is None:
                     raise NotFoundError(f"no plan {plan_id}")
-                if expected_revision is not None and plan.revision != expected_revision:
+                if plan.revision != expected_revision:
                     raise ConflictError("plan changed; refresh before editing")
                 changed = edit(plan)
                 follow_ups.validate_edit(plan, changed)
@@ -266,9 +266,7 @@ class InterviewService:
 
         return await db(work)
 
-    async def approve(
-        self, plan_id: UUID, by: str, *, expected_revision: int | None = None
-    ) -> SessionView:
+    async def approve(self, plan_id: UUID, by: str, *, expected_revision: int) -> SessionView:
         """Freeze the plan, open its session and ask the first question."""
         with self._connect() as conn:
             plan_run = await db(
@@ -292,7 +290,7 @@ class InterviewService:
                 )
             existing_session = await db(store.session_of_plan, conn, plan_id)
             if plan.status == "draft":
-                if expected_revision is not None and expected_revision != plan.revision:
+                if expected_revision != plan.revision:
                     raise ConflictError("plan changed; refresh before approving")
                 if follow_up:
                     await db(follow_ups.validate_selection, conn, plan)

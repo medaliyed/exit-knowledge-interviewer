@@ -60,7 +60,7 @@ async def test_two_selected_questions_in_one_section_keep_both_facts(scratch: Sc
     previous = books.get(world.billing)
     service = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         events = await say(service, view.session.id, "Restore the export.")
         assert events[-1]["question"] == two
         assert "not been attempted" in model.sent_text()
@@ -98,7 +98,7 @@ async def test_unanswered_outcomes_remain_private_and_unresolved(
     )
     service = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         await say(
             service,
             view.session.id,
@@ -143,7 +143,7 @@ async def test_cached_final_reply_replays_after_budget_is_spent(
 
     monkeypatch.setattr(store, "record_note", crash_after_note)
     with acting_as(OWNER):
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         events = await say(service, view.session.id, "Restore the export.", message_id=uuid4())
         assert events[-1]["code"] == "model_unavailable"
         mid = UUID(events[-1]["message_id"])
@@ -171,8 +171,8 @@ async def test_exhausted_initial_call_recovers_to_a_finished_session(scratch: Sc
     service = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
         with pytest.raises(ModelError):
-            await service.approve(plan.id, OWNER.name)
-        recovered = await service.approve(plan.id, OWNER.name)
+            await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
+        recovered = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     assert recovered.session.status == "finished"
     assert recovered.session.completion_reason == "model_budget"
     assert len(model.calls) == 1
@@ -199,11 +199,11 @@ async def test_audit_failure_rolls_back_provider_reservation(
         with monkeypatch.context() as patch:
             patch.setattr(follow_ups, "append_event", refuse)
             with pytest.raises(AuditError):
-                await service.approve(plan.id, OWNER.name)
+                await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         assert not model.calls
         with scratch.connect() as conn:
             assert conn.execute("SELECT count(*) FROM session_provider_attempts").fetchone() == (0,)
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     assert view.usage is not None and view.usage["model_calls"] == 1
 
 
@@ -239,7 +239,7 @@ async def test_semantic_embedding_budget_survives_request_restarts(scratch: Scra
     service = make_service(scratch.dsn, agent=None, interviewer=model)
     service.embedder = embedder
     with acting_as(OWNER):
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         restarted = make_service(scratch.dsn, agent=None, interviewer=model)
         restarted.embedder = embedder
         await say(restarted, view.session.id, "Restore it.")
@@ -305,7 +305,7 @@ async def test_changed_target_cannot_start_a_prepared_follow_up(scratch: Scratch
     model = ScriptedModel([])
     service = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER), pytest.raises(ConflictError, match="target changed"):
-        await service.approve(plan.id, OWNER.name)
+        await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     assert not model.calls
 
 
@@ -335,7 +335,7 @@ async def test_new_topic_finishes_partial_with_a_cited_private_draft(scratch: Sc
     )
     service = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         assert len(view.checklist) == 7
         await say(service, view.session.id, "Begin thirty days before expiry.")
     final = await service.view(view.session.id)
@@ -381,7 +381,7 @@ async def test_unknown_second_seed_does_not_erase_the_first_fact(scratch: Scratc
     )
     service = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await service.approve(plan.id, OWNER.name)
+        view = await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         await say(service, view.session.id, "Restore the export.")
         await say(service, view.session.id, "I do not know.")
     final = await service.view(view.session.id)

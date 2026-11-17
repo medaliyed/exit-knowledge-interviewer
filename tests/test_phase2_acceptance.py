@@ -89,13 +89,15 @@ async def reviewed_plan(world: World) -> tuple[InterviewPlan, str]:
     service = world.service()
     plan = await service.draft_plan(world.run_id)
     filler = next(t.topic_id for t in plan.topics if t.topic_id not in world.gap_of_topic)
-    return await service.edit_plan(plan.id, lambda p: remove_topic(p, filler)), filler
+    return await service.edit_plan(
+        plan.id, lambda p: remove_topic(p, filler), expected_revision=plan.revision
+    ), filler
 
 
 async def interview(world: World, plan: InterviewPlan, *, restart_every_step: bool) -> SessionView:
     """Answer every question as the simulated expert until the interview is done."""
     service = world.service()
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     experts: dict[str, SimulatedExpert] = {}
     answers = expert_answers()
     for _ in range(200):

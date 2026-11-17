@@ -129,7 +129,7 @@ async def _interview(service: InterviewService, plan_id: UUID, approver: str | N
             return fail("nobody to approve the plan: set EKI_EXPERT_NAME or --approve-as", 2)
         _show_plan(plan)
         view: SessionView = await service.approve(
-            plan_id, approver, expected_revision=plan.revision if plan.kind == "follow_up" else None
+            plan_id, approver, expected_revision=plan.revision
         )
         print(f"Plan approved by {approver}.")
         session_id = view.session.id

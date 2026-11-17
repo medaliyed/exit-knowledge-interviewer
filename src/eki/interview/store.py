@@ -51,7 +51,7 @@ def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
         previous = conn.execute(
             "SELECT status, revision FROM interview_plans WHERE id = %s FOR UPDATE", (plan.id,)
         ).fetchone()
-        if previous and plan.kind == "follow_up" and previous[1] != plan.revision:
+        if previous and previous[1] != plan.revision:
             raise ConflictError("plan changed; refresh before editing or approving")
         conn.execute(
             "INSERT INTO interview_plans (id, run_id, status, approved_by, approved_at, kind, "
@@ -59,8 +59,7 @@ def save_plan(conn: psycopg.Connection, plan: InterviewPlan) -> None:
             "ON CONFLICT (id) DO UPDATE SET "
             "status = EXCLUDED.status, approved_by = EXCLUDED.approved_by, "
             "approved_at = EXCLUDED.approved_at, limits = EXCLUDED.limits, "
-            "revision = interview_plans.revision + CASE WHEN "
-            "interview_plans.kind = 'follow_up' THEN 1 ELSE 0 END",
+            "revision = interview_plans.revision + 1",
             (
                 plan.id,
                 plan.run_id,

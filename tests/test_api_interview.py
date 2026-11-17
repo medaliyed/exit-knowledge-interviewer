@@ -56,8 +56,10 @@ class Api:
         return body
 
     def approve(self, plan_id: str) -> dict[str, Any]:
+        reviewed = self.client.get(f"/plans/{plan_id}").json()
         response = self.client.post(
-            f"/plans/{plan_id}/approve", json={"approved_by": "Nadia Ferrand"}
+            f"/plans/{plan_id}/approve",
+            json={"approved_by": "Nadia Ferrand", "expected_revision": reviewed["revision"]},
         )
         assert response.status_code == 200, response.text
         body: dict[str, Any] = response.json()
@@ -86,7 +88,12 @@ def test_full_plan_review_flow(api: Api) -> None:
     added = {"label": "Audit handover", "note": "Ask me who signs it off.", "position": 0}
     edited = api.client.patch(
         f"/plans/{plan_id}",
-        json={"remove": [b], "add": [added], "order": [c, "expert:audit-handover", a]},
+        json={
+            "remove": [b],
+            "add": [added],
+            "order": [c, "expert:audit-handover", a],
+            "expected_revision": plan["revision"],
+        },
     )
     assert edited.status_code == 200, edited.text
     assert [t["topic_id"] for t in edited.json()["topics"]] == [c, "expert:audit-handover", a]
@@ -101,15 +108,69 @@ def test_full_plan_review_flow(api: Api) -> None:
     assert api.client.get(f"/sessions/{session['id']}").json() == session
 
 
+@pytest.mark.parametrize("action", ["edit", "approve"])
+def test_stale_original_plan_cannot_be_edited_or_approved(api: Api, action: str) -> None:
+    reviewed = api.plan()
+    path = f"/plans/{reviewed['id']}"
+    changed = api.client.patch(
+        path, json={"remove": [TOPIC_IDS[-1]], "expected_revision": reviewed["revision"]}
+    )
+    assert changed.status_code == 200, changed.text
+    if action == "edit":
+        refused = api.client.patch(
+            path, json={"remove": [TOPIC_IDS[0]], "expected_revision": reviewed["revision"]}
+        )
+    else:
+        refused = api.client.post(
+            f"{path}/approve",
+            json={"approved_by": "Nadia Ferrand", "expected_revision": reviewed["revision"]},
+        )
+    assert refused.status_code == 409, refused.text
+    current = api.client.get(path).json()
+    assert current == changed.json()
+    assert current["revision"] == reviewed["revision"] + 1
+    with api.scratch.connect() as conn:
+        assert store.session_of_plan(conn, UUID(reviewed["id"])) is None
+
+
+@pytest.mark.parametrize("revision", [None, 0, -1])
+@pytest.mark.parametrize("action", ["edit", "approve"])
+def test_plan_mutations_require_a_positive_revision(
+    api: Api, action: str, revision: int | None
+) -> None:
+    plan = api.plan()
+    path = f"/plans/{plan['id']}"
+    body: dict[str, Any] = {} if revision is None else {"expected_revision": revision}
+    if action == "edit":
+        response = api.client.patch(path, json={**body, "remove": [TOPIC_IDS[0]]})
+    else:
+        response = api.client.post(f"{path}/approve", json={**body, "approved_by": "Nadia Ferrand"})
+    assert response.status_code == 422, response.text
+    assert api.client.get(path).json() == plan
+
+
 def test_plan_edit_errors(api: Api) -> None:
-    plan_id = api.plan()["id"]
-    assert api.client.patch(f"/plans/{plan_id}", json={"remove": ["nope"]}).status_code == 422
-    assert api.client.patch(f"/plans/{plan_id}", json={"order": [TOPIC_IDS[0]]}).status_code == 422
-    assert api.client.patch(f"/plans/{plan_id}", json={"unknown": 1}).status_code == 422
-    blank = {"add": [{"label": " ", "note": "x"}]}
+    plan = api.plan()
+    plan_id = plan["id"]
+    expected = {"expected_revision": plan["revision"]}
+    assert (
+        api.client.patch(f"/plans/{plan_id}", json={**expected, "remove": ["nope"]}).status_code
+        == 422
+    )
+    assert (
+        api.client.patch(
+            f"/plans/{plan_id}", json={**expected, "order": [TOPIC_IDS[0]]}
+        ).status_code
+        == 422
+    )
+    assert api.client.patch(f"/plans/{plan_id}", json={**expected, "unknown": 1}).status_code == 422
+    blank = {**expected, "add": [{"label": " ", "note": "x"}]}
     assert api.client.patch(f"/plans/{plan_id}", json=blank).status_code == 422
     assert (
-        api.client.post(f"/plans/{plan_id}/approve", json={"approved_by": " "}).status_code == 422
+        api.client.post(
+            f"/plans/{plan_id}/approve", json={**expected, "approved_by": " "}
+        ).status_code
+        == 422
     )
     assert len(api.client.get(f"/plans/{plan_id}").json()["topics"]) == 3, (
         "a refused edit changes nothing"
@@ -119,8 +180,16 @@ def test_plan_edit_errors(api: Api) -> None:
 def test_an_edit_to_an_approved_plan_gives_409(api: Api) -> None:
     plan_id = api.plan()["id"]
     api.approve(plan_id)
-    assert api.client.patch(f"/plans/{plan_id}", json={"remove": [TOPIC_IDS[0]]}).status_code == 409
-    again = api.client.post(f"/plans/{plan_id}/approve", json={"approved_by": "Nadia Ferrand"})
+    expected = {"expected_revision": api.client.get(f"/plans/{plan_id}").json()["revision"]}
+    assert (
+        api.client.patch(
+            f"/plans/{plan_id}", json={**expected, "remove": [TOPIC_IDS[0]]}
+        ).status_code
+        == 409
+    )
+    again = api.client.post(
+        f"/plans/{plan_id}/approve", json={**expected, "approved_by": "Nadia Ferrand"}
+    )
     assert again.status_code == 409
 
 
@@ -129,9 +198,12 @@ def test_unknown_ids_give_404(api: Api) -> None:
     client = api.client
     assert client.post(f"/runs/{missing}/plan").status_code == 404
     assert client.get(f"/plans/{missing}").status_code == 404
-    assert client.patch(f"/plans/{missing}", json={}).status_code == 404
+    assert client.patch(f"/plans/{missing}", json={"expected_revision": 1}).status_code == 404
     assert (
-        client.post(f"/plans/{missing}/approve", json={"approved_by": "Nadia Ferrand"}).status_code
+        client.post(
+            f"/plans/{missing}/approve",
+            json={"approved_by": "Nadia Ferrand", "expected_revision": 1},
+        ).status_code
         == 404
     )
     assert client.get(f"/sessions/{missing}").status_code == 404
@@ -327,7 +399,10 @@ def test_no_response_body_contains_a_planted_secret(scratch: Scratch) -> None:
         plan_size=1,
     )
     plan = api.plan()
-    patch = {"add": [{"label": f"About {leak}", "note": f"Ask about {leak}"}]}
+    patch = {
+        "add": [{"label": f"About {leak}", "note": f"Ask about {leak}"}],
+        "expected_revision": plan["revision"],
+    }
     bodies = [json.dumps(plan), api.client.patch(f"/plans/{plan['id']}", json=patch).text]
     session = api.approve(plan["id"])
     bodies.append(json.dumps(session))

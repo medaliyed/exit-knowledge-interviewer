@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 
+from eki.errors import ConflictError
 from eki.ingest.pipeline import store as store_snapshot
 from eki.ingest.redaction import RedactedText
 from eki.interview import store
@@ -64,13 +65,26 @@ def test_saving_again_replaces_topics_and_keeps_the_session(
         }
     )
     store.save_plan(conn, approved)
-    assert store.load_plan(conn, plan.id) == approved
+    assert store.load_plan(conn, plan.id) == approved.model_copy(
+        update={"revision": plan.revision + 1}
+    )
     assert store.load_session(conn, session_id) is not None
 
 
 def test_unknown_plan_and_session_are_none(conn: psycopg.Connection) -> None:
     assert store.load_plan(conn, uuid4()) is None
     assert store.load_session(conn, uuid4()) is None
+
+
+def test_stale_original_plan_save_cannot_replace_a_newer_plan(
+    conn: psycopg.Connection, run_id: UUID
+) -> None:
+    reviewed = saved_plan(conn, run_id, "a", "b")
+    store.save_plan(conn, reviewed.model_copy(update={"topics": reviewed.topics[:1]}))
+    changed = store.load_plan(conn, reviewed.id)
+    with pytest.raises(ConflictError, match="plan changed"):
+        store.save_plan(conn, reviewed)
+    assert store.load_plan(conn, reviewed.id) == changed
 
 
 def test_session_round_trip_and_progress(conn: psycopg.Connection, run_id: UUID) -> None:

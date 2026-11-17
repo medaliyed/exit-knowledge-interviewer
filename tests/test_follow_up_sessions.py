@@ -98,7 +98,9 @@ async def test_prepare_refuses_unready_selections(scratch: Scratch) -> None:
             reason="Already in a plan",
         )
     interviews = make_service(scratch.dsn, agent=None)
-    await interviews.edit_plan(first.id, lambda p: remove_topic(p, TOPIC_IDS[0]))
+    await interviews.edit_plan(
+        first.id, lambda p: remove_topic(p, TOPIC_IDS[0]), expected_revision=first.revision
+    )
     (gap,) = [g for g in service.queue(world.run_id, OWNER)["gaps"] if g["id"] == rollback_gap]
     assert gap["status"] == "pending", "removing the topic releases its reservation"
     with scratch.connect() as conn:
@@ -136,14 +138,14 @@ async def test_only_the_original_expert_approves_and_answers(scratch: Scratch) -
     model = ScriptedModel([tool_reply(ask(seed, "rollback", rollback_gap))] * 3, name="interviewer")
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     with pytest.raises(AuthenticationError):
-        await interviews.approve(plan.id, OWNER.name)
+        await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     for who in (READER, ADMIN, IMPOSTOR):
         with acting_as(who), pytest.raises(NotFoundError):
-            await interviews.approve(plan.id, who.name)
+            await interviews.approve(plan.id, who.name, expected_revision=plan.revision)
     with acting_as(OWNER), pytest.raises(ValueError):
-        await interviews.approve(plan.id, "Someone Else")
+        await interviews.approve(plan.id, "Someone Else", expected_revision=plan.revision)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     assert view.session.status == "active" and view.waiting is not None
     with scratch.connect() as conn:
         assert conn.execute(
@@ -155,7 +157,7 @@ async def test_only_the_original_expert_approves_and_answers(scratch: Scratch) -
     with pytest.raises(AuthenticationError):
         await say(interviews, view.session.id, "Anonymous")
     with acting_as(OWNER):
-        again = await interviews.approve(plan.id, OWNER.name)
+        again = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     assert again.session.id == view.session.id, "approval retries return the same session"
 
 
@@ -193,7 +195,7 @@ async def test_scripted_follow_up_stays_in_scope_and_attributes_seeds(scratch: S
     )
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         assert view.waiting is not None and view.waiting.text == seed1
         brief = model.calls[0].messages[1].content
         assert "rollback, contacts" in brief and "steps" not in brief.split("Sections")[1]
@@ -275,7 +277,7 @@ async def test_question_limit_stops_before_the_next_seed(scratch: Scratch) -> No
     )
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         await say(interviews, view.session.id, "Restore the export.")
         events = await say(interviews, view.session.id, "Run it twice.")
     assert events[-1] == {"type": "done"}
@@ -314,7 +316,7 @@ async def test_model_budget_closes_the_session_deterministically(scratch: Scratc
     )
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         events = await say(interviews, view.session.id, "Restore the export.")
     assert events[-1] == {"type": "done"}
     assert len(model.calls) == 2, "the third call never happens"
@@ -347,7 +349,7 @@ async def test_failed_provider_attempts_stay_charged_and_replays_are_free(
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     budget = FollowUpService(scratch.dsn)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         assert budget.usage(view.session.id)["model_calls"] == 1
         failed = await say(interviews, view.session.id, "Restore the export.")
         assert failed[-1]["type"] == "error" and failed[-1]["code"] == "model_unavailable"
@@ -379,7 +381,7 @@ async def test_stop_settles_work_and_returns_gaps_to_triage(scratch: Scratch) ->
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     follow = FollowUpService(scratch.dsn)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         with scratch.connect() as conn, pytest.raises(ConflictError, match="follow-up"):
             maintenance.transfer(
                 conn,
@@ -493,12 +495,16 @@ async def test_http_follow_up_lifecycle(scratch: Scratch) -> None:
     model._replies[:] = [tool_reply(ask(seed1, "rollback", rollback_gap))] * 2
     assert (
         client.post(
-            f"/plans/{plan_id}/approve", headers=reader, json={"approved_by": READER.name}
+            f"/plans/{plan_id}/approve",
+            headers=reader,
+            json={"approved_by": READER.name, "expected_revision": plan["revision"]},
         ).status_code
         == 404
     )
     approved = client.post(
-        f"/plans/{plan_id}/approve", headers=owner, json={"approved_by": OWNER.name}
+        f"/plans/{plan_id}/approve",
+        headers=owner,
+        json={"approved_by": OWNER.name, "expected_revision": plan["revision"]},
     )
     assert approved.status_code == 200, approved.text
     session = approved.json()

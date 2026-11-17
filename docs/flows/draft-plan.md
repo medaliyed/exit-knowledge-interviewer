@@ -73,6 +73,14 @@ review checkpoint without another drafting call.
 
 ## Operations and permissions
 
+- `PATCH /plans/{id}` and `POST /plans/{id}/approve` require a positive
+  `expected_revision` from the plan the caller reviewed, for both original and
+  follow-up plans. Every saved update increments the revision. A stale revision
+  returns 409 without applying the edit or starting the interview; a missing or
+  invalid revision returns 422. The final save compares revisions under the plan
+  row lock, so an edit racing with approval cannot overwrite newer work.
+  The browser refreshes the plan after a conflict and requires explicit review
+  and resubmission; the CLI sends the revision of the plan it displayed.
 - `eki plan --run RUN_ID --generation-status GENERATION_ID` inspects progress
   without constructing a model client.
 - `eki plan --run RUN_ID --resume-generation GENERATION_ID` resumes unfinished

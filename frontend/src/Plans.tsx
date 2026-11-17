@@ -2,11 +2,16 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useWorkspace } from './workspace';
+import { ApiError } from './api';
 import { Badge, Button, Empty, Loading, Modal, Notice } from './ui';
 import { FollowUpLimitSummary } from './FollowUps';
 import type { Generation, Plan, PlanSummary, Topic, Session as SessionSummary } from './types';
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'The request could not be completed. Please try again.';
+const reviewMessage = (error: unknown) =>
+  error instanceof ApiError && error.status === 409
+    ? 'This plan changed or is no longer editable. Refresh and review it before trying again.'
+    : message(error);
 
 function Questions({
   topic,
@@ -471,19 +476,24 @@ export function PlanReview() {
     (run.owner_subject === undefined || run.owner_subject === identity.subject);
 
   async function edit(body: object, success: string) {
+    if (!plan || busy) return false;
     setBusy(true);
     setError('');
     try {
       const updated = await api.request<Plan>(`/plans/${planId}`, 'PATCH', {
         ...body,
-        ...(followUp ? { expected_revision: plan?.revision } : {}),
+        expected_revision: plan.revision,
       });
       cache.setQueryData(['plan', planId], updated);
       void cache.invalidateQueries({ queryKey: ['plans', run.id] });
       notify(success);
       return true;
     } catch (caught) {
-      setError(message(caught));
+      setError(reviewMessage(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        setRemoving(null);
+        setDragging(null);
+      }
       void planQuery.refetch();
       return false;
     } finally {
@@ -526,7 +536,7 @@ export function PlanReview() {
     try {
       const session = await api.request<{ id: string }>(`/plans/${planId}/approve`, 'POST', {
         approved_by: identity.name,
-        ...(followUp ? { expected_revision: plan.revision } : {}),
+        expected_revision: plan.revision,
       });
       await cache.invalidateQueries({ queryKey: ['plans', run.id] });
       void cache.invalidateQueries({ queryKey: ['plan', planId] });
@@ -538,7 +548,11 @@ export function PlanReview() {
     } catch (caught) {
       if (alive.current && currentPlan.current === planId) {
         setApproveOpen(false);
-        setError(message(caught));
+        setError(reviewMessage(caught));
+        if (caught instanceof ApiError && caught.status === 409) {
+          void planQuery.refetch();
+          void cache.invalidateQueries({ queryKey: ['plans', run.id] });
+        }
       }
     } finally {
       if (alive.current && currentPlan.current === planId) setBusy(false);

@@ -19,7 +19,9 @@ async def finished(scratch: Scratch) -> UUID:
         run = seed_run(conn)
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run)
-    session = (await service.approve(plan.id, "Nadia Ferrand")).session.id
+    session = (
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
+    ).session.id
     for _ in plan.topics:
         await say(service, session, "Recorded answer.")
     return session
@@ -44,7 +46,9 @@ async def test_unfinished_session_cannot_be_synthesised(scratch: Scratch) -> Non
         run = seed_run(conn)
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run)
-    session = (await service.approve(plan.id, "Nadia Ferrand")).session.id
+    session = (
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
+    ).session.id
     with pytest.raises(ConflictError, match="finished"):
         RunbookService(scratch.dsn).synthesise(session)
 
@@ -66,7 +70,9 @@ async def test_restart_during_synthesis_rolls_back_and_retries(
         run = seed_run(conn)
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run)
-    session = (await service.approve(plan.id, "Nadia Ferrand")).session.id
+    session = (
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
+    ).session.id
     for _ in range(2):
         await say(service, session, "Answer.")
     monkeypatch.setattr(store, "save_entry", failing)
@@ -99,7 +105,9 @@ async def test_restart_after_synthesis_commit_can_finish_checkpoint(
         run = seed_run(conn)
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run)
-    session = (await service.approve(plan.id, "Nadia Ferrand")).session.id
+    session = (
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
+    ).session.id
     for _ in range(2):
         await say(service, session, "Answer.")
     monkeypatch.setattr(workflow, "_synthesise", fail_after_commit)

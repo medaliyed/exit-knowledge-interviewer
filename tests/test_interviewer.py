@@ -43,7 +43,11 @@ async def start(
         scratch.dsn, agent=None, interviewer=model, limits=Limits(plan_size=1, **limits)
     )
     plan = await service.draft_plan(run_id)
-    return service, model, await service.approve(plan.id, "Nadia Ferrand")
+    return (
+        service,
+        model,
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision),
+    )
 
 
 def tool_results(model: ScriptedModel, call_index: int) -> list[str]:
@@ -239,7 +243,7 @@ async def test_tool_results_contain_no_secret(scratch: Scratch) -> None:
         limits=Limits(plan_size=1, model_calls_per_topic=2),
     )
     plan = await service.draft_plan(run_id)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     await say(service, view.session.id, "Because.")
     search, lookup, missing = tool_results(model, 1)[:3]
     for result in (search, lookup):

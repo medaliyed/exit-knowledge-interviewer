@@ -63,7 +63,7 @@ async def test_api_missing_ids_and_unfinished_session(scratch: Scratch) -> None:
         run = seed_run(conn)
     interview = make_service(scratch.dsn)
     plan = await interview.draft_plan(run)
-    session = (await interview.approve(plan.id, EXPERT)).session.id
+    session = (await interview.approve(plan.id, EXPERT, expected_revision=plan.revision)).session.id
     assert client.post(f"/sessions/{session}/synthesise").status_code == 409
 
 

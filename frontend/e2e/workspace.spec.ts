@@ -96,6 +96,7 @@ test('plan review supports keyboard-operable reordering and explicit approval co
   await expect(page.locator('.topic-list > li').first()).toBeFocused();
   expect(mock.requests.find(request => request.method === 'PATCH')?.body).toEqual({
     order: ['topic:backup', 'topic:reconciliation'],
+    expected_revision: 1,
   });
   await page.getByRole('button', { name: 'Approve plan', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Approve this plan?' });
@@ -109,7 +110,7 @@ test('plan review supports keyboard-operable reordering and explicit approval co
   await expect(page.getByRole('heading', { name: 'Who owns the backup decision?' })).toBeVisible();
   expect(
     mock.requests.find(request => request.path === `/plans/${ids.plan}/approve`)?.body,
-  ).toEqual({ approved_by: expert });
+  ).toEqual({ approved_by: expert, expected_revision: 2 });
 });
 
 test('accepted confidential answers are cleared and only the privacy placeholder is displayed', async ({

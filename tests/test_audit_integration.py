@@ -33,7 +33,10 @@ async def test_streamed_calls_carry_authenticated_identity_without_content(
     )
     client = TestClient(create_app(service))
     plan = client.post(f"/runs/{run}/plan").json()
-    session = client.post(f"/plans/{plan['id']}/approve", json={"approved_by": "Nadia Ferrand"})
+    session = client.post(
+        f"/plans/{plan['id']}/approve",
+        json={"approved_by": "Nadia Ferrand", "expected_revision": plan["revision"]},
+    )
     assert session.status_code == 200, session.text
     sid = session.json()["id"]
     client.post(

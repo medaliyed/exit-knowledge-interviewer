@@ -51,7 +51,7 @@ async def test_late_failure_resumes_only_unfinished_topics(scratch: Scratch) -> 
     assert (partial["status"], partial["completed"], partial["total"]) == ("needs_retry", 8, 10)
     saved = partial["topics"][:8]
     with pytest.raises(NotFoundError):
-        await service.approve(gid, "Nadia Ferrand")
+        await service.approve(gid, "Nadia Ferrand", expected_revision=1)
     restarted = make_service(scratch.dsn, drafter=drafter)
     plan = await restarted.draft_plan(run, generation_id=gid)
     assert plan.id == gid and len(plan.topics) == 10
@@ -137,7 +137,9 @@ def test_api_reports_partial_generation_and_resumes_it(scratch: Scratch) -> None
     assert status["completed"] == 1 and status["total"] == 3
     assert client.get(f"/runs/{run}/generations").json()[0]["id"] == str(gid)
     assert (
-        client.post(f"/plans/{gid}/approve", json={"approved_by": "Nadia Ferrand"}).status_code
+        client.post(
+            f"/plans/{gid}/approve", json={"approved_by": "Nadia Ferrand", "expected_revision": 1}
+        ).status_code
         == 404
     )
     response = client.post(f"/runs/{run}/generations/{gid}/resume")

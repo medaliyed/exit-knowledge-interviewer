@@ -92,7 +92,9 @@ async def gap_world(scratch: Scratch) -> GapWorld:
         run = seed_run(conn)
     service = make_service(scratch.dsn, agent=gap_agent)
     plan = await service.draft_plan(run)
-    session = (await service.approve(plan.id, OWNER.name)).session.id
+    session = (
+        await service.approve(plan.id, OWNER.name, expected_revision=plan.revision)
+    ).session.id
     for _ in plan.topics:
         await say(service, session, "Recorded answer.")
     books = RunbookService(scratch.dsn)
@@ -199,7 +201,7 @@ async def answer_follow_up(
     )
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         await say(interviews, view.session.id, ROLLBACK_ANSWER)
         await say(interviews, view.session.id, "Finance operations lead.")
         events = await say(interviews, view.session.id, "The CFO above the threshold.")

@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.db, pytest.mark.anyio, pytest.mark.eval]
 async def test_fixture_interview_becomes_reviewable_runbook(world: World) -> None:
     service = world.service()
     plan, _ = await reviewed_plan(world)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     answers = expert_answers()
     experts: dict[str, SimulatedExpert] = {}
     confidential_turn: int | None = None

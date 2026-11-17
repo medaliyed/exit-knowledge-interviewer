@@ -3,11 +3,13 @@
 from typing import Any
 from uuid import UUID, uuid4
 
+import psycopg
 import pytest
 
 from eki.graph.workflow import Deps, InterviewState, open_workflow, thread_config
 from eki.ingest.redaction import RedactedText
 from eki.interview import store
+from eki.interview.models import InterviewPlan
 from eki.interview.plan import PlanFrozenError, remove_topic, reorder
 from eki.interview.service import BusyError, ConflictError, NotFoundError
 from eki.llm import ModelError
@@ -52,7 +54,7 @@ async def test_graph_stops_for_plan_review(scratch: Scratch, run_id: UUID) -> No
 async def test_resume_after_approval_starts_first_topic(scratch: Scratch, run_id: UUID) -> None:
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run_id)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     approved = await service.get_plan(plan.id)
     assert (approved.status, approved.approved_by) == ("approved", "Nadia Ferrand")
     assert (view.session.status, view.session.current_topic_id) == ("active", TOPIC_IDS[0])
@@ -65,8 +67,10 @@ async def test_topics_run_in_plan_order(scratch: Scratch, run_id: UUID) -> None:
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run_id)
     a, b, c = TOPIC_IDS
-    await service.edit_plan(plan.id, lambda p: reorder(remove_topic(p, b), [c, a]))
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    plan = await service.edit_plan(
+        plan.id, lambda p: reorder(remove_topic(p, b), [c, a]), expected_revision=plan.revision
+    )
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     asked = [view.waiting.topic_id if view.waiting else None]
     events = await say(service, view.session.id, "First answer.")
     assert [e["type"] for e in events] == ["topic", "question"]
@@ -75,10 +79,34 @@ async def test_topics_run_in_plan_order(scratch: Scratch, run_id: UUID) -> None:
     assert asked == [c, a]
 
 
+async def test_edit_between_approval_check_and_save_is_not_overwritten(
+    scratch: Scratch, run_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = make_service(scratch.dsn)
+    reviewed = await service.draft_plan(run_id)
+    save = store.save_plan
+
+    def racing_save(conn: psycopg.Connection, approving: InterviewPlan) -> None:
+        # The approval has checked revision 1, but another writer commits first.
+        with scratch.connect() as other:
+            save(other, remove_topic(reviewed, TOPIC_IDS[-1]))
+        save(conn, approving)
+
+    monkeypatch.setattr(store, "save_plan", racing_save)
+    with pytest.raises(ConflictError, match="plan changed"):
+        await service.approve(reviewed.id, "Nadia Ferrand", expected_revision=reviewed.revision)
+    current = await service.get_plan(reviewed.id)
+    assert current.status == "draft"
+    assert current.revision == reviewed.revision + 1
+    assert [t.topic_id for t in current.topics] == list(TOPIC_IDS[:-1])
+    with scratch.connect() as conn:
+        assert store.session_of_plan(conn, reviewed.id) is None
+
+
 async def test_graph_ends_when_every_topic_is_complete(scratch: Scratch, run_id: UUID) -> None:
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run_id)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     session_id = view.session.id
     last: list[dict[str, Any]] = []
     for n in range(3):
@@ -104,7 +132,7 @@ async def test_graph_ends_when_every_topic_is_complete(scratch: Scratch, run_id:
 async def test_session_resumes_after_restart(scratch: Scratch, run_id: UUID) -> None:
     first_process = make_service(scratch.dsn)
     plan = await first_process.draft_plan(run_id)
-    view = await first_process.approve(plan.id, "Nadia Ferrand")
+    view = await first_process.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     session_id = view.session.id
     await say(first_process, session_id, "Answer to the first topic.")
     before = await first_process.view(session_id)
@@ -139,7 +167,7 @@ async def test_stopped_step_rejects_ambiguous_answer_and_has_explicit_resume(
     service = make_service(scratch.dsn, agent=flaky_agent)
     plan = await service.draft_plan(run_id)
     with pytest.raises(ModelError):
-        await service.approve(plan.id, "Nadia Ferrand")
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     with scratch.connect() as conn:
         session_id = store.session_of_plan(conn, plan.id)
     assert session_id is not None
@@ -168,7 +196,7 @@ async def test_incomplete_topic_goes_back_to_the_agent(scratch: Scratch, run_id:
 
     service = make_service(scratch.dsn, agent=lazy_agent)
     plan = await service.draft_plan(run_id)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     assert view.session.status == "finished"
     assert len(view.open_items) == 21
     assert seen_notices[0] == []
@@ -182,11 +210,14 @@ async def test_edits_after_approval_and_double_approval_are_refused(
 ) -> None:
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run_id)
-    await service.approve(plan.id, "Nadia Ferrand")
+    await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
+    plan = await service.get_plan(plan.id)
     with pytest.raises(PlanFrozenError):
-        await service.edit_plan(plan.id, lambda p: remove_topic(p, TOPIC_IDS[0]))
+        await service.edit_plan(
+            plan.id, lambda p: remove_topic(p, TOPIC_IDS[0]), expected_revision=plan.revision
+        )
     with pytest.raises(ConflictError, match="already approved"):
-        await service.approve(plan.id, "Nadia Ferrand")
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
 
 
 async def test_unknown_ids_and_unmapped_runs(scratch: Scratch) -> None:
@@ -194,8 +225,8 @@ async def test_unknown_ids_and_unmapped_runs(scratch: Scratch) -> None:
     for call in (
         service.draft_plan(uuid4()),
         service.get_plan(uuid4()),
-        service.edit_plan(uuid4(), lambda p: p),
-        service.approve(uuid4(), "Nadia"),
+        service.edit_plan(uuid4(), lambda p: p, expected_revision=1),
+        service.approve(uuid4(), "Nadia", expected_revision=1),
         service.view(uuid4()),
         service.post(uuid4(), text="hi"),
     ):
@@ -227,7 +258,7 @@ async def test_a_second_message_while_one_is_handled_is_refused(
 ) -> None:
     service = make_service(scratch.dsn)
     plan = await service.draft_plan(run_id)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     stream = await service.post(view.session.id, text="First.")
     with pytest.raises(BusyError):
         await service.post(view.session.id, text="Second.")

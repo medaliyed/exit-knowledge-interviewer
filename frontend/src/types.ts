@@ -67,7 +67,7 @@ export interface Plan {
   kind?: 'capture' | 'follow_up';
   parent_session_id?: string | null;
   limits?: FollowUpLimits | null;
-  revision?: number;
+  revision: number;
 }
 export interface PlanSummary {
   id: string;

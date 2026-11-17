@@ -23,7 +23,7 @@ async def opened(scratch: Scratch) -> tuple[InterviewService, SessionView]:
     with scratch.connect() as conn:
         run = seed_run(conn)
     plan = await service.draft_plan(run)
-    return service, await service.approve(plan.id, "Nadia Ferrand")
+    return service, await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
 
 
 @pytest.mark.parametrize(
@@ -112,7 +112,7 @@ async def test_answer_saved_before_its_interrupt_checkpoint(scratch: Scratch) ->
         run = seed_run(conn)
     plan = await service.draft_plan(run)
     with pytest.raises(RuntimeError):
-        await service.approve(plan.id, "Nadia Ferrand")
+        await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     with scratch.connect() as conn:
         sid = store.session_of_plan(conn, plan.id)
     assert sid is not None
@@ -158,7 +158,7 @@ async def test_crash_after_tool_write_reuses_saved_reply(
     with scratch.connect() as conn:
         run = seed_run(conn)
     plan = await service.draft_plan(run)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     original = store.record_note
 
     def crash(*args: Any, **kwargs: Any) -> None:

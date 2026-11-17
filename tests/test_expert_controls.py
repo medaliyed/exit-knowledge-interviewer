@@ -184,7 +184,7 @@ async def test_traces_carry_ids_and_never_a_confidential_answer(scratch: Scratch
         tracer=tracer,
     )
     plan = await service.draft_plan(run_id)
-    view = await service.approve(plan.id, "Nadia Ferrand")
+    view = await service.approve(plan.id, "Nadia Ferrand", expected_revision=plan.revision)
     await say(service, view.session.id, VENDOR_CONTACT, confidential=True)
     await say(
         service, view.session.id, f"With password={FAKE_CREDENTIALS[1]} on the shared account."

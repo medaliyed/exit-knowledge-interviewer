@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from eki import pool
@@ -42,12 +42,12 @@ class PlanEdit(BaseModel):
     seeds: dict[str, str] = {}
     remove_gaps: list[str] = []
     limits: FollowUpLimits | None = None
-    expected_revision: int | None = None
+    expected_revision: int = Field(ge=1)
 
 
 class PlanApproval(Body):
     approved_by: str
-    expected_revision: int | None = None
+    expected_revision: int = Field(ge=1)
     """The plan revision the approver reviewed; a later edit makes approval conflict."""
 
 

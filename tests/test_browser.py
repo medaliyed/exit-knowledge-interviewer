@@ -81,7 +81,7 @@ def test_plan_approval_requires_the_authenticated_expert(scratch: Scratch, subje
     response = client.post(
         f"/plans/{plan['id']}/approve",
         headers=headers(subject),
-        json={"approved_by": name},
+        json={"approved_by": name, "expected_revision": plan["revision"]},
     )
     assert response.status_code == 422
     assert response.json()["detail"] == "reviewer must match the run's expert"
@@ -144,10 +144,17 @@ def test_complete_browser_api_workflow(scratch: Scratch) -> None:
     plan = client.post(f"/runs/{run}/plan").json()
     pid = plan["id"]
     edit = client.patch(
-        f"/plans/{pid}", json={"remove": [t["topic_id"] for t in plan["topics"][1:]]}
+        f"/plans/{pid}",
+        json={
+            "remove": [t["topic_id"] for t in plan["topics"][1:]],
+            "expected_revision": plan["revision"],
+        },
     )
     assert edit.status_code == 200 and len(edit.json()["topics"]) == 1
-    view = client.post(f"/plans/{pid}/approve", json={"approved_by": OWNER.name}).json()
+    view = client.post(
+        f"/plans/{pid}/approve",
+        json={"approved_by": OWNER.name, "expected_revision": edit.json()["revision"]},
+    ).json()
     sid, step_turn = view["id"], None
     for _ in range(12):
         question = view["waiting"]

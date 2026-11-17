@@ -40,6 +40,7 @@ export async function mockWorkspace(page: Page, options: MockOptions = {}) {
   const requests: RecordedRequest[] = [];
   let sessionExists = options.approvedPlan ?? false;
   const plan: Plan = {
+    revision: 1,
     id: ids.plan,
     run_id: ids.run,
     status: sessionExists ? 'approved' : 'draft',
@@ -302,13 +303,19 @@ export async function mockWorkspace(page: Page, options: MockOptions = {}) {
     if (path === `/runs/${ids.run}/generations`) return json(route, []);
     if (path === `/plans/${ids.plan}` && method === 'GET') return json(route, plan);
     if (path === `/plans/${ids.plan}` && method === 'PATCH') {
+      if (body?.expected_revision !== plan.revision)
+        return json(route, { detail: 'plan changed; refresh before editing' }, 409);
       const order = body?.order as string[] | undefined;
       if (order) plan.topics = order.map(id => plan.topics.find(topic => topic.topic_id === id)!);
       const remove = body?.remove as string[] | undefined;
       if (remove) plan.topics = plan.topics.filter(topic => !remove.includes(topic.topic_id));
+      plan.revision += 1;
       return json(route, plan);
     }
     if (path === `/plans/${ids.plan}/approve`) {
+      if (body?.expected_revision !== plan.revision)
+        return json(route, { detail: 'plan changed; refresh before approving' }, 409);
+      plan.revision += 1;
       plan.status = 'approved';
       plan.approved_by = expert;
       plan.approved_at = at;

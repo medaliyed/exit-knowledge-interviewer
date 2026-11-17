@@ -119,7 +119,7 @@ async def test_approved_follow_up_cannot_be_discarded(scratch: Scratch) -> None:
     model = ScriptedModel([tool_reply(ask(seed, "rollback", rollback_gap))], name="interviewer")
     interviews = make_service(scratch.dsn, agent=None, interviewer=model)
     with acting_as(OWNER):
-        await interviews.approve(plan.id, OWNER.name)
+        await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
     current = await interviews.get_plan(plan.id)
     with pytest.raises(ConflictError, match="stop"):
         FollowUpService(scratch.dsn).discard(plan.id, ADMIN, expected_revision=current.revision)
@@ -176,7 +176,7 @@ async def test_finish_records_attempts_with_the_service_clock(scratch: Scratch) 
     frozen = datetime(2030, 1, 2, 3, 4, 5, tzinfo=UTC)
     follow = FollowUpService(scratch.dsn, clock=lambda: frozen)
     with acting_as(OWNER):
-        view = await interviews.approve(plan.id, OWNER.name)
+        view = await interviews.approve(plan.id, OWNER.name, expected_revision=plan.revision)
         follow.stop(view.session.id, OWNER)
     (gap,) = [
         g

@@ -119,6 +119,14 @@ docs/flows/   one page per runtime flow; update the page when its flow changes
 - The interviewer's tools read artifacts or change interview state. Never add
   one that approves, publishes, sends or writes to a source.
 
+## Plan review concurrency (F6, F7)
+
+Plan edits (`PATCH /plans/{id}`) and approval (`POST /plans/{id}/approve`)
+require `expected_revision` for every plan kind. Use the revision returned by
+`GET /plans/{id}`. Missing/nonpositive revisions return 422; stale revisions
+return 409 and require reviewing the latest plan before resubmitting. Revisions
+advance on every saved plan update. See `docs/flows/draft-plan.md`.
+
 ## Phase 3 first half (F9, F10)
 
 Completed interviews automatically produce one private draft runbook entry per

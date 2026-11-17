@@ -168,7 +168,9 @@ async def run_scenario(
                 if len(plan.topics) != 1:
                     raise ValueError("expected exactly one plan topic")
                 try:
-                    view = await service.approve(plan.id, scenario.expert.name)
+                    view = await service.approve(
+                        plan.id, scenario.expert.name, expected_revision=plan.revision
+                    )
                     expert = SimulatedExpert(scenario.script)
                     answered = 0
                     while view.waiting is not None and view.session.status != "finished":
