@@ -161,6 +161,30 @@ class AnswerService:
                     return False
         return True
 
+    def _confirmed(self, principal: Principal, chosen: list[Evidence]) -> list[Evidence] | None:
+        """The evidence with live review metadata, or ``None`` if any of it changed.
+
+        Access, version and freshness are checked again after model latency. Blocking
+        database work, so callers run it in a worker thread.
+        """
+        with psycopg.connect(self.search.dsn, autocommit=True) as conn:
+            live = []
+            reviewed = infos(conn, sorted({e.entry_id for e in chosen}), self.search.clock())
+            for item in chosen:
+                try:
+                    current = approved_entry(conn, UUID(item.entry_id), principal)
+                except NotFoundError:
+                    return None
+                metadata = reviewed.get(item.entry_id)
+                if (
+                    metadata is None
+                    or current.version != item.version
+                    or metadata["freshness"] == "overdue"
+                ):
+                    return None
+                live.append(item.model_copy(update={"maintenance": metadata}))
+        return live
+
     async def ask(self, principal: Principal, question: str) -> Answer:
         clean = self.search.clean_query(question)
         hits = await asyncio.to_thread(self.search.search, principal, clean, fresh_only=True)
@@ -352,23 +376,10 @@ class AnswerService:
             )
             for e in chosen
         ]
-        with psycopg.connect(self.search.dsn, autocommit=True) as conn:
-            live = []
-            reviewed = infos(conn, sorted({e.entry_id for e in chosen}), self.search.clock())
-            for item in chosen:
-                try:
-                    current = approved_entry(conn, UUID(item.entry_id), principal)
-                except NotFoundError:
-                    return await abstain(include_open=False)
-                metadata = reviewed.get(item.entry_id)
-                if (
-                    metadata is None
-                    or current.version != item.version
-                    or metadata["freshness"] == "overdue"
-                ):
-                    return await abstain(include_open=False)
-                live.append(item.model_copy(update={"maintenance": metadata}))
-            chosen = live
+        confirmed = await asyncio.to_thread(self._confirmed, principal, chosen)
+        if confirmed is None:
+            return await abstain(include_open=False)
+        chosen = confirmed
         return Answer(
             status="answered",
             answer="\n".join(f"{e.text} [{e.id}]" for e in chosen),

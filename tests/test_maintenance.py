@@ -492,3 +492,32 @@ async def test_overdue_probe_runs_only_when_an_answer_abstains(
         )
     held = await answers.ask(READER, "How do I run month-end reconciliation?")
     assert held.reason == "review_required" and probes[0] == 1
+
+
+async def test_ask_never_opens_a_database_connection_on_the_event_loop(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    import psycopg
+
+    from eki.search.answers import AnswerService
+    from eki.search.service import SearchService
+    from tests.search_support import READER
+
+    await search_world(scratch)
+    loop_thread = threading.get_ident()
+    on_loop = [0]
+    real = psycopg.connect
+
+    def connect(*args: Any, **kwargs: Any) -> psycopg.Connection:
+        if threading.get_ident() == loop_thread:
+            on_loop[0] += 1  # a blocking connect here stalls every other request
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(psycopg, "connect", connect)
+    answer = await AnswerService(SearchService(scratch.dsn)).ask(
+        READER, "How do I run month-end reconciliation?"
+    )
+    assert answer.status == "answered"
+    assert on_loop[0] == 0
