@@ -1,0 +1,5 @@
+# Mechanical reformatting commits, skipped by `git blame`.
+# Enable locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Prettier reformat of the frontend
+84cd1b542fc08822278a71e091c13d194050ca84
