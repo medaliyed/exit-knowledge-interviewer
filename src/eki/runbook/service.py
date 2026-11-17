@@ -9,7 +9,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from eki import maintenance
+from eki import access, maintenance
 from eki.audit import AuditDetails, append_event
 from eki.auth import current_principal
 from eki.errors import ConflictError, NotFoundError
@@ -692,10 +692,7 @@ def _check(
 
 
 def maintenance_run(conn: psycopg.Connection, session_id: UUID) -> UUID:
-    row = conn.execute(
-        "SELECT p.run_id FROM sessions s JOIN interview_plans p ON p.id=s.plan_id WHERE s.id=%s",
-        (session_id,),
-    ).fetchone()
-    if row is None:
+    run_id = access.resource_run(conn, "sessions", session_id)
+    if run_id is None:
         raise NotFoundError("session not found")
-    return UUID(str(row[0]))
+    return run_id

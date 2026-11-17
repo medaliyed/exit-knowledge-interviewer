@@ -7,7 +7,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import psycopg
-from psycopg import sql
 from psycopg.rows import dict_row
 
 from eki import access, maintenance, throttle
@@ -58,12 +57,10 @@ class FeedbackService:
         run = access.resource_run(conn, "entries", flag["entry_id"])
         if run is None:
             raise NotFoundError("flag not found")
-        visible = conn.execute(
-            sql.SQL("SELECT 1 FROM ingest_runs r WHERE r.id=%s AND ") + sql.SQL(access.VISIBLE_RUN),
-            (run, *access.visible_params(principal)),
-        ).fetchone()
-        if visible is None:
-            raise NotFoundError("flag not found")
+        try:
+            access.visible_run(conn, run, principal)
+        except NotFoundError:
+            raise NotFoundError("flag not found") from None
         owner = conn.execute("SELECT owner_subject FROM ingest_runs WHERE id=%s", (run,)).fetchone()
         manager = bool(principal.admin or (owner and owner[0] == principal.subject))
         if not manager and flag["reporter_subject"] != principal.subject:
@@ -125,13 +122,10 @@ class FeedbackService:
                 raise NotFoundError("entry not found")
             maintenance.lock_run(conn, run)
             maintenance.active(conn, principal)
-            visible = conn.execute(
-                sql.SQL("SELECT 1 FROM ingest_runs r WHERE r.id=%s AND ")
-                + sql.SQL(access.VISIBLE_RUN),
-                (run, *access.visible_params(principal)),
-            ).fetchone()
-            if visible is None:
-                raise NotFoundError("entry not found")
+            try:
+                access.visible_run(conn, run, principal)
+            except NotFoundError:
+                raise NotFoundError("entry not found") from None
             with conn.cursor(row_factory=dict_row) as cursor:
                 previous = cursor.execute(
                     "SELECT * FROM entry_flags WHERE entry_id=%s AND reporter_subject=%s AND "
