@@ -165,18 +165,20 @@ def exhausted(
 def usage(conn: psycopg.Connection, session_id: UUID) -> dict[str, Any]:
     row = conn.execute(
         "SELECT p.kind, p.limits, s.completion_reason, s.status, "
-        "extract(epoch FROM (coalesce(s.finished_at,now())-s.created_at)) FROM sessions s "
-        "JOIN interview_plans p ON p.id = s.plan_id WHERE s.id = %s",
+        "extract(epoch FROM (coalesce(s.finished_at,now())-s.created_at)), p.run_id "
+        "FROM sessions s JOIN interview_plans p ON p.id = s.plan_id WHERE s.id = %s",
         (session_id,),
     ).fetchone()
     if row is None:
         raise NotFoundError("session not found")
+    # FollowUpRecorder writes every model event under the session's run, so the run
+    # index (audit_events(run_id, id)) bounds this to one run instead of the whole log.
     tokens = conn.execute(
         "SELECT sum((details->>'input_tokens')::bigint), "
-        "sum((details->>'output_tokens')::bigint) FROM audit_events WHERE "
-        "kind='model' AND phase='completed' AND details->>'target_id'=%s "
+        "sum((details->>'output_tokens')::bigint) FROM audit_events WHERE run_id=%s "
+        "AND kind='model' AND phase='completed' AND details->>'target_id'=%s "
         "AND details->>'operation'='interview'",
-        (str(session_id),),
+        (row[5], str(session_id)),
     ).fetchone()
     partial = conn.execute(
         "SELECT EXISTS(SELECT 1 FROM follow_up_attempts WHERE session_id=%s AND outcome "

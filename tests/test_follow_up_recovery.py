@@ -393,3 +393,39 @@ async def test_unknown_second_seed_does_not_erase_the_first_fact(scratch: Scratc
         and selected[two]["attempts"][-1]["outcome"] == "unknown"
     )
     assert final.usage is not None and final.usage["partial"]
+
+
+async def test_token_usage_reads_only_the_sessions_own_run(scratch: Scratch) -> None:
+    from eki.audit import AuditDetails
+    from tests.followup_support import answered_follow_up
+
+    done = await answered_follow_up(scratch)
+    service = FollowUpService(scratch.dsn)
+    before = service.usage(done.session_id)
+    with scratch.connect() as conn:
+        # Follow-up model events are always written under the session's run, so the
+        # sum can use the run index instead of scanning the whole, ever-growing table.
+        append_event(
+            conn,
+            "model",
+            "completed",
+            AuditDetails(
+                operation="interview",
+                target_id=done.session_id,
+                input_tokens=1000,
+                output_tokens=1000,
+            ),
+            run_id=uuid4(),
+        )
+        append_event(
+            conn,
+            "model",
+            "completed",
+            AuditDetails(
+                operation="interview", target_id=done.session_id, input_tokens=7, output_tokens=3
+            ),
+            run_id=done.world.run_id,
+        )
+    after = service.usage(done.session_id)
+    assert after["input_tokens"] == (before["input_tokens"] or 0) + 7
+    assert after["output_tokens"] == (before["output_tokens"] or 0) + 3
