@@ -1,7 +1,7 @@
 # Review and approve a runbook entry
 
 **Trigger:** `GET /entries/{id}` then `POST /entries/{id}/approve`
-(`src/eki/api/app.py`, `src/eki/api/app.py`), or `eki review --plan ID`
+(`src/eki/api/entries.py`), or `eki review --plan ID`
 (`src/eki/cli.py`)
 **Outcome:** the entry's status becomes `approved` with a new version, a row
 in `entry_decisions` and an audit event. From then on the entry is visible to
@@ -64,7 +64,7 @@ sequenceDiagram
    preventing collisions with ordinals in the original interview. It is advisory:
    it never blocks approval.
 4. **Reviewer name** (after step 6) - the name in the request body must equal the
-   name bound to the token (`src/eki/api/app.py`).
+   name bound to the token (`actor` in `src/eki/api/context.py`).
 5. **Locks** (step 8) - run first, then session and entry, the same order as edits,
    corrections and synthesis, so they cannot interleave
    (`src/eki/runbook/service.py`).
@@ -108,7 +108,7 @@ retains the expert-name check; maintenance uses the current owner subject.
 | --- | --- | --- |
 | No or unknown token | 401 | `src/eki/api/security.py` |
 | Caller is not the owner or an admin | 404, the same as a missing entry | `src/eki/api/security.py` |
-| `approved_by` differs from the token's name | 422; nothing written | `src/eki/api/app.py` |
+| `approved_by` differs from the token's name | 422; nothing written | `src/eki/api/context.py` |
 | Reviewer is not the run's expert | 422; nothing written | `src/eki/runbook/review.py` |
 | Entry is already approved or rejected | 409 "edit it first" | `src/eki/runbook/review.py` |
 | A section is empty, or a claim has no citation | 422; nothing written | `src/eki/runbook/review.py`, `src/eki/runbook/models.py` |
@@ -124,7 +124,7 @@ retains the expert-name check; maintenance uses the current owner subject.
   reader flags and expected version/revision fields.
 - **The faithfulness result is not stored.** It is recomputed on every read
   from the current transcript. Readers never receive it
-  (`src/eki/api/app.py`).
+  (`src/eki/api/entries.py`).
 - **A correction to a cited answer reopens approval.** It replaces the claim
   text and returns the entry to draft (`src/eki/runbook/service.py`).
   Procedure text is split into the same ordered steps as synthesis, respecting

@@ -1,7 +1,7 @@
 # Search the runbook and ask a question
 
-**Trigger:** `POST /runbook/ask` (`src/eki/api/app.py`) or `eki ask "..."`.
-Search alone is `POST /runbook/search` (`src/eki/api/app.py`) or
+**Trigger:** `POST /runbook/ask` (`src/eki/api/knowledge.py`) or `eki ask "..."`.
+Search alone is `POST /runbook/search` (`src/eki/api/knowledge.py`) or
 `eki search "..."`; it is steps 1 to 9 of this flow.
 **Outcome:** an answer made of exact approved claims with their citations, or
 `insufficient_evidence`. Nothing is written except the search index and audit
