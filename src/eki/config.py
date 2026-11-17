@@ -6,6 +6,7 @@ Every value comes from an ``EKI_``-prefixed environment variable (or the local
 """
 
 from functools import lru_cache
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -31,6 +32,9 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = True
     session_idle_hours: float = Field(default=8, gt=0, le=168)
     session_max_days: float = Field(default=7, gt=0, le=365)
+    trusted_proxies: str = ""
+    """Comma-separated proxy addresses or networks whose X-Forwarded-For is believed.
+    Empty (default): the connecting address is the client, even if it is a proxy."""
     database_url: SecretStr
     langfuse_host: str = "http://localhost:3000"
     langfuse_public_key: str | None = None
@@ -74,6 +78,10 @@ class Settings(BaseSettings):
         self.public_origin = self.public_origin.rstrip("/")
         if self.env == "prod" and (not self.session_cookie_secure or origin.scheme != "https"):
             raise ValueError("production sessions require HTTPS and secure cookies")
+        try:
+            proxy_networks(self)
+        except ValueError:
+            raise ValueError("EKI_TRUSTED_PROXIES must list IP addresses or networks") from None
         return self
 
 
@@ -84,6 +92,12 @@ class ConfigError(Exception):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def proxy_networks(settings: Settings) -> tuple[IPv4Network | IPv6Network, ...]:
+    return tuple(
+        ip_network(item.strip()) for item in settings.trusted_proxies.split(",") if item.strip()
+    )
 
 
 def work_domains(settings: Settings) -> frozenset[str]:

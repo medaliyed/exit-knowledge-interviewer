@@ -467,7 +467,9 @@ browser origin (development default `http://localhost:8000`; production requires
 HTTPS). `EKI_SESSION_IDLE_HOURS=8` and `EKI_SESSION_MAX_DAYS=7` bound sessions.
 Secure mode uses `__Host-eki_session` with HttpOnly, Secure, SameSite=Strict,
 Path=/ and no Domain. Development-only `EKI_SESSION_COOKIE_SECURE=false` uses
-`eki_session`; production refuses insecure cookies.
+`eki_session`; production refuses insecure cookies. Behind a reverse proxy, set
+`EKI_TRUSTED_PROXIES` (IPs/networks) so per-IP sign-in throttling counts the real
+client from `X-Forwarded-For` instead of one shared proxy address.
 
 Operator commands are `eki users add`, `update`, `reset-password`, `disable`,
 `enable`, `revoke-sessions` and `list`. `add` requires `--email`, `--name` and `--subject`,

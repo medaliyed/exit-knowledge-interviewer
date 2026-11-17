@@ -112,6 +112,14 @@ minute and doubles with further failures, capped at fifteen minutes. Fifty
 failures per client IP block it for fifteen minutes. Link endpoints share the
 per-IP limit. The API returns 429 and `Retry-After`; the UI shows retry minutes.
 
+Behind a reverse proxy or load balancer, set `EKI_TRUSTED_PROXIES` to its
+addresses or networks (comma separated, e.g. `10.0.0.0/8`). Otherwise every
+request appears to come from the proxy, and fifty failures from anyone lock
+out everyone. For a request from a listed proxy, the per-IP counter uses the
+right-most `X-Forwarded-For` address that is not itself a listed proxy. Entries
+further left are client-supplied and ignored; callers that are not listed
+proxies cannot choose their counter by sending the header.
+
 Authentication audit is run-less and metadata only: operation, phase, account
 UUID and stable subject where known. No email, password, raw link, session ID
 or IP is included. Local operators page it with `eki audit --auth`; no browser

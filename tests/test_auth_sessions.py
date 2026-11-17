@@ -50,6 +50,12 @@ def test_auth_validation_and_models_do_not_echo_credentials() -> None:
     assert GOOD not in repr(SetupPassword(token=SecretStr(GOOD), new_password=SecretStr(GOOD)))
 
 
+@pytest.mark.parametrize("value", ["not-an-address", "10.0.0.0/33", "*"])
+def test_trusted_proxies_must_be_addresses_or_networks(value: str) -> None:
+    with pytest.raises(ValueError, match="EKI_TRUSTED_PROXIES"):
+        Settings(_env_file=None, database_url="postgresql://unused", trusted_proxies=value)
+
+
 def test_public_auth_routes_require_exact_origin_and_json() -> None:
     client = TestClient(create_app(settings=configuration(), authenticator=bearer()))
     for path in ("/auth/login", "/auth/setup-password", "/auth/logout"):
@@ -165,6 +171,28 @@ class TestCookieHTTP:
         assert throttled.status_code == 429
         assert 0 < int(throttled.headers["Retry-After"]) <= 60
         assert throttled.json()["code"] == "throttled"
+
+    def test_throttle_counts_the_client_behind_a_trusted_proxy_only(self, scratch: Scratch) -> None:
+        settings = Settings(
+            _env_file=None,
+            database_url=scratch.dsn,
+            public_origin=ORIGIN,
+            trusted_proxies="10.0.0.0/8, 192.0.2.1",
+        )
+        app = create_app(settings=settings, authenticator=bearer())
+        proxied = TestClient(app, base_url=ORIGIN, client=("10.0.0.7", 443))
+        direct = TestClient(app, base_url=ORIGIN, client=("198.51.100.9", 443))
+        body = {"email": "ghost@example.com", "password": "wrong"}
+        # The left-most entry is client-supplied and can be forged; the right-most
+        # address that is not one of our proxies is the one the proxy actually saw.
+        forwarded = {**HEADERS, "X-Forwarded-For": "1.2.3.4, 203.0.113.5, 10.0.0.3"}
+        assert proxied.post("/auth/login", headers=forwarded, json=body).status_code == 401
+        # A direct caller cannot choose its throttle key by sending the header itself.
+        forged = {**HEADERS, "X-Forwarded-For": "203.0.113.77"}
+        assert direct.post("/auth/login", headers=forged, json=body).status_code == 401
+        with scratch.connect() as conn:
+            keys = {r[0] for r in conn.execute("SELECT key FROM auth_throttle WHERE kind='ip'")}
+        assert keys == {"203.0.113.5", "198.51.100.9"}
 
     def test_foreign_or_missing_origin_prevents_cookie_mutations(
         self, account_client: TestClient

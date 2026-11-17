@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
+from ipaddress import ip_address
 from typing import Any
 
 import psycopg
@@ -12,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from eki import accounts
 from eki.api.security import cookie_name, identity, session_policy
-from eki.config import Settings
+from eki.config import Settings, proxy_networks
 from eki.graph.workflow import db
 
 INVALID_LINK = "This link is no longer valid. Ask the person who invited you for a new one."
@@ -34,6 +35,37 @@ class ChangePassword(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     current_password: SecretStr = Field(max_length=1024)
     new_password: SecretStr = Field(max_length=1024)
+
+
+def client_address(request: Request, settings: Settings) -> str:
+    """The address failed sign-ins are counted under.
+
+    Behind a reverse proxy every request comes from the proxy, so one shared counter
+    would let a few bad attempts lock everybody out. Only when the connecting peer is
+    a configured proxy is X-Forwarded-For used: walking it from the right, the first
+    address that is not one of our proxies is the one our outermost proxy saw. Entries
+    further left were supplied by the client and are never trusted.
+    """
+    peer = request.client.host if request.client else "unknown"
+    networks = proxy_networks(settings)
+
+    def trusted(value: str) -> bool:
+        try:
+            address = ip_address(value)
+        except ValueError:
+            return False
+        return any(address in network for network in networks)
+
+    if not trusted(peer):
+        return peer
+    hops = [h.strip() for v in request.headers.getlist("x-forwarded-for") for h in v.split(",")]
+    for hop in reversed(hops):
+        if not trusted(hop):
+            try:
+                return str(ip_address(hop))
+            except ValueError:
+                return peer  # a malformed hop: fall back to the proxy rather than guess
+    return peer
 
 
 def auth_error(status: int, detail: str, code: str) -> JSONResponse:
@@ -103,7 +135,7 @@ def install_accounts(
                         body.email,
                         body.password,
                         now=datetime.now(UTC),
-                        client=request.client.host if request.client else "unknown",
+                        client=client_address(request, configuration()),
                         policy=session_policy(configuration()),
                         user_agent=request.headers.get("user-agent", ""),
                     )
@@ -124,7 +156,7 @@ def install_accounts(
                         body.new_password,
                         now=datetime.now(UTC),
                         policy=session_policy(configuration()),
-                        client=request.client.host if request.client else "unknown",
+                        client=client_address(request, configuration()),
                         user_agent=request.headers.get("user-agent", ""),
                     )
                 except accounts.LinkError:
