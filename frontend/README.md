@@ -5,6 +5,24 @@ Vite builds static files; Tailwind and locally owned shadcn-style Radix componen
 use the prototype's paper/green design tokens. React Router handles browser
 navigation and TanStack Query manages server data. There is no Node production server.
 
+## Source organization
+
+Route exports remain in `Interview.tsx`, `FollowUps.tsx`, `Plans.tsx` and
+`Entries.tsx`. Feature modules separate rendering from workflow state:
+
+| Location | Responsibility |
+| --- | --- |
+| `interview/` | Delivery/receipt recovery controller, React integration, session queries, composer, transcript and topic components |
+| `followups/` | Reader intake, queue preparation, triage, resolution and proposal review |
+| `plans/` | Listing, review workflow, editable questions and error messages |
+| `entries/` | Listing, review workflow, editing, history, claims, shared freshness metadata and entry maintenance controls |
+| `queries.ts` | Query-key factories and mutation refresh policies |
+
+Use the shared query factories for new queries and extend the relevant refresh
+policy when a mutation affects another screen. Keep recovery decisions in the
+delivery controller so they can be tested without rendering React. TypeScript
+rejects unused locals and parameters to keep feature boundaries clear.
+
 ## Develop
 
 Use Node 26.13.0 (the version in `.nvmrc`) and the committed npm lockfile:
@@ -76,8 +94,9 @@ storage, analytics, external font, or CDN script is used. Source/model text is
 rendered as React text, not interpreted as markup.
 
 `api.ts` owns authenticated JSON/download requests and POST SSE parsing.
-`Interview.tsx` preserves Eki's logical message IDs and checks acceptance before
-offering a resend. Saved and processed are separate states. Confidential text
+`interview/delivery.ts` preserves Eki's logical message IDs and checks acceptance
+before offering a resend; `useInterviewDelivery.ts` connects it to React. Saved
+and processed are separate states. Confidential text
 is cleared when the server acknowledges acceptance; recovery never asks the
 expert to retype an accepted answer. Tests use no real provider credentials.
 

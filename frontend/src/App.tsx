@@ -1,3 +1,4 @@
+import { queryKeys } from './queries';
 import { Component, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   BrowserRouter,
@@ -286,7 +287,7 @@ function Authenticated({
   changePassword: () => void;
 }) {
   const runsQuery = useQuery({
-    queryKey: ['runs', auth.identity.subject],
+    queryKey: queryKeys.runs(auth.identity.subject),
     queryFn: () => auth.api.request<Run[]>('/runs'),
   });
   if (runsQuery.isPending)

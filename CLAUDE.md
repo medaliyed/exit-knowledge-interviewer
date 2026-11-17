@@ -484,10 +484,18 @@ See `docs/flows/draft-plan.md` and `tests/test_generation.py`.
 
 
 Client logic is checked with `cd frontend && npm test` (Vitest): stable submission
-IDs, fragmented SSE, early disconnects and retryable failures; it does not replace
+IDs, fragmented SSE, early disconnects, retryable failures, delivery recovery,
+accepted-draft clearing, correction isolation and cache refresh scopes; it does not replace
 real-browser visual/accessibility QA. New browser submissions keep their IDs
 across transport retries and query the receipt when acknowledgement is lost. The
 original pre-React client was retired; only the React workspace is served.
+
+Frontend route exports delegate to `frontend/src/interview/`, `followups/`,
+`plans/` and `entries/`. Workflow hooks own queries and mutations; view components
+render their state. `interview/delivery.ts` owns logical submission IDs and receipt
+recovery independently of React. Shared entry metadata and maintenance controls
+live under `entries/`. Use `frontend/src/queries.ts` for query keys and shared
+mutation refresh rules. TypeScript enforces unused-local and parameter checks.
 
 ## Phase 6: browser accounts and sessions (F19)
 

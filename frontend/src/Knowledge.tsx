@@ -1,8 +1,9 @@
+import { queryKeys } from './queries';
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Freshness } from './Maintenance';
-import { SaveFollowUp } from './FollowUps';
+import { Freshness } from './entries/reviewMetadata';
+import { SaveFollowUp } from './followups/SaveFollowUp';
 import { useWorkspace } from './workspace';
 import { Badge, Button, Empty, Loading, Notice, Source } from './ui';
 import type { Answer, EntrySummary, SearchResult } from './types';
@@ -27,11 +28,11 @@ export function Knowledge() {
   const [downloadError, setDownloadError] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
   const entries = useQuery({
-    queryKey: ['approved-entries', run.id],
+    queryKey: queryKeys.approvedEntries(run.id),
     queryFn: () => api.request<EntrySummary[]>(`/runbook/entries?run_id=${run.id}`),
   });
   const indexing = useQuery({
-    queryKey: ['runbook-indexing', run.id],
+    queryKey: queryKeys.indexing(run.id),
     queryFn: () =>
       api.request<{ pending_count: number; entries: Record<string, string> }>('/runbook/indexing'),
     refetchInterval: 5000,

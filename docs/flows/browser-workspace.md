@@ -136,7 +136,13 @@ approval, ACL-filtered navigation and the synthetic
 plan/interview/correction/review/search/export HTTP workflow.
 The original pre-React client has been retired and is no longer served.
 In `frontend/`, `npm test` checks the client's transport (submission identity,
-fragmented SSE, early disconnects and retryable failures) and
+fragmented SSE, early disconnects and retryable failures), delivery recovery,
+accepted-draft clearing, correction isolation and query-cache refresh scopes.
+The delivery controller lives in `interview/delivery.ts`; feature hooks own
+workflow state while components render interview, follow-up, plan and entry views.
+`queries.ts` centralizes query keys and mutation refresh policies.
+
+In the same directory,
 `npm run test:e2e` exercises the React UI in Chrome against synthetic mocked
 REST/SSE responses. The browser suite covers sign-in, reader route boundaries,
 plan review, confidential-answer clearing, interrupted-answer recovery, entry
