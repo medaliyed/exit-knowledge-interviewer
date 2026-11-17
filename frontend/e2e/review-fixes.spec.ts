@@ -3,11 +3,12 @@ import { ids, mockWorkspace, openAccountMenu, signIn, workspace } from './fixtur
 
 // Does the page object to being unloaded right now? Dispatching a cancelable
 // beforeunload event mirrors what the browser does on refresh or tab close.
-const unloadWarned = (page: Page) => page.evaluate(() => {
-  const event = new Event('beforeunload', { cancelable: true });
-  window.dispatchEvent(event);
-  return event.defaultPrevented;
-});
+const unloadWarned = (page: Page) =>
+  page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
 
 test('an unsent answer warns before the tab is refreshed or closed', async ({ page }) => {
   await mockWorkspace(page, { approvedPlan: true });
@@ -27,7 +28,9 @@ test('an unsent answer warns before the tab is refreshed or closed', async ({ pa
   expect(await unloadWarned(page)).toBe(false);
 });
 
-test('signing out with an unsent answer asks first and keeps the draft when declined', async ({ page }) => {
+test('signing out with an unsent answer asks first and keeps the draft when declined', async ({
+  page,
+}) => {
   await mockWorkspace(page, { approvedPlan: true });
   await signIn(page, `${workspace}/interview/${ids.session}`);
   const answer = page.getByRole('textbox', { name: 'Your answer', exact: true });
@@ -55,7 +58,10 @@ test('a success notice clears itself and does not cover the composer buttons', a
   const skip = page.getByRole('button', { name: 'Skip this question', exact: true });
   await skip.scrollIntoViewIfNeeded();
   const [noticeBox, skipBox] = await Promise.all([notice.boundingBox(), skip.boundingBox()]);
-  expect(noticeBox && skipBox && noticeBox.y + noticeBox.height <= skipBox.y, 'the notice must sit above the composer, not over it').toBe(true);
+  expect(
+    noticeBox && skipBox && noticeBox.y + noticeBox.height <= skipBox.y,
+    'the notice must sit above the composer, not over it',
+  ).toBe(true);
   await expect(notice).toBeEmpty({ timeout: 10_000 });
 });
 
@@ -74,7 +80,9 @@ test('removing a topic asks for confirmation that names the topic', async ({ pag
   await card.getByRole('button', { name: 'Remove topic', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Remove topic', exact: true }).click();
   await expect(page.locator('.topic-list > li', { hasText: 'Backup ownership' })).toHaveCount(0);
-  expect(mock.requests.find(request => request.method === 'PATCH')?.body).toEqual({ remove: ['topic:backup'] });
+  expect(mock.requests.find(request => request.method === 'PATCH')?.body).toEqual({
+    remove: ['topic:backup'],
+  });
 });
 
 test('an entry page highlights the tab it belongs to', async ({ page }) => {
@@ -111,7 +119,15 @@ test('tabs stay fully readable at phone width', async ({ page }) => {
   await mockWorkspace(page, { approvedPlan: true, approvedEntry: true });
   await signIn(page);
   const knowledge = page.getByRole('link', { name: 'Approved knowledge', exact: true });
-  const [tabs, box] = await Promise.all([page.locator('.tabs').boundingBox(), knowledge.boundingBox()]);
-  expect(tabs && box && box.x + box.width <= tabs.x + tabs.width + 0.5, 'the last tab must not be clipped').toBe(true);
-  expect(await page.locator('.tabs').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const [tabs, box] = await Promise.all([
+    page.locator('.tabs').boundingBox(),
+    knowledge.boundingBox(),
+  ]);
+  expect(
+    tabs && box && box.x + box.width <= tabs.x + tabs.width + 0.5,
+    'the last tab must not be clipped',
+  ).toBe(true);
+  expect(
+    await page.locator('.tabs').evaluate(element => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
 });

@@ -1,34 +1,359 @@
-export interface Identity { subject: string; name: string; admin: boolean; email?: string }
-export interface Run { id: string; expert_name: string; since: string; until: string; status: string; can_manage: boolean; maintenance_started_at?: string | null; owner_name?: string | null; owner_subject?: string | null; owner_unavailable?: boolean }
-export const sections = ['trigger', 'diagnosis', 'steps', 'rollback', 'contacts', 'pitfalls', 'rationale'] as const;
-export type SectionName = typeof sections[number];
+export interface Identity {
+  subject: string;
+  name: string;
+  admin: boolean;
+  email?: string;
+}
+export interface Run {
+  id: string;
+  expert_name: string;
+  since: string;
+  until: string;
+  status: string;
+  can_manage: boolean;
+  maintenance_started_at?: string | null;
+  owner_name?: string | null;
+  owner_subject?: string | null;
+  owner_unavailable?: boolean;
+}
+export const sections = [
+  'trigger',
+  'diagnosis',
+  'steps',
+  'rollback',
+  'contacts',
+  'pitfalls',
+  'rationale',
+] as const;
+export type SectionName = (typeof sections)[number];
 export type SectionStatus = 'missing' | 'noted' | 'open' | 'confidential';
-export interface FollowUpLimits { topics: number; questions: number; model_calls: number; embedding_calls: number }
-export interface Question { text: string; origin: 'drafted' | 'expert' | 'follow_up'; artifact_id: string | null; quote: string | null; gap_id?: string; section?: SectionName | null }
-export interface Topic { topic_id: string; label: string; kind: string; system: string | null; origin: 'ranked' | 'contradiction' | 'expert' | 'follow_up'; score: number | null; reason: string; artifact_ids: string[]; questions: Question[]; dropped: string[]; generation_state?: 'completed' | 'pending'; sections?: SectionName[] | null; target_entry_id?: string | null; base_version?: number | null }
-export interface Plan { id: string; run_id: string; status: 'draft' | 'approved'; topics: Topic[]; approved_by: string | null; approved_at: string | null; kind?: 'capture' | 'follow_up'; parent_session_id?: string | null; limits?: FollowUpLimits | null; revision?: number }
-export interface PlanSummary { id: string; status: 'draft' | 'approved'; session_id: string | null; kind?: 'capture' | 'follow_up'; session_status?: 'active' | 'finished' | null }
-export interface Generation { id: string; run_id: string; status: 'running' | 'needs_retry' | 'completed'; completed: number; total: number; plan_id: string | null; topics: Topic[] }
-export interface Turn { ordinal: number; topic_id: string | null; speaker: 'interviewer' | 'expert' | 'maintainer'; author_subject?: string | null; author_name?: string | null; kind: 'question' | 'answer' | 'skip' | 'correction' | 'edit'; text: string; confidential: boolean; section: SectionName | null; answers: number | null; corrects: number | null }
-export interface Note { topic_id: string; section: SectionName; text: string; turn: number; confidential: boolean }
-export interface OpenItem { topic_id: string; section: SectionName; reason: string; turn: number | null }
-export interface Waiting { turn: number; question: string; section: SectionName; topic_id: string }
-export interface Session { id: string; plan_id: string; run_id: string; status: 'active' | 'finished'; current_topic_id: string | null; waiting: Waiting | null; checklist: Record<SectionName, SectionStatus>; turns: Turn[]; notes: Note[]; open_items: OpenItem[]; kind?: 'capture' | 'follow_up'; completion_reason?: 'complete' | 'question_limit' | 'model_budget' | 'expert_stopped' | null; scope?: SectionName[]; usage?: { questions: number; model_calls: number; embedding_calls: number; limits?: FollowUpLimits; duration_seconds?: number; input_tokens?: number | null; output_tokens?: number | null; partial?: boolean } | null }
-export interface Receipt { id: string; turn: number; status: 'saved' | 'processing' | 'needs_retry' | 'processed'; question_turn: number | null; corrects: number | null; result: StreamEvent | null }
-export interface StreamEvent { type: 'delivery' | 'topic' | 'note' | 'open' | 'corrected' | 'recovered' | 'question' | 'done' | 'error'; id?: string; status?: Receipt['status']; topic_id?: string; label?: string; section?: SectionName; text?: string; reason?: string; confidential?: boolean; turn?: number; corrects?: number; sections?: SectionName[]; question?: string; code?: string; message?: string; message_id?: string }
-export type Citation = { kind: 'interview_turn'; session_id: string; turn_index: number; author_subject?: string | null; author_name?: string | null } | { kind: 'artifact'; artifact_id: string; quote?: string | null };
-export interface Claim { text: string; citations: Citation[] }
-export interface Section { claims: Claim[]; open_question: string | null }
-export interface ReviewMetadata { maintenance_revision?: number; review_by?: string | null; last_reviewed_at?: string | null; last_reviewed_by_name?: string | null; owner_name?: string | null; owner_subject?: string | null; freshness?: 'current' | 'due_soon' | 'overdue' | null; open_flag_count?: number; maintenance_started_at?: string | null; can_review?: boolean }
-export interface EntrySummary extends ReviewMetadata { id: string; topic_id?: string; title: string; status: 'draft' | 'approved' | 'rejected'; version: number; edited?: boolean; unsupported_count?: number; claim_count?: number; open_question_count?: number }
-export type Entry = EntrySummary & Record<SectionName, Section> & { summary?: string; approved_by: string | null; approved_at: string | null; session_id?: string; rejection_reason?: string | null; unsupported?: { section: SectionName; claim_index: number; terms: string[] }[]; decisions?: { action: 'approve' | 'reject' | 'edit' | 'correction' | 'review' | 'withdraw' | 'follow_up_apply'; actor_subject?: string | null; who: string; at: string; reason: string | null }[] };
-export interface Evidence { maintenance?: ReviewMetadata; id: string; entry_id: string; title: string; version: number; section: SectionName; claim_index: number; text: string; citations: Citation[] }
-export interface Answer { status: 'answered' | 'insufficient_evidence'; answer: string; evidence: Evidence[]; open_questions: { entry_id: string; version: number; section: SectionName; text: string }[]; mode: 'extractive' | 'model_selected'; reason?: 'review_required' | 'no_supported_answer' | 'evidence_changed' | 'context_limit' | null }
-export interface SearchResult extends ReviewMetadata { id: string; title: string; version: number; section: SectionName; snippet: string; score: number; citations: Citation[] }
+export interface FollowUpLimits {
+  topics: number;
+  questions: number;
+  model_calls: number;
+  embedding_calls: number;
+}
+export interface Question {
+  text: string;
+  origin: 'drafted' | 'expert' | 'follow_up';
+  artifact_id: string | null;
+  quote: string | null;
+  gap_id?: string;
+  section?: SectionName | null;
+}
+export interface Topic {
+  topic_id: string;
+  label: string;
+  kind: string;
+  system: string | null;
+  origin: 'ranked' | 'contradiction' | 'expert' | 'follow_up';
+  score: number | null;
+  reason: string;
+  artifact_ids: string[];
+  questions: Question[];
+  dropped: string[];
+  generation_state?: 'completed' | 'pending';
+  sections?: SectionName[] | null;
+  target_entry_id?: string | null;
+  base_version?: number | null;
+}
+export interface Plan {
+  id: string;
+  run_id: string;
+  status: 'draft' | 'approved';
+  topics: Topic[];
+  approved_by: string | null;
+  approved_at: string | null;
+  kind?: 'capture' | 'follow_up';
+  parent_session_id?: string | null;
+  limits?: FollowUpLimits | null;
+  revision?: number;
+}
+export interface PlanSummary {
+  id: string;
+  status: 'draft' | 'approved';
+  session_id: string | null;
+  kind?: 'capture' | 'follow_up';
+  session_status?: 'active' | 'finished' | null;
+}
+export interface Generation {
+  id: string;
+  run_id: string;
+  status: 'running' | 'needs_retry' | 'completed';
+  completed: number;
+  total: number;
+  plan_id: string | null;
+  topics: Topic[];
+}
+export interface Turn {
+  ordinal: number;
+  topic_id: string | null;
+  speaker: 'interviewer' | 'expert' | 'maintainer';
+  author_subject?: string | null;
+  author_name?: string | null;
+  kind: 'question' | 'answer' | 'skip' | 'correction' | 'edit';
+  text: string;
+  confidential: boolean;
+  section: SectionName | null;
+  answers: number | null;
+  corrects: number | null;
+}
+export interface Note {
+  topic_id: string;
+  section: SectionName;
+  text: string;
+  turn: number;
+  confidential: boolean;
+}
+export interface OpenItem {
+  topic_id: string;
+  section: SectionName;
+  reason: string;
+  turn: number | null;
+}
+export interface Waiting {
+  turn: number;
+  question: string;
+  section: SectionName;
+  topic_id: string;
+}
+export interface Session {
+  id: string;
+  plan_id: string;
+  run_id: string;
+  status: 'active' | 'finished';
+  current_topic_id: string | null;
+  waiting: Waiting | null;
+  checklist: Record<SectionName, SectionStatus>;
+  turns: Turn[];
+  notes: Note[];
+  open_items: OpenItem[];
+  kind?: 'capture' | 'follow_up';
+  completion_reason?: 'complete' | 'question_limit' | 'model_budget' | 'expert_stopped' | null;
+  scope?: SectionName[];
+  usage?: {
+    questions: number;
+    model_calls: number;
+    embedding_calls: number;
+    limits?: FollowUpLimits;
+    duration_seconds?: number;
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    partial?: boolean;
+  } | null;
+}
+export interface Receipt {
+  id: string;
+  turn: number;
+  status: 'saved' | 'processing' | 'needs_retry' | 'processed';
+  question_turn: number | null;
+  corrects: number | null;
+  result: StreamEvent | null;
+}
+export interface StreamEvent {
+  type:
+    | 'delivery'
+    | 'topic'
+    | 'note'
+    | 'open'
+    | 'corrected'
+    | 'recovered'
+    | 'question'
+    | 'done'
+    | 'error';
+  id?: string;
+  status?: Receipt['status'];
+  topic_id?: string;
+  label?: string;
+  section?: SectionName;
+  text?: string;
+  reason?: string;
+  confidential?: boolean;
+  turn?: number;
+  corrects?: number;
+  sections?: SectionName[];
+  question?: string;
+  code?: string;
+  message?: string;
+  message_id?: string;
+}
+export type Citation =
+  | {
+      kind: 'interview_turn';
+      session_id: string;
+      turn_index: number;
+      author_subject?: string | null;
+      author_name?: string | null;
+    }
+  | { kind: 'artifact'; artifact_id: string; quote?: string | null };
+export interface Claim {
+  text: string;
+  citations: Citation[];
+}
+export interface Section {
+  claims: Claim[];
+  open_question: string | null;
+}
+export interface ReviewMetadata {
+  maintenance_revision?: number;
+  review_by?: string | null;
+  last_reviewed_at?: string | null;
+  last_reviewed_by_name?: string | null;
+  owner_name?: string | null;
+  owner_subject?: string | null;
+  freshness?: 'current' | 'due_soon' | 'overdue' | null;
+  open_flag_count?: number;
+  maintenance_started_at?: string | null;
+  can_review?: boolean;
+}
+export interface EntrySummary extends ReviewMetadata {
+  id: string;
+  topic_id?: string;
+  title: string;
+  status: 'draft' | 'approved' | 'rejected';
+  version: number;
+  edited?: boolean;
+  unsupported_count?: number;
+  claim_count?: number;
+  open_question_count?: number;
+}
+export type Entry = EntrySummary &
+  Record<SectionName, Section> & {
+    summary?: string;
+    approved_by: string | null;
+    approved_at: string | null;
+    session_id?: string;
+    rejection_reason?: string | null;
+    unsupported?: { section: SectionName; claim_index: number; terms: string[] }[];
+    decisions?: {
+      action:
+        'approve' | 'reject' | 'edit' | 'correction' | 'review' | 'withdraw' | 'follow_up_apply';
+      actor_subject?: string | null;
+      who: string;
+      at: string;
+      reason: string | null;
+    }[];
+  };
+export interface Evidence {
+  maintenance?: ReviewMetadata;
+  id: string;
+  entry_id: string;
+  title: string;
+  version: number;
+  section: SectionName;
+  claim_index: number;
+  text: string;
+  citations: Citation[];
+}
+export interface Answer {
+  status: 'answered' | 'insufficient_evidence';
+  answer: string;
+  evidence: Evidence[];
+  open_questions: { entry_id: string; version: number; section: SectionName; text: string }[];
+  mode: 'extractive' | 'model_selected';
+  reason?: 'review_required' | 'no_supported_answer' | 'evidence_changed' | 'context_limit' | null;
+}
+export interface SearchResult extends ReviewMetadata {
+  id: string;
+  title: string;
+  version: number;
+  section: SectionName;
+  snippet: string;
+  score: number;
+  citations: Citation[];
+}
 
-export interface ReaderFlag { id: string; entry_id: string; request_id: string; observed_version: number; category: 'incorrect' | 'outdated' | 'unclear'; section: SectionName | null; description: string; created_at: string; resolution: 'corrected' | 'confirmed_current' | 'dismissed' | null; resolved_at: string | null; reporter_subject?: string; resolution_note?: string | null }
-export interface MaintenanceState { summary?: { drafts: number; overdue: number; open_flags: number }; owner_subject: string | null; owner_name: string | null; owner_unavailable: boolean; maintenance_started_at: string | null; run_revision: number; history: { previous_owner: string | null; owner_subject: string; actor_subject: string; at: string; reason: string; started_maintenance: boolean }[] }
+export interface ReaderFlag {
+  id: string;
+  entry_id: string;
+  request_id: string;
+  observed_version: number;
+  category: 'incorrect' | 'outdated' | 'unclear';
+  section: SectionName | null;
+  description: string;
+  created_at: string;
+  resolution: 'corrected' | 'confirmed_current' | 'dismissed' | null;
+  resolved_at: string | null;
+  reporter_subject?: string;
+  resolution_note?: string | null;
+}
+export interface MaintenanceState {
+  summary?: { drafts: number; overdue: number; open_flags: number };
+  owner_subject: string | null;
+  owner_name: string | null;
+  owner_unavailable: boolean;
+  maintenance_started_at: string | null;
+  run_revision: number;
+  history: {
+    previous_owner: string | null;
+    owner_subject: string;
+    actor_subject: string;
+    at: string;
+    reason: string;
+    started_maintenance: boolean;
+  }[];
+}
 
-export interface FollowUpReceipt { id: string; run_id: string; kind: 'request'; question: string; status: 'pending' | 'scheduled' | 'awaiting_review' | 'resolved' | 'deferred' | 'dismissed'; revision: number; resolved_at?: string | null }
-export interface FollowUpGap { id: string; kind: 'request' | 'open_section'; status: FollowUpReceipt['status']; revision: number; question?: string; open_question?: string | null; entry_title?: string; entry_id?: string | null; section?: SectionName | null; entry_version?: number; target_entry_id?: string | null; target_section?: SectionName | null; new_topic?: boolean; topic_label?: string | null; seed_question?: string | null; priority: number; reason?: string | null; group_id?: string | null; live?: boolean; attempts: { session_id: string; outcome: string; question_turn?: number | null; recorded_at: string }[]; resolved_entry_id?: string | null; resolved_version?: number | null }
-export interface FollowUpProposal { id: string; session_id: string; entry_id: string; title: string; status: 'pending' | 'applied'; revision: number; base_version: number; entry_version: number; entry_status: EntrySummary['status']; stale: boolean; can_apply: boolean; maintenance_revision?: number | null; sections: { section: SectionName; base: Section; added: Claim[]; merged: Section; replaced: Section; clears_open: boolean }[]; unchanged_sections: SectionName[]; unsupported: { section: SectionName; claim_index: number; terms: string[] }[]; applied_version?: number | null }
+export interface FollowUpReceipt {
+  id: string;
+  run_id: string;
+  kind: 'request';
+  question: string;
+  status: 'pending' | 'scheduled' | 'awaiting_review' | 'resolved' | 'deferred' | 'dismissed';
+  revision: number;
+  resolved_at?: string | null;
+}
+export interface FollowUpGap {
+  id: string;
+  kind: 'request' | 'open_section';
+  status: FollowUpReceipt['status'];
+  revision: number;
+  question?: string;
+  open_question?: string | null;
+  entry_title?: string;
+  entry_id?: string | null;
+  section?: SectionName | null;
+  entry_version?: number;
+  target_entry_id?: string | null;
+  target_section?: SectionName | null;
+  new_topic?: boolean;
+  topic_label?: string | null;
+  seed_question?: string | null;
+  priority: number;
+  reason?: string | null;
+  group_id?: string | null;
+  live?: boolean;
+  attempts: {
+    session_id: string;
+    outcome: string;
+    question_turn?: number | null;
+    recorded_at: string;
+  }[];
+  resolved_entry_id?: string | null;
+  resolved_version?: number | null;
+}
+export interface FollowUpProposal {
+  id: string;
+  session_id: string;
+  entry_id: string;
+  title: string;
+  status: 'pending' | 'applied';
+  revision: number;
+  base_version: number;
+  entry_version: number;
+  entry_status: EntrySummary['status'];
+  stale: boolean;
+  can_apply: boolean;
+  maintenance_revision?: number | null;
+  sections: {
+    section: SectionName;
+    base: Section;
+    added: Claim[];
+    merged: Section;
+    replaced: Section;
+    clears_open: boolean;
+  }[];
+  unchanged_sections: SectionName[];
+  unsupported: { section: SectionName; claim_index: number; terms: string[] }[];
+  applied_version?: number | null;
+}
