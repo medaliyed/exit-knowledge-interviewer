@@ -39,6 +39,11 @@ The implementation is in `eki.graph.workflow._draft_plan`,
 `eki.interview.generation`, `eki.interview.drafting` and
 `eki.interview.service.InterviewService.draft_plan`.
 
+Synchronous connection acquisition, dependency queries and cleanup run in
+database workers alongside the existing store calls. Cancellation waits for an
+active worker to finish before closing its connection, so slow database work
+does not stall the event loop or continue using an already released connection.
+
 ## Selection and question validation
 
 The default selection is the ten highest gap scores plus any additional topic

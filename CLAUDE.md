@@ -26,6 +26,11 @@ connections from `eki.pool` (psycopg-pool, one pool per connection string, up to
 10 connections, 5 s wait); returning one releases session advisory locks. The
 interview service, migrations, startup checks and CLI one-shots use direct
 connections. Tests close each scratch schema's pool in teardown.
+Async interview connection acquisition, dependency queries and cleanup run in
+workers through `eki.async_db.db` (also exported as `eki.graph.workflow.db`).
+Cancellation waits for the current worker call before its connection is closed;
+cancelled connection attempts close any connection they create. Stream-owned
+connections retain their session locks until completion or explicit close.
 
 ## Commands
 

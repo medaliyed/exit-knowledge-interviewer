@@ -6,7 +6,7 @@ restarted process continues any session from its last question.
 """
 
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -100,6 +100,31 @@ class InterviewService:
     def _connect(self) -> psycopg.Connection:
         return psycopg.connect(self.dsn, autocommit=True)
 
+    async def _open(self) -> psycopg.Connection:
+        """Open off-loop; cancellation must close even a connection created after it arrives."""
+        conn: psycopg.Connection | None = None
+
+        def connect() -> psycopg.Connection:
+            nonlocal conn
+            conn = self._connect()
+            return conn
+
+        try:
+            return await db(connect)
+        except BaseException:
+            if conn is not None:
+                await db(conn.close)
+            raise
+
+    @asynccontextmanager
+    async def _connection(self) -> AsyncIterator[psycopg.Connection]:
+        """Own one connection across async steps, including off-loop failure cleanup."""
+        conn = await self._open()
+        try:
+            yield conn
+        finally:
+            await db(conn.close)
+
     def _deps(
         self,
         conn: psycopg.Connection,
@@ -108,7 +133,7 @@ class InterviewService:
         plan_id: UUID | None = None,
         session_id: UUID | None = None,
     ) -> Deps:
-        """Node dependencies, with both models traced under the given IDs."""
+        """Build in a database worker: resolving budgets and artifact models can query Postgres."""
         recorder = AuditRecorder(self.dsn)
         if session_id is not None:
             session = store.load_session(conn, session_id)
@@ -151,13 +176,13 @@ class InterviewService:
     # --- plans ---
 
     async def generation_status(self, run_id: UUID, generation_id: UUID) -> dict[str, Any]:
-        with self._connect() as conn:
+        async with self._connection() as conn:
             return await db(generation.read, conn, run_id, generation_id)
 
     async def draft_plan(self, run_id: UUID, *, generation_id: UUID | None = None) -> InterviewPlan:
         """Start a new generation or resume a known one, retaining validated topic results."""
         plan_id = generation_id or uuid4()
-        with self._connect() as conn:
+        async with self._connection() as conn:
             if not await db(store.run_exists, conn, run_id):
                 raise NotFoundError(f"no completed run {run_id}")
             await db(maintenance.capture, conn, run_id)
@@ -172,7 +197,7 @@ class InterviewService:
             if existing is not None and existing.status == "approved":
                 return existing
             try:
-                deps = self._deps(conn, run_id=run_id, plan_id=plan_id)
+                deps = await db(self._deps, conn, run_id=run_id, plan_id=plan_id)
                 async with open_workflow(self.dsn, deps, self.agent) as workflow:
                     config = thread_config(plan_id)
                     snapshot = await workflow.aget_state(config)
@@ -207,7 +232,7 @@ class InterviewService:
         return plan
 
     async def get_plan(self, plan_id: UUID) -> InterviewPlan:
-        with self._connect() as conn:
+        async with self._connection() as conn:
             plan = await db(store.load_plan, conn, plan_id)
         if plan is None:
             raise NotFoundError(f"no plan {plan_id}")
@@ -215,7 +240,7 @@ class InterviewService:
 
     async def session_for_plan(self, plan_id: UUID) -> UUID | None:
         """The session opened by approving this plan, if it has been approved."""
-        with self._connect() as conn:
+        async with self._connection() as conn:
             return await db(store.session_of_plan, conn, plan_id)
 
     async def edit_plan(
@@ -268,7 +293,7 @@ class InterviewService:
 
     async def approve(self, plan_id: UUID, by: str, *, expected_revision: int) -> SessionView:
         """Freeze the plan, open its session and ask the first question."""
-        with self._connect() as conn:
+        async with self._connection() as conn:
             plan_run = await db(
                 lambda: conn.execute(
                     "SELECT run_id FROM interview_plans WHERE id=%s", (plan_id,)
@@ -306,7 +331,9 @@ class InterviewService:
             # A durable session also identifies the budget recorder before its first call.
             if follow_up:
                 new_session = await db(store.create_session, conn, new_session, plan.id, respondent)
-            deps = self._deps(conn, run_id=plan.run_id, plan_id=plan_id, session_id=new_session)
+            deps = await db(
+                self._deps, conn, run_id=plan.run_id, plan_id=plan_id, session_id=new_session
+            )
             async with open_workflow(self.dsn, deps, self.agent) as workflow:
                 config = thread_config(plan_id)
                 if follow_up and not (await workflow.aget_state(config)).values:
@@ -369,7 +396,7 @@ class InterviewService:
         return await db(work)
 
     async def receipt(self, session_id: UUID, message_id: UUID) -> dict[str, Any]:
-        with self._connect() as conn:
+        async with self._connection() as conn:
             session = await db(store.load_session, conn, session_id)
             if session is None:
                 raise NotFoundError("session not found")
@@ -389,7 +416,7 @@ class InterviewService:
             return found.public()
 
     async def receipts(self, session_id: UUID) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        async with self._connection() as conn:
             ids = await db(lambda: [r.id for r in delivery.pending(conn, session_id)])
         return [await self.receipt(session_id, mid) for mid in ids]
 
@@ -409,11 +436,11 @@ class InterviewService:
                 None if receipt is None else receipt.id,
             )
         except BaseException:
-            conn.close()
+            await db(conn.close)
             raise
 
     async def _locked(self, session_id: UUID) -> tuple[psycopg.Connection, Session]:
-        conn = self._connect()
+        conn = await self._open()
         try:
             session = await db(store.load_session, conn, session_id)
             if session is None:
@@ -428,7 +455,7 @@ class InterviewService:
                 raise BusyError("another message for this session is being handled")
             return conn, session
         except BaseException:
-            conn.close()
+            await db(conn.close)
             raise
 
     async def post(
@@ -515,11 +542,12 @@ class InterviewService:
                 self._stream(conn, session, receipt, modern=modern), conn, receipt.id
             )
         except BaseException:
-            conn.close()
+            await db(conn.close)
             raise
 
     async def _pending(self, conn: psycopg.Connection, session: Session) -> dict[str, Any] | None:
-        async with open_workflow(self.dsn, self._deps(conn), self.agent) as workflow:
+        deps = await db(self._deps, conn)
+        async with open_workflow(self.dsn, deps, self.agent) as workflow:
             snapshot = await workflow.aget_state(thread_config(session.plan_id))
         return next(
             (
@@ -605,8 +633,12 @@ class InterviewService:
             correction = receipt is not None and receipt.turn.kind == "correction"
             run = not (correction and session.status == "finished")
             if run:
-                deps = self._deps(
-                    conn, run_id=session.run_id, plan_id=session.plan_id, session_id=session.id
+                deps = await db(
+                    self._deps,
+                    conn,
+                    run_id=session.run_id,
+                    plan_id=session.plan_id,
+                    session_id=session.id,
                 )
                 async with open_workflow(self.dsn, deps, self.agent) as workflow:
                     # No interrupt means a node was interrupted mid-execution. Replaying
@@ -663,7 +695,7 @@ class InterviewService:
             except (AuditError, psycopg.Error):
                 pass  # the durable processing receipt is recoverable on reconnect
             finally:
-                conn.close()
+                await db(conn.close)
 
 
 @dataclass
@@ -684,7 +716,7 @@ class MessageStream(AsyncIterator[Event]):
         try:
             await self.iterator.aclose()
         finally:
-            self.conn.close()
+            await db(self.conn.close)
 
 
 def build_service(settings: Settings) -> InterviewService:

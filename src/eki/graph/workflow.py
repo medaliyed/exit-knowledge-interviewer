@@ -18,7 +18,6 @@ topic. The record (plan, transcript, notes, open items) lives in the interview
 tables; nodes write it in a way that is safe to repeat.
 """
 
-import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
@@ -34,6 +33,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 
+from eki.async_db import db as db
 from eki.audit import AuditRecorder
 from eki.followup import sessions as follow_ups
 from eki.ingest.embedding import Embedder
@@ -103,10 +103,6 @@ class _BoundNode(Protocol):
     """A node as LangGraph wants it: one argument, named ``state``."""
 
     async def __call__(self, state: InterviewState) -> dict[str, Any]: ...
-
-
-db = asyncio.to_thread
-"""Run a blocking database call off the event loop."""
 
 
 def thread_config(plan_id: UUID) -> RunnableConfig:

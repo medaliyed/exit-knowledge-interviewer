@@ -29,6 +29,15 @@ recoverable work; status becomes `needs_retry` when storage is available. A hard
 process death releases its advisory lock; status reads recognize abandoned
 `processing` receipts as needing retry.
 
+Connection opening, dependency lookups, queries and connection closing run in
+database workers, so slow Postgres operations do not block the API event loop.
+The stream retains its connection and session lock until completion or explicit
+close, including close before the first event. Cancellation waits for the active
+database worker before closing the connection or releasing its locks; cancelled
+connection attempts close any connection they finish creating. Accepted answers
+remain recoverable through the same receipts. This does not cancel an already
+running SQL statement or change the replay boundaries below.
+
 - `GET /sessions/{id}/messages` lists outstanding receipts.
 - `GET /sessions/{id}/messages/{message_id}` returns status, turn/target IDs and
   the terminal result. It never returns the expert's message text.
