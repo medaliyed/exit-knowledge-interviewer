@@ -110,7 +110,10 @@ all get the same 401 response. Unknown accounts still incur a dummy hash check.
 After five failed attempts per email in fifteen minutes, backoff starts at one
 minute and doubles with further failures, capped at fifteen minutes. Fifty
 failures per client IP block it for fifteen minutes. Link endpoints share the
-per-IP limit. The API returns 429 and `Retry-After`; the UI shows retry minutes.
+per-IP limit. A wrong current password in `POST /auth/password` counts as a
+failed attempt for that account, so a stolen session cannot guess it without
+limit; once throttled, both password change and sign-in wait. The API returns
+429 and `Retry-After`; the UI shows retry minutes.
 
 Behind a reverse proxy or load balancer, set `EKI_TRUSTED_PROXIES` to its
 addresses or networks (comma separated, e.g. `10.0.0.0/8`). Otherwise every

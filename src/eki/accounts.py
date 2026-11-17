@@ -625,20 +625,24 @@ def _ip_retry_after(conn: psycopg.Connection, key: str, *, now: datetime) -> int
     )
 
 
+def _email_retry_after(conn: psycopg.Connection, key: str, *, now: datetime) -> int:
+    return _retry_after(
+        conn,
+        "email",
+        key,
+        now=now,
+        window=EMAIL_WINDOW,
+        threshold=EMAIL_FAILURES,
+        base=timedelta(minutes=1),
+        cap=EMAIL_MAX_DELAY,
+    )
+
+
 def _check_throttle(
     conn: psycopg.Connection, email_key: str, ip_key: str, *, now: datetime
 ) -> None:
     wait = max(
-        _retry_after(
-            conn,
-            "email",
-            email_key,
-            now=now,
-            window=EMAIL_WINDOW,
-            threshold=EMAIL_FAILURES,
-            base=timedelta(minutes=1),
-            cap=EMAIL_MAX_DELAY,
-        ),
+        _email_retry_after(conn, email_key, now=now),
         _ip_retry_after(conn, ip_key, now=now),
     )
     if wait:
@@ -781,21 +785,35 @@ def change_password(
     now: datetime,
     policy: SessionPolicy,
 ) -> None:
-    refusal: SignInRefused | None = None
+    refusal: SignInRefused | Throttled | None = None
     with conn.transaction():
         row = conn.execute(
-            "SELECT account_id FROM auth_sessions WHERE id_hash = %s", (_hash(session_id),)
+            "SELECT s.account_id, a.email FROM auth_sessions s JOIN accounts a "
+            "ON a.id = s.account_id WHERE s.id_hash = %s",
+            (_hash(session_id),),
         ).fetchone()
+        # Wrong current passwords share the per-account sign-in counter, so a stolen
+        # session cannot guess it without limit. Counter before account row, as in sign_in.
+        email_key = None if row is None else _throttle_keys(str(row[1]), "")[0]
+        if email_key is not None:
+            _lock_throttle(conn, (("email", email_key),))
         account = None if row is None else _by_id(conn, UUID(str(row[0])), lock=True)
         principal = authenticate_session(conn, session_id, now=now, policy=policy)
-        if principal is None or account is None:
+        if principal is None or account is None or email_key is None:
             refusal = SignInRefused("sign in again")
+        elif wait := _email_retry_after(conn, email_key, now=now):
+            _audit(conn, "password_changed", "refused", subject=principal.subject)
+            refusal = Throttled(wait)
         else:
             stored = conn.execute(
                 "SELECT password_hash FROM accounts WHERE id = %s", (account.id,)
             ).fetchone()
             current_hash = stored[0] if stored else None
             if not current_hash or not verify_password(current, current_hash):
+                conn.execute(
+                    "INSERT INTO auth_throttle (key, kind, failed_at) VALUES (%s,'email',%s)",
+                    (email_key, now),
+                )
                 _audit(conn, "password_changed", "failed", subject=principal.subject)
                 refusal = SignInRefused("the current password is incorrect")
             else:

@@ -245,6 +245,29 @@ class TestCookieHTTP:
             accounts.set_disabled(conn, EMAIL, True)
         assert account_client.get("/auth/session").status_code == 401
 
+    def test_wrong_current_passwords_are_throttled_like_sign_in(
+        self, account_client: TestClient
+    ) -> None:
+        assert login(account_client).status_code == 200
+
+        def change(current: str):  # type: ignore[no-untyped-def]
+            return account_client.post(
+                "/auth/password",
+                headers=HEADERS,
+                json={"current_password": current, "new_password": NEW},
+            )
+
+        for _ in range(5):
+            assert change("wrong").status_code == 400
+        # A stolen session must not allow unlimited guessing of the current password.
+        throttled = change(GOOD)
+        assert throttled.status_code == 429
+        assert 0 < int(throttled.headers["Retry-After"]) <= 60
+        assert throttled.json()["code"] == "throttled"
+        # The guesses count for the account, so signing in elsewhere waits as well.
+        assert login(TestClient(account_client.app, base_url=ORIGIN)).status_code == 429
+        assert account_client.get("/auth/session").status_code == 200
+
     def test_setup_link_is_one_use_and_signs_in(self, scratch: Scratch) -> None:
         with scratch.connect() as conn:
             account = accounts.create_account(
