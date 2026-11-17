@@ -478,6 +478,12 @@ class GapService:
                     raise ConflictError("only pending gaps can be grouped")
                 if leader["group_id"] is not None:
                     raise ConflictError("group under the leading gap, not a grouped one")
+                # Groups are one level deep: preparing a leader reserves only its direct
+                # followers, so a grouped leader would strand its own followers.
+                if conn.execute(
+                    "SELECT 1 FROM follow_up_gaps WHERE group_id=%s LIMIT 1", (row["id"],)
+                ).fetchone():
+                    raise ConflictError("this gap leads a group; group the other gaps under it")
                 update["group_id"] = group_with
             update["revision"] = row["revision"] + 1
             with conn.cursor(row_factory=dict_row) as cursor:

@@ -131,6 +131,34 @@ async def test_reopened_grouped_request_can_be_selected_independently(scratch: S
     assert reopened["status"] == "pending" and reopened["group_id"] is None
 
 
+async def test_a_group_leader_cannot_be_grouped_under_another_gap(scratch: Scratch) -> None:
+    world = await gap_world(scratch)
+    gaps = GapService(scratch.dsn)
+    leader, _ = gaps.save_request(world.run_id, READER, request_id=uuid4(), question="Who signs?")
+    middle, _ = gaps.save_request(world.run_id, READER, request_id=uuid4(), question="Who checks?")
+    follower, _ = gaps.save_request(world.run_id, READER, request_id=uuid4(), question="When?")
+    gaps.triage(
+        world.run_id,
+        follower["id"],
+        OWNER,
+        action="group",
+        expected_revision=0,
+        group_with=UUID(middle["id"]),
+    )
+    # Grouping `middle` under `leader` would leave `follower` two levels deep, where
+    # preparing the leader never reserves it and it can never be selected again.
+    with pytest.raises(ConflictError, match="leads a group"):
+        gaps.triage(
+            world.run_id,
+            middle["id"],
+            OWNER,
+            action="group",
+            expected_revision=0,
+            group_with=UUID(leader["id"]),
+        )
+    assert queue(scratch, world.run_id)[middle["id"]]["group_id"] is None
+
+
 async def test_request_resolution_checks_authority_revision_and_public_target(
     scratch: Scratch,
 ) -> None:
