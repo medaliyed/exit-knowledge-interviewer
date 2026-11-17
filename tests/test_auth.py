@@ -5,7 +5,7 @@ import json
 import pytest
 
 from eki.auth import AuthenticationError, TokenAuthenticator
-from eki.config import ConfigError
+from eki.config import ConfigError, Settings
 
 TOKEN = "test-only-owner-bearer-credential-0001"
 
@@ -49,7 +49,10 @@ def test_every_data_endpoint_requires_credentials_and_documents_bearer_auth() ->
 
     from eki.api.app import create_app
 
-    app = create_app(authenticator=TokenAuthenticator("[]"))
+    # Explicit settings keep this independent of .env and of CI's environment; no database
+    # connection is made because every request is rejected before authorization.
+    settings = Settings(_env_file=None, database_url="postgresql://unused")
+    app = create_app(authenticator=TokenAuthenticator("[]"), settings=settings)
     schema = app.openapi()
     assert schema["components"]["securitySchemes"]["BearerAuth"]["scheme"] == "bearer"
     client = TestClient(app)

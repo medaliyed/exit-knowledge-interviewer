@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from eki.access import set_owner, set_readers
 from eki.api.app import create_app
+from eki.config import Settings
 from eki.runbook.service import RunbookService
 from eki.web import routes
 from tests.conftest import Scratch
@@ -26,7 +27,10 @@ def test_browser_paths_do_not_intercept_api_or_missing_assets(
     (build / "index.html").write_text(shell)
     (build / "app.js").write_text("console.log('workspace');")
     monkeypatch.setattr(routes, "ASSETS", tmp_path)
-    client = TestClient(create_app())
+    # Explicit settings: the credential checks below must not depend on a developer's .env
+    # or on CI exporting a database URL (no connection is made before a 401).
+    settings = Settings(_env_file=None, database_url="postgresql://unused")
+    client = TestClient(create_app(settings=settings))
     for path in ("/", "/workspace", "/workspace/", "/workspace/handovers/example/plans"):
         response = client.get(path)
         assert response.status_code == 200
