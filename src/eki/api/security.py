@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from eki import access, accounts, maintenance
+from eki import access, accounts, maintenance, pool
 from eki.audit import audit_context
 from eki.auth import AuthenticationError, Authenticator, Principal, acting_as
 from eki.config import ConfigError, Settings
@@ -131,7 +131,7 @@ def install_security(
 
             def authorize() -> tuple[Principal, bool] | Response:
                 """Session, account status and resource access, all on one connection."""
-                with psycopg.connect(dsn(), autocommit=True) as conn:
+                with pool.connection(dsn()) as conn:
                     if raw:
                         # A disabled account's session is refused here, so the cookie
                         # path needs no separate account-status check.

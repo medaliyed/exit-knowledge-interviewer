@@ -12,6 +12,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from eki import pool
 from eki.ingest.redaction import redact
 from eki.llm import ChatModel, Message, Reply, ToolSpec
 
@@ -259,7 +260,7 @@ class AuditRecorder:
     ) -> None:
         ids = current_context().run_ids if run_ids is None else run_ids
         try:
-            with psycopg.connect(self.dsn, autocommit=True) as conn, conn.transaction():
+            with pool.connection(self.dsn) as conn, conn.transaction():
                 for run_id in tuple(dict.fromkeys(ids)) or (None,):
                     append_event(conn, kind, phase, details, run_id=run_id, call_id=call_id)
         except psycopg.Error:

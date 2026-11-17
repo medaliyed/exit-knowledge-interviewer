@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from eki import __version__, access, accounts
+from eki import __version__, access, accounts, pool
 from eki.api import access_log
 from eki.api.accounts import install_accounts
 from eki.api.followup import install_followup
@@ -646,7 +646,7 @@ def create_app(
         actor(request, approval.approved_by)
 
         def expert() -> None:
-            with psycopg.connect(service.dsn, autocommit=True) as conn:
+            with pool.connection(service.dsn) as conn:
                 row = conn.execute(
                     "SELECT r.expert_name FROM ingest_runs r "
                     "JOIN interview_plans p ON p.run_id=r.id WHERE p.id=%s",
@@ -807,7 +807,7 @@ def create_app(
         run_id: UUID, request: Request, search: Search, after: int = 0, limit: int = 100
     ) -> dict[str, object]:
         def read() -> list[dict[str, object]]:
-            with psycopg.connect(search.dsn, autocommit=True) as conn:
+            with pool.connection(search.dsn) as conn:
                 if not identity(request).admin:
                     access.require_manager(conn, run_id, identity(request))
                 return list_events(conn, run_id, after=after, limit=limit)

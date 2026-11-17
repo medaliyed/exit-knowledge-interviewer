@@ -1,6 +1,7 @@
 """Cookie-session endpoints. Passwords stay secret-typed until the account boundary."""
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from ipaddress import ip_address
@@ -11,7 +12,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from eki import accounts
+from eki import accounts, pool
 from eki.api.security import cookie_name, identity, session_policy
 from eki.config import Settings, proxy_networks
 from eki.graph.workflow import db
@@ -75,8 +76,8 @@ def auth_error(status: int, detail: str, code: str) -> JSONResponse:
 def install_accounts(
     app: FastAPI, dsn: Callable[[], str], configuration: Callable[[], Settings]
 ) -> None:
-    def connection() -> psycopg.Connection:
-        return psycopg.connect(dsn(), autocommit=True)
+    def connection() -> AbstractContextManager[psycopg.Connection]:
+        return pool.connection(dsn())
 
     def public_identity(conn: psycopg.Connection, request: Request) -> dict[str, Any]:
         principal = identity(request)

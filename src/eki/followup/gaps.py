@@ -5,6 +5,7 @@ triage need only the run and gaps. Readers only see their own safe request recei
 """
 
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -14,7 +15,7 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from eki import access, maintenance, throttle
+from eki import access, maintenance, pool, throttle
 from eki.audit import AuditDetails, append_event
 from eki.auth import Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
@@ -119,8 +120,8 @@ class GapService:
     domains: frozenset[str] = frozenset()
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
-    def _connect(self) -> psycopg.Connection:
-        return psycopg.connect(self.dsn, autocommit=True)
+    def _connect(self) -> AbstractContextManager[psycopg.Connection]:
+        return pool.connection(self.dsn)
 
     def _clean(self, text: str) -> str:
         return str(redact(text.strip(), work_email_domains=self.domains).text)

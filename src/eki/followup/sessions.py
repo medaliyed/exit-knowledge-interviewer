@@ -6,6 +6,7 @@ No model is called here. Lock order: run, gap rows (stable id order), plan.
 import hashlib
 import json
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -14,7 +15,7 @@ from uuid import UUID
 import psycopg
 from psycopg import sql
 
-from eki import maintenance
+from eki import maintenance, pool
 from eki.audit import AuditDetails, AuditError, AuditRecorder, Kind, Phase, append_event
 from eki.auth import AuthenticationError, Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
@@ -121,7 +122,7 @@ class FollowUpRecorder(AuditRecorder):
         if kind != "model":
             return super().record(kind, phase, details, call_id=call_id, run_ids=run_ids)
         try:
-            with psycopg.connect(self.dsn, autocommit=True) as conn, conn.transaction():
+            with pool.connection(self.dsn) as conn, conn.transaction():
                 session = store.load_session(conn, self.session_id)
                 if session is None:
                     raise NotFoundError("session not found")
@@ -388,8 +389,8 @@ class FollowUpService:
     domains: frozenset[str] = frozenset()
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
-    def _connect(self) -> psycopg.Connection:
-        return psycopg.connect(self.dsn, autocommit=True)
+    def _connect(self) -> AbstractContextManager[psycopg.Connection]:
+        return pool.connection(self.dsn)
 
     def _clean(self, text: str) -> RedactedText:
         return redact(text.strip(), work_email_domains=self.domains).text

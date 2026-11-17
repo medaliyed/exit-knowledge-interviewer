@@ -1,6 +1,7 @@
 """Runbook operations shared by HTTP and CLI, independent of model configuration."""
 
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
@@ -9,7 +10,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from eki import access, maintenance
+from eki import access, maintenance, pool
 from eki.audit import AuditDetails, append_event
 from eki.auth import current_principal
 from eki.errors import ConflictError, NotFoundError
@@ -148,8 +149,8 @@ class RunbookService:
     work_email_domains: frozenset[str] = field(default_factory=frozenset)
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
-    def _connect(self) -> psycopg.Connection:
-        return psycopg.connect(self.dsn, autocommit=True)
+    def _connect(self) -> AbstractContextManager[psycopg.Connection]:
+        return pool.connection(self.dsn)
 
     def synthesise(
         self, session_id: UUID, *, overwrite_edits: bool = False

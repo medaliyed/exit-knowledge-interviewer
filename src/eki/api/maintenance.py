@@ -5,11 +5,10 @@ from datetime import date
 from typing import Any, Literal
 from uuid import UUID
 
-import psycopg
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from eki import maintenance
+from eki import maintenance, pool
 from eki.accounts import Throttled
 from eki.api.security import identity
 from eki.auth import Principal
@@ -76,7 +75,7 @@ def install_maintenance(
     @app.get("/runs/{run_id}/maintenance")
     async def run_state(run_id: UUID, request: Request) -> dict[str, Any]:
         def work() -> dict[str, Any]:
-            with psycopg.connect(dsn(), autocommit=True) as conn:
+            with pool.connection(dsn()) as conn:
                 return maintenance.state(conn, run_id, identity(request))
 
         return await operation(work)
@@ -84,7 +83,7 @@ def install_maintenance(
     @app.post("/runs/{run_id}/handover")
     async def handover(run_id: UUID, body: Handover, request: Request) -> dict[str, Any]:
         def work() -> dict[str, Any]:
-            with psycopg.connect(dsn(), autocommit=True) as conn:
+            with pool.connection(dsn()) as conn:
                 return maintenance.transfer(
                     conn,
                     run_id,
@@ -127,7 +126,7 @@ def install_maintenance(
         offset: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         def work() -> dict[str, Any]:
-            with psycopg.connect(dsn(), autocommit=True) as conn:
+            with pool.connection(dsn()) as conn:
                 return maintenance.queue(
                     conn, run_id, identity(request), filter=filter, limit=limit, offset=offset
                 )

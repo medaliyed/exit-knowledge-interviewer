@@ -7,8 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
+from eki import pool
 from eki.access import VISIBLE_RUN, approved_entry, visible_params
 from eki.auth import Principal
 from eki.errors import NotFoundError
@@ -102,7 +101,7 @@ class ExportService:
     work_email_domains: frozenset[str] = field(default_factory=frozenset)
 
     def entry(self, principal: Principal, entry_id: UUID) -> str:
-        with psycopg.connect(self.dsn, autocommit=True) as conn:
+        with pool.connection(self.dsn) as conn:
             stored = approved_entry(conn, entry_id, principal)
             return render_markdown(
                 stored.entry,
@@ -112,7 +111,7 @@ class ExportService:
             )
 
     def run(self, principal: Principal, run_id: UUID) -> str:
-        with psycopg.connect(self.dsn, autocommit=True) as conn:
+        with pool.connection(self.dsn) as conn:
             allowed = conn.execute(
                 "SELECT 1 FROM ingest_runs r WHERE r.id = %s AND " + VISIBLE_RUN,  # noqa: S608
                 (run_id, *visible_params(principal)),

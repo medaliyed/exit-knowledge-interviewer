@@ -11,6 +11,7 @@ from mcp import Client
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
+from eki import pool
 from eki.config import get_settings
 from eki.db import connect, migrate
 from eki.graph.workflow import setup_checkpoints
@@ -75,6 +76,7 @@ def scratch() -> Iterator[Scratch]:
         setup_checkpoints(dsn)
         yield Scratch(schema=schema, dsn=dsn)
     finally:
+        pool.close(dsn)  # each test's schema has its own pool; release its connections
         with psycopg.connect(base, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 

@@ -21,7 +21,11 @@ Python 3.12 with uv. FastAPI (async, SSE). LangGraph 1.x with Postgres
 checkpointer. Postgres 16 + pgvector. MCP Python SDK, one read-only server per
 source (git, tickets, selected-folder mail). LiteLLM as model gateway, model names from
 config. Langfuse self-hosted via Docker for tracing. pytest, ruff, mypy.
-Docker Compose for local infra.
+Docker Compose for local infra. Request-path database work borrows autocommit
+connections from `eki.pool` (psycopg-pool, one pool per connection string, up to
+10 connections, 5 s wait); returning one releases session advisory locks. The
+interview service, migrations, startup checks and CLI one-shots use direct
+connections. Tests close each scratch schema's pool in teardown.
 
 ## Commands
 

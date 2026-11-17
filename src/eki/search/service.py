@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-import psycopg
 from psycopg import sql
 
+from eki import pool
 from eki.access import VISIBLE_RUN, visible_params
 from eki.audit import audit_context
 from eki.auth import Principal
@@ -105,7 +105,7 @@ class SearchService:
             raise ValueError("limit must be between 1 and 50")
         if not query_tokens(clean):
             return []
-        with psycopg.connect(self.dsn, autocommit=True) as conn:
+        with pool.connection(self.dsn) as conn:
             refresh(
                 conn,
                 principal,
@@ -189,7 +189,7 @@ class SearchService:
             ]
 
     def has_overdue(self, principal: Principal, query: str) -> bool:
-        with psycopg.connect(self.dsn, autocommit=True) as conn:
+        with pool.connection(self.dsn) as conn:
             return (
                 conn.execute(
                     sql.SQL(

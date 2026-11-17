@@ -3,6 +3,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -378,8 +379,7 @@ class TestCookieHTTP:
     ) -> None:
         import types
 
-        import psycopg
-
+        from eki import pool
         from eki.api import security
 
         session = await finished(scratch)
@@ -406,18 +406,12 @@ class TestCookieHTTP:
         assert login(client).status_code == 200
         opened = [0]
 
-        def connect(*args: object, **kwargs: object) -> psycopg.Connection:
+        def connection(dsn: str) -> Any:
             opened[0] += 1
-            return psycopg.connect(*args, **kwargs)  # type: ignore[arg-type]
+            return pool.connection(dsn)
 
-        # Only the middleware's own connections are counted; handlers use their own modules.
-        monkeypatch.setattr(
-            security,
-            "psycopg",
-            types.SimpleNamespace(
-                connect=connect, Error=psycopg.Error, Connection=psycopg.Connection
-            ),
-        )
+        # Only the middleware's own borrows are counted; handlers use their own modules.
+        monkeypatch.setattr(security, "pool", types.SimpleNamespace(connection=connection))
         assert client.get(f"/entries/{entry.entry.id}").status_code == 200
         assert opened[0] == 1  # session, account status and ACL on one connection
         with scratch.connect() as conn:

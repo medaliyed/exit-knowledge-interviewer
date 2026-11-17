@@ -15,6 +15,7 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
+from eki import pool
 from eki.audit import AuditRecorder, audit_context
 from eki.db import migrate
 from eki.evals.budget import BudgetedModel, CallBudget
@@ -94,6 +95,7 @@ def scratch_schema(base_dsn: str) -> Iterator[str]:
         setup_checkpoints(make_conninfo(base_dsn, options=f"-c search_path={schema}"))
         yield dsn
     finally:
+        pool.close(dsn)  # the scenario's services borrowed pooled connections to this schema
         with psycopg.connect(base_dsn, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 

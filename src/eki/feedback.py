@@ -1,6 +1,7 @@
 """Reader feedback and owner triage with transaction-local ACL/version checks."""
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -9,7 +10,7 @@ from uuid import UUID, uuid4
 import psycopg
 from psycopg.rows import dict_row
 
-from eki import access, maintenance, throttle
+from eki import access, maintenance, pool, throttle
 from eki.audit import AuditDetails, append_event
 from eki.auth import Principal, acting_as
 from eki.errors import ConflictError, NotFoundError
@@ -43,8 +44,8 @@ class FeedbackService:
     domains: frozenset[str] = frozenset()
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
-    def _connect(self) -> psycopg.Connection:
-        return psycopg.connect(self.dsn, autocommit=True)
+    def _connect(self) -> AbstractContextManager[psycopg.Connection]:
+        return pool.connection(self.dsn)
 
     def _flag(
         self, conn: psycopg.Connection, flag_id: UUID | str, principal: Principal

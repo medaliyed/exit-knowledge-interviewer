@@ -4,10 +4,10 @@ from collections.abc import Callable
 from typing import Any, Literal
 from uuid import UUID
 
-import psycopg
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from eki import pool
 from eki.accounts import Throttled
 from eki.api.security import identity
 from eki.followup.gaps import GapService
@@ -128,7 +128,7 @@ def install_followup(
         run_id: UUID, body: FollowUpRequest, request: Request, response: Response
     ) -> dict[str, Any]:
         def work() -> dict[str, Any]:
-            with psycopg.connect(dsn(), autocommit=True) as conn:
+            with pool.connection(dsn()) as conn:
                 existed = store.load_plan(conn, body.request_id) is not None
             plan = FollowUpService(dsn(), domains()).prepare(
                 run_id,

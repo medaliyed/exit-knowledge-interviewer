@@ -499,25 +499,27 @@ async def test_ask_never_opens_a_database_connection_on_the_event_loop(
 ) -> None:
     import threading
 
-    import psycopg
-
     from eki.search.answers import AnswerService
     from eki.search.service import SearchService
     from tests.search_support import READER
 
     await search_world(scratch)
+    from eki import pool
+
     loop_thread = threading.get_ident()
     on_loop = [0]
-    real = psycopg.connect
+    borrowed = [0]
+    real = pool.connection
 
-    def connect(*args: Any, **kwargs: Any) -> psycopg.Connection:
+    def connection(*args: Any, **kwargs: Any) -> Any:
+        borrowed[0] += 1
         if threading.get_ident() == loop_thread:
-            on_loop[0] += 1  # a blocking connect here stalls every other request
+            on_loop[0] += 1  # blocking database work here stalls every other request
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(psycopg, "connect", connect)
+    monkeypatch.setattr(pool, "connection", connection)
     answer = await AnswerService(SearchService(scratch.dsn)).ask(
         READER, "How do I run month-end reconciliation?"
     )
     assert answer.status == "answered"
-    assert on_loop[0] == 0
+    assert borrowed[0] > 0 and on_loop[0] == 0

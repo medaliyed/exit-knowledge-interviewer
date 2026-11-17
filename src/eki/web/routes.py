@@ -6,12 +6,11 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from eki import access
+from eki import access, pool
 from eki.api.security import identity
 from eki.graph.workflow import db
 from eki.runbook.maintenance import info
@@ -51,7 +50,7 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
         principal = identity(request)
 
         def read() -> list[dict[str, Any]]:
-            with psycopg.connect(dsn(), autocommit=True) as conn:
+            with pool.connection(dsn()) as conn:
                 rows = conn.execute(
                     "SELECT r.id, r.expert_name, r.since, r.until, r.status, r.owner_subject,"
                     "r.maintenance_started_at,coalesce(a.name,r.owner_subject),a.disabled "
@@ -84,7 +83,7 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
     @app.get("/runs/{run_id}/plans")
     async def plans(run_id: UUID) -> list[dict[str, Any]]:
         def read() -> list[dict[str, Any]]:
-            with psycopg.connect(dsn(), autocommit=True) as conn:
+            with pool.connection(dsn()) as conn:
                 rows = conn.execute(
                     "SELECT p.id, p.status, s.id, p.kind, s.status FROM interview_plans p "
                     "LEFT JOIN sessions s ON s.plan_id=p.id WHERE p.run_id=%s "
@@ -109,7 +108,7 @@ def install_browser(app: FastAPI, dsn: Callable[[], str]) -> None:
         principal = identity(request)
 
         def read() -> list[dict[str, Any]]:
-            with psycopg.connect(dsn(), autocommit=True) as conn:
+            with pool.connection(dsn()) as conn:
                 rows = conn.execute(
                     "SELECT e.id, e.title, e.version FROM runbook_entries e "  # noqa: S608 - fixed ACL
                     "JOIN sessions s ON s.id=e.session_id JOIN interview_plans p ON p.id=s.plan_id "

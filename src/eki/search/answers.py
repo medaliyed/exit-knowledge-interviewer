@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
-import psycopg
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from eki import pool
 from eki.access import approved_entry
 from eki.audit import AuditedModel, AuditRecorder
 from eki.auth import Principal
@@ -147,7 +147,7 @@ class AnswerService:
     model: ChatModel | None = None
 
     def _current(self, principal: Principal, hits: list[SearchHit]) -> bool:
-        with psycopg.connect(self.search.dsn, autocommit=True) as conn:
+        with pool.connection(self.search.dsn) as conn:
             reviewed = infos(conn, [h.entry.id for h in hits], self.search.clock())
             for hit in hits:
                 try:
@@ -167,7 +167,7 @@ class AnswerService:
         Access, version and freshness are checked again after model latency. Blocking
         database work, so callers run it in a worker thread.
         """
-        with psycopg.connect(self.search.dsn, autocommit=True) as conn:
+        with pool.connection(self.search.dsn) as conn:
             live = []
             reviewed = infos(conn, sorted({e.entry_id for e in chosen}), self.search.clock())
             for item in chosen:
@@ -306,7 +306,7 @@ class AnswerService:
             )
 
             def scopes() -> tuple[UUID, ...]:
-                with psycopg.connect(self.search.dsn, autocommit=True) as conn:
+                with pool.connection(self.search.dsn) as conn:
                     rows = conn.execute(
                         "SELECT DISTINCT p.run_id FROM runbook_entries e "
                         "JOIN sessions s ON s.id = e.session_id "

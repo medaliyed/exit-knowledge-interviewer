@@ -15,7 +15,7 @@ connector to a live mailbox, Git host or issue tracker.
 | --- | --- |
 | [docs/tutorial.md](docs/tutorial.md) | **Start here.** Your first run, step by step, with the output to expect |
 | [docs/ui/ui-pdr.md](docs/ui/ui-pdr.md) | What the browser workspace must do: users, screens, states, constraints, acceptance criteria |
-| [docs/PDR.md](docs/PDR.md) | Requirements F1 to F19, stack, phases, current status |
+| [docs/PDR.md](docs/PDR.md) | Requirements F1 to F22, stack, phases, current status |
 | [docs/architecture.md](docs/architecture.md) | Pipeline, components, workflow graph, data model, with diagrams |
 | [Browser workspace](docs/flows/browser-workspace.md) | Sign in, review plans, interview, recover saved work and approve entries |
 | [docs/flows/](docs/flows/index.md) | Runtime flows, recovery boundaries and known gaps |
