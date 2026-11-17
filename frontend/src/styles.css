@@ -442,6 +442,10 @@ main:focus {
   gap: 12px;
   flex-wrap: wrap;
 }
+/* A toolbar of labelled fields plus buttons: align the buttons with the inputs, not the labels. */
+.toolbar.align-end {
+  align-items: flex-end;
+}
 .between {
   justify-content: space-between;
 }

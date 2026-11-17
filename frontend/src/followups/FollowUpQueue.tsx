@@ -67,7 +67,7 @@ export function FollowUps() {
           </Button>
         </Notice>
       )}
-      <div className="toolbar">
+      <div className="toolbar align-end">
         <div className="form-field">
           <label htmlFor="gap-filter">Show gaps</label>
           <select
