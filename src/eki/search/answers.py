@@ -19,7 +19,7 @@ from eki.ingest.redaction import redact
 from eki.llm import ChatModel, Message, ModelError
 from eki.llm.litellm_model import LiteLLMModel
 from eki.llm.tracing import TracedModel, build_tracer
-from eki.runbook.maintenance import info
+from eki.runbook.maintenance import infos
 from eki.runbook.models import SECTION_NAMES, Citation, SectionName
 from eki.search.service import SearchHit, SearchService, query_tokens
 
@@ -148,12 +148,14 @@ class AnswerService:
 
     def _current(self, principal: Principal, hits: list[SearchHit]) -> bool:
         with psycopg.connect(self.search.dsn, autocommit=True) as conn:
+            reviewed = infos(conn, [h.entry.id for h in hits], self.search.clock())
             for hit in hits:
                 try:
                     current = approved_entry(conn, UUID(hit.entry.id), principal)
                 except NotFoundError:
                     return False
-                if info(conn, hit.entry.id, self.search.clock())["freshness"] == "overdue":
+                metadata = reviewed.get(hit.entry.id)
+                if metadata is None or metadata["freshness"] == "overdue":
                     return False
                 if current.version != hit.version:
                     return False
@@ -165,7 +167,6 @@ class AnswerService:
         mode: Literal["extractive", "model_selected"] = (
             "model_selected" if self.model else "extractive"
         )
-        needs_review = await asyncio.to_thread(self.search.has_overdue, principal, clean)
         intent = _intent(clean)
         opened = tuple(
             OpenQuestion(
@@ -179,14 +180,17 @@ class AnswerService:
             if (intent is None or s == intent) and h.entry.section(s).open_question is not None
         )
 
-        def abstain(
+        async def abstain(
             *, include_open: bool = True, reason: AbstentionReason = "no_supported_answer"
         ) -> Answer:
             # A specific cause (changed evidence, bounded context) outranks the generic
             # "needs review" hint, which only replaces the plain no-supported-answer case.
+            # Only that case needs the overdue probe, so answered questions never run it.
             if not include_open:
                 reason = "evidence_changed"
-            elif needs_review and reason == "no_supported_answer":
+            elif reason == "no_supported_answer" and await asyncio.to_thread(
+                self.search.has_overdue, principal, clean
+            ):
                 reason = "review_required"
             return Answer(
                 status="insufficient_evidence",
@@ -205,9 +209,9 @@ class AnswerService:
 
         ranked = _candidates(hits, clean)
         if not await asyncio.to_thread(self._current, principal, hits):
-            return abstain(include_open=False)
+            return await abstain(include_open=False)
         if not ranked:
-            return abstain()
+            return await abstain()
         if self.model is None:
             top = ranked[0][0]
             best_entry = ranked[0][1].entry_id
@@ -240,7 +244,7 @@ class AnswerService:
             }
             topical = _terms(clean) - generic
             if topical and len(topical & context) / len(topical) < 0.6:
-                return abstain()
+                return await abstain()
             chosen = [
                 e
                 for score, e in ranked
@@ -313,9 +317,9 @@ class AnswerService:
                 raise ModelError("answer selector returned invalid evidence") from error
         # Approval, versions and ACLs can change during a model call. Never return stale evidence.
         if not await asyncio.to_thread(self._current, principal, hits):
-            return abstain(include_open=False)
+            return await abstain(include_open=False)
         if not chosen:
-            return abstain()
+            return await abstain()
         # A procedure is one ordered unit: selecting a later step cannot drop prerequisites.
         # If bounded context omitted any step, abstain rather than return a partial procedure.
         all_evidence = {(e.entry_id, e.section, e.claim_index): e for _, e in ranked}
@@ -330,7 +334,7 @@ class AnswerService:
                 for index in range(len(hit.entry.steps.claims)):
                     item = all_evidence.get((hit.entry.id, "steps", index))
                     if item is None:
-                        return abstain(reason="context_limit")
+                        return await abstain(reason="context_limit")
                     group.append(item)
             for item in group:
                 key = (item.entry_id, item.section, item.claim_index)
@@ -350,14 +354,19 @@ class AnswerService:
         ]
         with psycopg.connect(self.search.dsn, autocommit=True) as conn:
             live = []
+            reviewed = infos(conn, sorted({e.entry_id for e in chosen}), self.search.clock())
             for item in chosen:
                 try:
                     current = approved_entry(conn, UUID(item.entry_id), principal)
                 except NotFoundError:
-                    return abstain(include_open=False)
-                metadata = info(conn, item.entry_id, self.search.clock())
-                if current.version != item.version or metadata["freshness"] == "overdue":
-                    return abstain(include_open=False)
+                    return await abstain(include_open=False)
+                metadata = reviewed.get(item.entry_id)
+                if (
+                    metadata is None
+                    or current.version != item.version
+                    or metadata["freshness"] == "overdue"
+                ):
+                    return await abstain(include_open=False)
                 live.append(item.model_copy(update={"maintenance": metadata}))
             chosen = live
         return Answer(

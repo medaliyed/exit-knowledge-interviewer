@@ -431,3 +431,64 @@ def test_legacy_migration_backfills_actual_approval_without_inventing_identity(
     assert empty_conn.execute(
         "SELECT maintenance_started_at,maintenance_revision FROM ingest_runs WHERE id=%s", (run,)
     ).fetchone() == (None, 0)
+
+
+# --- Cost: maintenance metadata is batched and the overdue probe runs only when needed ---
+
+
+async def test_search_queries_do_not_grow_with_the_number_of_hits(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import psycopg
+
+    from eki.search.service import SearchService
+    from tests.search_support import READER
+
+    await search_world(scratch)
+    service = SearchService(scratch.dsn)
+    service.search(READER, "billing or gateway")  # build the index first
+    real = psycopg.Connection.execute
+    statements = [0]
+
+    def counting(self: psycopg.Connection, *args: Any, **kwargs: Any) -> Any:
+        statements[0] += 1
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(psycopg.Connection, "execute", counting)
+
+    def cost(query: str, expected_hits: int) -> int:
+        statements[0] = 0
+        assert len(service.search(READER, query)) == expected_hits
+        return statements[0]
+
+    assert cost("billing or gateway", 2) == cost("gateway", 1)
+
+
+async def test_overdue_probe_runs_only_when_an_answer_abstains(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from eki.search.answers import AnswerService
+    from eki.search.service import SearchService
+    from tests.search_support import READER
+
+    world = await search_world(scratch)
+    probes = [0]
+    real = SearchService.has_overdue
+
+    def counting(self: SearchService, *args: Any, **kwargs: Any) -> bool:
+        probes[0] += 1
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(SearchService, "has_overdue", counting)
+    answers = AnswerService(SearchService(scratch.dsn))
+    answered = await answers.ask(READER, "How do I run month-end reconciliation?")
+    assert answered.status == "answered" and probes[0] == 0
+    with scratch.connect() as conn:
+        conn.execute(
+            "UPDATE runbook_entries SET review_by=%s WHERE id=%s",
+            (datetime.now(UTC).date() - timedelta(days=1), world.billing),
+        )
+    held = await answers.ask(READER, "How do I run month-end reconciliation?")
+    assert held.reason == "review_required" and probes[0] == 1

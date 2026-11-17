@@ -15,7 +15,7 @@ from eki.auth import Principal
 from eki.config import Settings, work_domains
 from eki.ingest.embedding import HashingEmbedder, to_vector_literal
 from eki.ingest.redaction import RedactedText, redact
-from eki.runbook.maintenance import info
+from eki.runbook.maintenance import infos
 from eki.runbook.models import RunbookEntry, SectionName
 from eki.search.embedding import SearchEmbedder, build_embedder, checked_vectors
 from eki.search.index import refresh
@@ -181,16 +181,11 @@ class SearchService:
                     limit,
                 ),
             ).fetchall()
+            entries = [RunbookEntry.model_validate(r[0]) for r in rows]
+            metadata = infos(conn, [e.id for e in entries], self.clock())
             return [
-                SearchHit(
-                    RunbookEntry.model_validate(r[0]),
-                    r[1],
-                    r[2],
-                    r[3],
-                    float(r[4]),
-                    info(conn, RunbookEntry.model_validate(r[0]).id, self.clock()),
-                )
-                for r in rows
+                SearchHit(entry, r[1], r[2], r[3], float(r[4]), metadata.get(entry.id, {}))
+                for entry, r in zip(entries, rows, strict=True)
             ]
 
     def has_overdue(self, principal: Principal, query: str) -> bool:

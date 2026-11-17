@@ -1,5 +1,6 @@
 """Live entry review metadata; publication state and content version stay independent."""
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -26,20 +27,32 @@ def freshness(review_by: date, today: date) -> str:
 def info(
     conn: psycopg.Connection, entry_id: UUID | str, now: datetime | None = None
 ) -> dict[str, Any]:
-    row = conn.execute(
-        "SELECT e.status,e.maintenance_revision,e.review_by,e.last_reviewed_at,e."
-        "last_reviewed_by_subject,e.last_reviewed_by_name,e.reviewed_version,r.ow"
-        "ner_subject,a.name, (SELECT count(*) FROM entry_flags f WHERE "
-        "f.entry_id=e.id AND f.resolution IS "
-        "NULL),r.expert_name,r.maintenance_started_at FROM runbook_entries e JOIN"
-        " "
-        "sessions s ON s.id=e.session_id JOIN interview_plans p ON p.id=s.plan_id"
-        " JOIN ingest_runs r ON r.id=p.run_id LEFT JOIN accounts a ON "
-        "a.subject=r.owner_subject WHERE e.id=%s",
-        (entry_id,),
-    ).fetchone()
-    if row is None:
+    found = infos(conn, [entry_id], now).get(str(entry_id))
+    if found is None:
         raise NotFoundError("entry not found")
+    return found
+
+
+def infos(
+    conn: psycopg.Connection, entry_ids: Sequence[UUID | str], now: datetime | None = None
+) -> dict[str, dict[str, Any]]:
+    """Review metadata of several entries in one query, by entry ID; missing IDs are absent."""
+    rows = conn.execute(
+        "SELECT e.status,e.maintenance_revision,e.review_by,e.last_reviewed_at,"
+        "e.last_reviewed_by_subject,e.last_reviewed_by_name,e.reviewed_version,"
+        "r.owner_subject,a.name,(SELECT count(*) FROM entry_flags f WHERE "
+        "f.entry_id=e.id AND f.resolution IS NULL),r.expert_name,"
+        "r.maintenance_started_at,e.id FROM runbook_entries e "
+        "JOIN sessions s ON s.id=e.session_id JOIN interview_plans p ON p.id=s.plan_id "
+        "JOIN ingest_runs r ON r.id=p.run_id LEFT JOIN accounts a ON "
+        "a.subject=r.owner_subject WHERE e.id=ANY(%s::uuid[])",
+        ([str(i) for i in entry_ids],),
+    ).fetchall()
+    today = (now or datetime.now(UTC)).astimezone(UTC).date()
+    return {str(row[12]): _metadata(row, today) for row in rows}
+
+
+def _metadata(row: Sequence[Any], today: date) -> dict[str, Any]:
     principal = current_principal()
     can_review = bool(
         principal
@@ -61,9 +74,7 @@ def info(
         "owner_subject": row[7],
         "owner_name": row[8] or row[7],
         "open_flag_count": row[9],
-        "freshness": freshness(row[2], (now or datetime.now(UTC)).astimezone(UTC).date())
-        if row[0] == "approved" and row[2]
-        else None,
+        "freshness": freshness(row[2], today) if row[0] == "approved" and row[2] else None,
     }
 
 
