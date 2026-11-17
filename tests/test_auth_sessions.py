@@ -372,6 +372,58 @@ class TestCookieHTTP:
                     == 200
                 )
 
+    @pytest.mark.anyio
+    async def test_authorizing_a_request_uses_one_connection(
+        self, scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import types
+
+        import psycopg
+
+        from eki.api import security
+
+        session = await finished(scratch)
+        books = RunbookService(scratch.dsn)
+        entry = books.list(session)[0]
+        with scratch.connect() as conn:
+            view = interviews.load_session(conn, session)
+            assert view is not None
+            set_owner(conn, view.run_id, "nadia", Principal("operator", "Operator", True))
+            account = accounts.create_account(
+                conn,
+                email=EMAIL,
+                name="Nadia Ferrand",
+                subject="nadia",
+                work_domains=frozenset({"example.com"}),
+            )
+            accounts.set_password(conn, account.id, GOOD, now=datetime.now(UTC))
+        client = TestClient(
+            create_app(
+                runbook_service=books, settings=configuration(scratch.dsn), authenticator=bearer()
+            ),
+            base_url=ORIGIN,
+        )
+        assert login(client).status_code == 200
+        opened = [0]
+
+        def connect(*args: object, **kwargs: object) -> psycopg.Connection:
+            opened[0] += 1
+            return psycopg.connect(*args, **kwargs)  # type: ignore[arg-type]
+
+        # Only the middleware's own connections are counted; handlers use their own modules.
+        monkeypatch.setattr(
+            security,
+            "psycopg",
+            types.SimpleNamespace(
+                connect=connect, Error=psycopg.Error, Connection=psycopg.Connection
+            ),
+        )
+        assert client.get(f"/entries/{entry.entry.id}").status_code == 200
+        assert opened[0] == 1  # session, account status and ACL on one connection
+        with scratch.connect() as conn:
+            accounts.set_disabled(conn, EMAIL, True)
+        assert client.get(f"/entries/{entry.entry.id}").status_code == 401
+
 
 @pytest.mark.db
 def test_startup_logs_pending_migrations(

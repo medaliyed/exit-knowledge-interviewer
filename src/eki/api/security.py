@@ -43,10 +43,6 @@ def install_security(
     dsn: Callable[[], str],
     configuration: Callable[[], Settings],
 ) -> None:
-    def check_active(principal: Principal) -> None:
-        with psycopg.connect(dsn(), autocommit=True) as conn:
-            maintenance.active(conn, principal)
-
     @app.middleware("http")
     async def secure(
         request: Request, following: Callable[[Request], Awaitable[Response]]
@@ -104,67 +100,75 @@ def install_security(
             # one, a session cookie is tried; otherwise the bearer authenticator decides
             # (it fails closed, so a missing credential is still a 401).
             raw = None if header is not None else request.cookies.get(cookie_name(settings))
+            bearer: Principal | None = None
             if not raw:
-                principal = authenticate().authenticate(header)
-                request.state.authentication = "bearer"
-            else:
+                bearer = authenticate().authenticate(header)
+            request.state.authentication = "cookie" if raw else "bearer"
 
-                def session_identity() -> Principal | None:
-                    with psycopg.connect(dsn(), autocommit=True) as conn:
-                        return accounts.authenticate_session(
+            def readable(conn: psycopg.Connection, principal: Principal, resource_id: UUID) -> bool:
+                """Whether the request may proceed as a reader; raises NotFoundError if not."""
+                run_id = access.resource_run(conn, parts[0], resource_id)
+                if run_id is None:
+                    raise NotFoundError("resource not found")
+                try:
+                    access.require_manager(conn, run_id, principal)
+                except NotFoundError:
+                    if (
+                        parts[0] == "runs"
+                        and request.method == "POST"
+                        and parts[2:] == ["follow-up-requests"]
+                    ):
+                        access.visible_run(conn, resource_id, principal)
+                        return True
+                    if parts[0] == "entries" and (
+                        (request.method == "GET" and (len(parts) == 2 or parts[2:] == ["markdown"]))
+                        or (request.method == "POST" and parts[2:] == ["flags"])
+                    ):
+                        access.approved_entry(conn, resource_id, principal)
+                        return True
+                    raise
+                return False
+
+            def authorize() -> tuple[Principal, bool] | Response:
+                """Session, account status and resource access, all on one connection."""
+                with psycopg.connect(dsn(), autocommit=True) as conn:
+                    if raw:
+                        # A disabled account's session is refused here, so the cookie
+                        # path needs no separate account-status check.
+                        principal = accounts.authenticate_session(
                             conn, raw, now=datetime.now(UTC), policy=session_policy(settings)
                         )
+                        if principal is None:
+                            raise AuthenticationError("valid credentials required")
+                        if request.method in UNSAFE_METHODS and not csrf_valid():
+                            return rejected(403, "Request origin is not allowed", "csrf_rejected")
+                    else:
+                        assert bearer is not None  # noqa: S101 - set above when there is no cookie
+                        principal = bearer
+                        maintenance.active(conn, principal)
+                    if (
+                        is_auth
+                        or principal.admin
+                        or parts[0] in ("runbook", "flags", "follow-up-requests")
+                        or len(parts) < 2
+                    ):
+                        return principal, False
+                    try:
+                        resource_id = UUID(parts[1])
+                    except ValueError:
+                        return rejected(422, "invalid identifier", "invalid_identifier")
+                    return principal, readable(conn, principal, resource_id)
 
-                session_principal = await db(session_identity)
-                if session_principal is None:
-                    raise AuthenticationError("valid credentials required")
-                principal = session_principal
-                request.state.authentication = "cookie"
-                if request.method in UNSAFE_METHODS and not csrf_valid():
-                    return rejected(403, "Request origin is not allowed", "csrf_rejected")
-            if not (is_auth and request.method == "GET"):
-                await db(lambda: check_active(principal))
+            if bearer is not None and is_auth and request.method == "GET":
+                # Restoring a bearer identity needs no database at all.
+                principal, reader = bearer, False
+            else:
+                outcome = await db(authorize)
+                if isinstance(outcome, Response):
+                    return outcome
+                principal, reader = outcome
             request.state.principal = principal
-            request.state.runbook_reader = False
-            if (
-                not is_auth
-                and not principal.admin
-                and parts[0] not in ("runbook", "flags", "follow-up-requests")
-                and len(parts) > 1
-            ):
-                try:
-                    resource_id = UUID(parts[1])
-                except ValueError:
-                    return rejected(422, "invalid identifier", "invalid_identifier")
-
-                def check() -> bool:
-                    with psycopg.connect(dsn(), autocommit=True) as conn:
-                        run_id = access.resource_run(conn, parts[0], resource_id)
-                        if run_id is None:
-                            raise NotFoundError("resource not found")
-                        try:
-                            access.require_manager(conn, run_id, principal)
-                        except NotFoundError:
-                            if (
-                                parts[0] == "runs"
-                                and request.method == "POST"
-                                and parts[2:] == ["follow-up-requests"]
-                            ):
-                                access.visible_run(conn, resource_id, principal)
-                                return True
-                            if parts[0] == "entries" and (
-                                (
-                                    request.method == "GET"
-                                    and (len(parts) == 2 or parts[2:] == ["markdown"])
-                                )
-                                or (request.method == "POST" and parts[2:] == ["flags"])
-                            ):
-                                access.approved_entry(conn, resource_id, principal)
-                                return True
-                            raise
-                        return False
-
-                request.state.runbook_reader = await db(check)
+            request.state.runbook_reader = reader
         except AuthenticationError:
             response = rejected(401, "valid credentials required", "session_expired")
             response.headers["WWW-Authenticate"] = "Bearer"
