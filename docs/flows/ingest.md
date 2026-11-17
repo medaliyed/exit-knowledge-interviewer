@@ -1,6 +1,6 @@
 # Ingest one expert's work
 
-**Trigger:** `eki ingest --since D --until D [--mail-folder F ...]` (`src/eki/cli.py`)
+**Trigger:** `eki ingest --since D --until D [--mail-folder F ...]` (`src/eki/cli/pipeline.py`)
 **Outcome:** one completed `ingest_runs` row with its redacted `artifacts`,
 `activity` summaries and embedded `chunks`, and a run ID printed for the next
 commands.
@@ -43,10 +43,10 @@ sequenceDiagram
 
 1. **Scope** - the expert, the date range, the work email domains and any mail
    folders become a `Scope`. `--until` is extended to the end of that day
-   (`src/eki/cli.py`). Mail folder names are validated here; an invalid one
-   stops the command before anything starts (`src/eki/cli.py`).
+   (`src/eki/cli/pipeline.py`). Mail folder names are validated here; an invalid one
+   stops the command before anything starts (`src/eki/cli/pipeline.py`).
 2. **Audit first** - the start event is written on its own connection, so it
-   survives if the ingest later fails (`src/eki/cli.py`).
+   survives if the ingest later fails (`src/eki/cli/pipeline.py`).
 3. **Servers** - each source is a separate subprocess speaking MCP over stdio.
    The scope is passed on the command line and is fixed for the life of the
    server; no tool can widen it (`src/eki/ingest/pipeline.py`).
@@ -68,19 +68,19 @@ sequenceDiagram
    (`src/eki/ingest/pipeline.py`) and redacts every text field again
    (`src/eki/ingest/pipeline.py`).
 10. **One transaction** (steps 11 to 13) - the run, its artifacts, its index
-    and the completion event commit together (`src/eki/cli.py`). A run is
+    and the completion event commit together (`src/eki/cli/pipeline.py`). A run is
     either complete or absent.
 
 ## Failure modes
 
 | When | Behaviour | Where |
 | --- | --- | --- |
-| No expert or source directory configured | exit code 2, nothing started | `src/eki/cli.py` |
-| A tool call fails or returns an error | `IngestError` naming the tool and the error type only; nothing stored; audit "tool failed" and "ingest failed" | `src/eki/ingest/pipeline.py`, `src/eki/cli.py` |
+| No expert or source directory configured | exit code 2, nothing started | `src/eki/cli/pipeline.py` |
+| A tool call fails or returns an error | `IngestError` naming the tool and the error type only; nothing stored; audit "tool failed" and "ingest failed" | `src/eki/ingest/pipeline.py`, `src/eki/cli/pipeline.py` |
 | A record has an unexpected shape | `IngestError`; nothing stored | `src/eki/ingest/pipeline.py` |
 | Mail server returns the same message twice | `IngestError`; nothing stored | `src/eki/ingest/pipeline.py` |
 | The database write fails | transaction rolled back; error names the exception type only | `src/eki/ingest/pipeline.py` |
-| Audit storage is down | the command is refused before any source is read | `src/eki/cli.py` |
+| Audit storage is down | the command is refused before any source is read | `src/eki/cli/pipeline.py` |
 
 A failed ingest leaves audit events ("started", "failed") but no run. The run
 ID in those events refers to a run that does not exist.
@@ -107,5 +107,5 @@ ID in those events refers to a run that does not exist.
   produces a second, independent run.
 - **Mapping is a separate command.** `eki map --run ID` loads the stored run,
   builds topics and gap scores in memory and saves them
-  (`src/eki/cli.py`). It reads no source and calls no model, so it has no
+  (`src/eki/cli/pipeline.py`). It reads no source and calls no model, so it has no
   flow page.

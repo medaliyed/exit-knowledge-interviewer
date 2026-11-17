@@ -237,7 +237,7 @@ async def test_follow_up_interview_binds_real_identity_and_stop_preserves_work(
             ]
         ),
     )
-    monkeypatch.setattr(cli, "build_service", lambda settings: service)
+    monkeypatch.setattr(cli.interview, "build_service", lambda settings: service)
     identity(monkeypatch, scratch, Principal("impostor", OWNER.name))
     assert await asyncio.to_thread(cli.main, ["interview", "--plan", prepared["id"]]) == 1
     capsys.readouterr()
@@ -349,7 +349,7 @@ async def test_cli_does_not_approve_a_concurrently_changed_follow_up_plan(
         return await approve(plan_id, by, expected_revision=expected_revision)
 
     monkeypatch.setattr(service, "approve", concurrent_edit)
-    monkeypatch.setattr(cli, "build_service", lambda settings: service)
+    monkeypatch.setattr(cli.interview, "build_service", lambda settings: service)
     assert await asyncio.to_thread(cli.main, ["interview", "--plan", prepared["id"]]) == 1
     assert "plan changed" in capsys.readouterr().err
     with scratch.connect() as conn:

@@ -56,7 +56,7 @@ The gap score that orders stage 2 is
 ```mermaid
 flowchart TB
     subgraph entry["Entry points"]
-        cli["eki CLI<br/>src/eki/cli.py"]
+        cli["eki CLI<br/>src/eki/cli/"]
         api["FastAPI app<br/>src/eki/api"]
         browser["Expert browser workspace<br/>src/eki/web"]
     end

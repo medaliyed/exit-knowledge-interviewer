@@ -163,7 +163,7 @@ def test_cli_resume_and_model_free_status(
     with scratch.connect() as conn:
         run = seed_run(conn)
     service = make_service(scratch.dsn, drafter=ScriptedModel(policy, name="drafter"))
-    monkeypatch.setattr("eki.cli.build_service", lambda settings: service)
+    monkeypatch.setattr("eki.cli.interview.build_service", lambda settings: service)
     monkeypatch.setenv("EKI_DATABASE_URL", scratch.dsn)
     get_settings.cache_clear()
     try:

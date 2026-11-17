@@ -72,7 +72,10 @@ real providers with credentials exported to the test process.
 
 ```
 src/eki/
-  api/        FastAPI app: plan review, interview chat (SSE), runbook entry review
+  api/        FastAPI: app.py wires providers and errors; routes live by area
+              (interview, entries, knowledge, runs, accounts, maintenance, followup)
+  cli/        the `eki` command: __init__ parses and dispatches; pipeline, interview,
+              review, knowledge and admin hold the commands (follow-up: followup_cli.py)
   web/        authenticated browser workspace, static assets and navigation metadata
   evals/      golden interview validation, shared expert/budget, scoring, driver and reports
   graph/      LangGraph workflow: fixed nodes around the one agentic node
@@ -83,6 +86,7 @@ src/eki/
   runbook/    entry template, deterministic synthesis, storage, citation checks, expert review
   search/     approved-only hybrid search, semantic/offline embeddings, cited extractive Q&A
   audit.py    durable metadata-only model/tool/decision history
+  pool.py     pooled request-path Postgres connections (see Stack)
 mcp_servers/  read-only git_server, tickets_server and mail_server; redact before returning
 tests/        tests; fixtures in tests/fixtures/
 evals/        scenarios/ and golden/ are human-owned

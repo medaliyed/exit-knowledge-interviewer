@@ -2,7 +2,7 @@
 
 **Trigger:** `GET /entries/{id}` then `POST /entries/{id}/approve`
 (`src/eki/api/entries.py`), or `eki review --plan ID`
-(`src/eki/cli.py`)
+(`src/eki/cli/review.py`)
 **Outcome:** the entry's status becomes `approved` with a new version, a row
 in `entry_decisions` and an audit event. From then on the entry is visible to
 search, Q&A and export.

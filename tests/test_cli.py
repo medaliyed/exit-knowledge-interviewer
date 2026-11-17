@@ -181,7 +181,7 @@ def use_fake_models(monkeypatch: pytest.MonkeyPatch) -> None:
             limits=Limits(plan_size=2),
         )
 
-    monkeypatch.setattr("eki.cli.build_service", build)
+    monkeypatch.setattr("eki.cli.interview.build_service", build)
 
 
 def typed(monkeypatch: pytest.MonkeyPatch, *lines: str) -> None:
@@ -461,7 +461,7 @@ def test_failed_ingest_rolls_back_snapshot_and_records_failure(
     def fail(*args: object, **kwargs: object) -> int:
         raise IngestError("simulated indexing failure")
 
-    monkeypatch.setattr("eki.cli.index_run", fail)
+    monkeypatch.setattr("eki.cli.pipeline.index_run", fail)
     assert main(["ingest", *RANGE]) == 1
     with connect(get_settings()) as conn:
         assert conn.execute("SELECT count(*) FROM ingest_runs").fetchone() == (0,)
