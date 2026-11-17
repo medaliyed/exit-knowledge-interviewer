@@ -77,31 +77,30 @@ def install_entries(app: FastAPI, ctx: ApiContext) -> None:
     Runbooks = Annotated[RunbookService, Depends(ctx.runbooks)]
 
     def summaries(books: RunbookService, session_id: UUID) -> list[dict[str, Any]]:
-        unsupported = books.unsupported(session_id)
         return [
             {
-                **_entry_summary(e, unsupported.get(e.entry.id, ())),
-                **books.metadata(UUID(e.entry.id)),
+                **_entry_summary(summary.stored, summary.unsupported),
+                **summary.metadata,
             }
-            for e in books.list(session_id)
+            for summary in books.summaries(session_id)
         ]
 
     async def detail(books: RunbookService, entry_id: UUID) -> dict[str, Any]:
         def work() -> dict[str, Any]:
-            stored = books.get(entry_id)
-            unsupported = books.unsupported(stored.session_id).get(stored.entry.id, ())
+            found = books.detail(entry_id)
+            stored = found.stored
             return {
                 **stored.entry.model_dump(mode="json"),
-                **books.metadata(entry_id),
+                **found.metadata,
                 "session_id": str(stored.session_id),
                 "version": stored.version,
                 "rejection_reason": stored.rejection_reason,
                 # Claims that say more than the answer they cite; see eki.runbook.faithfulness.
                 "unsupported": [
                     {"section": u.section, "claim_index": u.index, "terms": list(u.terms)}
-                    for u in unsupported
+                    for u in found.unsupported
                 ],
-                "decisions": [asdict(d) for d in books.history(entry_id)],
+                "decisions": [asdict(d) for d in found.decisions],
             }
 
         return await db(work)

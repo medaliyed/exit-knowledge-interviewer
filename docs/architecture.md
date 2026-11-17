@@ -210,6 +210,11 @@ stateDiagram-v2
   unless `overwrite_edits` is set (`src/eki/runbook/service.py`).
 - Approval requires a complete template and a citation on every claim
   (`src/eki/runbook/review.py`).
+- HTTP review summaries batch metadata and source lineage; owner detail checks
+  only the requested entry. Each operation reads content, versions, metadata and
+  evidence in one read-only repeatable-read snapshot. Detail history shares that
+  snapshot. Reader detail keeps its approved-only ACL query and metadata together,
+  without private review data (`src/eki/runbook/reads.py`).
 
 ## Data model
 

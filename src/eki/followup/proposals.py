@@ -235,6 +235,25 @@ def linked_sessions(conn: psycopg.Connection, entry_id: str, topic_id: str) -> t
     return tuple(UUID(str(r[0])) for r in rows)
 
 
+def linked_sessions_many(
+    conn: psycopg.Connection, topics: Mapping[str, str]
+) -> dict[str, tuple[UUID, ...]]:
+    """Batch explicit lineage, retaining each entry's own topic boundary."""
+    if not topics:
+        return {}
+    rows = conn.execute(
+        "SELECT DISTINCT entry_id,topic_id,session_id FROM follow_up_proposals "
+        "WHERE entry_id=ANY(%s::uuid[]) ORDER BY entry_id,session_id",
+        (list(topics),),
+    ).fetchall()
+    found: dict[str, list[UUID]] = {}
+    for entry_id, topic_id, session_id in rows:
+        key = str(entry_id)
+        if topics[key] == topic_id:
+            found.setdefault(key, []).append(UUID(str(session_id)))
+    return {key: tuple(sessions) for key, sessions in found.items()}
+
+
 def linked_entries(conn: psycopg.Connection, session_id: UUID) -> tuple[str, ...]:
     """Entries a follow-up session proposed facts for (P6 correction propagation)."""
     rows = conn.execute(

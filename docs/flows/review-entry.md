@@ -23,8 +23,9 @@ sequenceDiagram
     Expert->>API: GET /entries/{id} with bearer token
     Note over API: token to identity, from EKI_API_TOKENS
     API->>DB: which run owns this entry, is the caller its owner?
-    API->>Svc: get entry, history, unsupported claims
-    Svc->>DB: load entry, decisions, session transcript
+    API->>Svc: detail(entry_id)
+    Svc->>DB: load entry, metadata, decisions and source transcripts
+    Note over Svc,DB: one read-only repeatable-read snapshot
     Note over Svc: compare each claim with the turns it cites
     API-->>Expert: sections, citations, decisions, unsupported
 
@@ -63,6 +64,17 @@ sequenceDiagram
    model. Linked follow-up sources resolve against their own session and turn,
    preventing collisions with ordinals in the original interview. It is advisory:
    it never blocks approval.
+
+   Owner detail uses `RunbookService.detail`: content, version, review metadata,
+   decision history and faithfulness share one read-only repeatable-read snapshot
+   on one borrowed connection. It checks only the requested entry, using its home
+   transcript and explicitly linked follow-ups. Session listings use
+   `RunbookService.summaries`, loading entries once, batching metadata and follow-up
+   lineage, and loading each source transcript once for the snapshot. Entry order
+   and response fields stay the same. Reader detail retains its approved-only ACL
+   query and shares a snapshot with metadata; it never loads private review history
+   or faithfulness results (`src/eki/runbook/reads.py`,
+   `src/eki/runbook/service.py`).
 4. **Reviewer name** (after step 6) - the name in the request body must equal the
    name bound to the token (`actor` in `src/eki/api/context.py`).
 5. **Locks** (step 8) - run first, then session and entry, the same order as edits,
@@ -122,8 +134,8 @@ retains the expert-name check; maintenance uses the current owner subject.
   maintainer turns; historical expert answers stay unchanged. See
   [maintenance.md](maintenance.md) for deadlines, unchanged review, withdrawal,
   reader flags and expected version/revision fields.
-- **The faithfulness result is not stored.** It is recomputed on every read
-  from the current transcript. Readers never receive it
+- **The faithfulness result is not stored.** It is recomputed for review reads
+  from the transcript in the response's snapshot. Readers never receive it
   (`src/eki/api/entries.py`).
 - **A correction to a cited answer reopens approval.** It replaces the claim
   text and returns the entry to draft (`src/eki/runbook/service.py`).

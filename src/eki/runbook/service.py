@@ -19,7 +19,7 @@ from eki.ingest.redaction import RedactedText, redact
 from eki.interview import store as interviews
 from eki.interview.models import Turn
 from eki.runbook import maintenance as review_metadata
-from eki.runbook import review, store
+from eki.runbook import reads, review, store
 from eki.runbook.faithfulness import Unsupported, check_entry
 from eki.runbook.models import (
     SECTION_NAMES,
@@ -198,6 +198,16 @@ class RunbookService:
             if stored is None:
                 raise NotFoundError(f"no entry {entry_id}")
             return stored
+
+    def summaries(self, session_id: UUID) -> tuple[reads.EntrySummary, ...]:
+        """Ordered review summaries, metadata and evidence from one database snapshot."""
+        with self._connect() as conn:
+            return reads.summaries(conn, session_id, self.clock())
+
+    def detail(self, entry_id: UUID) -> reads.EntryDetail:
+        """One entry's content, review metadata, evidence and history in one snapshot."""
+        with self._connect() as conn:
+            return reads.detail(conn, entry_id, self.clock())
 
     def unsupported(self, session_id: UUID) -> dict[str, tuple[Unsupported, ...]]:
         """Per entry of a session, the claims that say more than the turns they cite.
@@ -560,7 +570,7 @@ class RunbookService:
 
         Raises ``NotFoundError`` unless the entry is approved and the principal may read it.
         """
-        with self._connect() as conn:
+        with self._connect() as conn, reads.snapshot(conn):
             stored = access.approved_entry(conn, entry_id, principal)
             return {
                 **stored.entry.model_dump(mode="json"),

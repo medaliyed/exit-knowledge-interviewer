@@ -124,6 +124,17 @@ docs/flows/   one page per runtime flow; update the page when its flow changes
 - The interviewer's tools read artifacts or change interview state. Never add
   one that approves, publishes, sends or writes to a source.
 
+## Entry review reads (F9, F10)
+
+HTTP entry listings use `RunbookService.summaries`; owner detail and mutation
+responses use `RunbookService.detail`. `runbook/reads.py` assembles each response
+on one borrowed connection in a read-only repeatable-read transaction. Summaries
+load entries once and batch review metadata and explicit follow-up lineage; each
+required transcript is loaded once. Detail checks only the requested entry's
+claims. Reader detail keeps the approved-only ACL query and reads its metadata
+in the same snapshot, without private evidence checks or decision history. Keep
+the transaction isolation local so pooled connections retain their defaults.
+
 ## Plan review concurrency (F6, F7)
 
 Plan edits (`PATCH /plans/{id}`) and approval (`POST /plans/{id}/approve`)
