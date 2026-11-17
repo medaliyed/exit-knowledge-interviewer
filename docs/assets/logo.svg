@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 330 80" width="330" height="80" role="img" aria-labelledby="t">
+  <title id="t">eki: Exit-Knowledge Interviewer. Logo: a question bubble on little legs chases an expert in a party hat, who sprints for an exit with a sunny palm tree beyond, dropping pages of knowledge</title>
+  <g transform="translate(8 8) scale(.5)">
+    <rect width="128" height="128" rx="28" fill="#176e5b"/>
+    <!-- the exit, with retirement on the other side -->
+    <rect x="88" y="24" width="26" height="82" rx="3" fill="#0f5445"/>
+    <circle cx="106" cy="42" r="6" fill="#e2b85a"/>
+    <path d="M103 103 C103 92 104 84 108 74" fill="none" stroke="#c99a3c" stroke-width="3" stroke-linecap="round"/>
+    <path d="M108 74 C102 70 97 72 95 76 M108 74 C104 67 98 66 95 68 M108 74 C110 68 114 67 117 69" fill="none" stroke="#7fc8a6" stroke-width="3" stroke-linecap="round"/>
+    <path d="M88 24 L96 28 V102 L88 106 Z" fill="#fdfdfa" opacity=".3"/>
+    <rect x="88" y="24" width="26" height="82" rx="3" fill="none" stroke="#fdfdfa" stroke-width="5"/>
+    <!-- knowledge flying out of their pockets -->
+    <g transform="rotate(24 46.0 23.5)"><rect x="40" y="16" width="12" height="15" rx="2" fill="#e2b85a"/><path d="M43 20h6M43 24h6" stroke="#0f5445" stroke-width="1.6" stroke-linecap="round"/></g>
+    <g transform="rotate(-18 26.5 18.0)"><rect x="20" y="10" width="13" height="16" rx="2" fill="#e2b85a"/><path d="M23 14h7M23 18h7M23 22h4" stroke="#0f5445" stroke-width="1.6" stroke-linecap="round"/></g>
+    <g transform="rotate(10 15.5 41.0)"><rect x="10" y="34" width="11" height="14" rx="2" fill="#e2b85a"/><path d="M13 38h5M13 42h5" stroke="#0f5445" stroke-width="1.6" stroke-linecap="round"/></g>
+    <!-- the expert, leaving: party hat on, sweating -->
+    <g fill="none" stroke="#fdfdfa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M70 48 L62 72"/>
+      <path d="M67 54 L80 60 L90 54"/>
+      <path d="M67 54 L57 50 L52 42"/>
+      <path d="M62 72 L75 82 L74 98"/>
+      <path d="M62 72 L53 84 L45 80"/>
+    </g>
+    <circle cx="75" cy="37" r="9" fill="#fdfdfa"/>
+    <path d="M67 31 L81 28 L70 12 Z" fill="#e2b85a"/>
+    <path d="M69 25.5 L77 23.8 M71.5 19 L74.3 18.4" stroke="#0f5445" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="70" cy="12" r="3" fill="#fdfdfa"/>
+    <path d="M86 36 q4 6 0 9 q-4 -3 0 -9Z M59 26 q3.4 5 0 7.6 q-3.4 -2.6 0 -7.6Z" fill="#d6efe5"/>
+    <!-- eki on little legs: "one more question!" -->
+    <g fill="none" stroke="#fdfdfa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 77 L12 87 L5 88"/>
+      <path d="M29 77 L35 86 L33 96"/>
+      <path d="M42 60 L50 56"/>
+    </g>
+    <path d="M15 50H27L44 41L35 50a8 8 0 0 1 8 8v12a8 8 0 0 1-8 8H15a8 8 0 0 1-8-8V58a8 8 0 0 1 8-8Z" fill="#fdfdfa"/>
+    <text x="25" y="72" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="800" fill="#176e5b">?!</text>
+  </g>
+  <text x="86" y="45" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" letter-spacing="-0.5" fill="#243b39">eki</text>
+  <text x="87" y="66" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="500" letter-spacing="0.3" fill="#566764">Exit-Knowledge Interviewer</text>
+</svg>
