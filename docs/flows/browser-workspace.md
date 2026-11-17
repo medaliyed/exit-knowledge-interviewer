@@ -134,9 +134,9 @@ remain references and do not grant transcript access.
 the packaged production assets, the shell's security headers, expert-bound plan
 approval, ACL-filtered navigation and the synthetic
 plan/interview/correction/review/search/export HTTP workflow.
-`node --test tests/browser_client.test.cjs` checks submission identity and SSE
-failure handling for the retained original client using Node's built-in runner.
-In `frontend/`, `npm test` checks the new client's transport and
+The original pre-React client has been retired and is no longer served.
+In `frontend/`, `npm test` checks the client's transport (submission identity,
+fragmented SSE, early disconnects and retryable failures) and
 `npm run test:e2e` exercises the React UI in Chrome against synthetic mocked
 REST/SSE responses. The browser suite covers sign-in, reader route boundaries,
 plan review, confidential-answer clearing, interrupted-answer recovery, entry

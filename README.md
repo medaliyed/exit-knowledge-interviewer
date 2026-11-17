@@ -224,7 +224,7 @@ uv run pytest -q -m db                                  # database tests; needs 
 uv run python evals/run.py --junit reports/quality.xml  # quality and red-team gate
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
-node --test tests/browser_client.test.cjs  # client delivery/SSE logic; optional Node dev check
+(cd frontend && npm test)                # browser client delivery/SSE logic
 ```
 
 Tests that call a real provider are opt-in and cost money. They need the model

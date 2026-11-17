@@ -25,7 +25,6 @@ def test_browser_paths_do_not_intercept_api_or_missing_assets(
     shell = '<div id="root"></div><script src="/assets/workspace/app.js"></script>'
     (build / "index.html").write_text(shell)
     (build / "app.js").write_text("console.log('workspace');")
-    (tmp_path / "app.js").write_text("console.log('legacy client');")
     monkeypatch.setattr(routes, "ASSETS", tmp_path)
     client = TestClient(create_app())
     for path in ("/", "/workspace", "/workspace/", "/workspace/handovers/example/plans"):
@@ -38,7 +37,6 @@ def test_browser_paths_do_not_intercept_api_or_missing_assets(
         assert response.headers["cache-control"] == "no-store"
         assert response.headers["x-content-type-options"] == "nosniff"
     assert client.get("/assets/workspace/app.js").text == "console.log('workspace');"
-    assert client.get("/assets/app.js").text == "console.log('legacy client');"
     assert client.get("/assets/../config.py").status_code == 404
     assert client.get("/assets/workspace/missing.js").status_code == 404
     assert client.get("/workspace/missing.js").status_code == 404
@@ -211,3 +209,10 @@ def test_complete_browser_api_workflow(scratch: Scratch) -> None:
     with scratch.connect() as conn:
         transcript = store.load_turns(conn, UUID(sid))
         assert any(t.confidential for t in transcript)
+
+
+def test_the_retired_pre_react_client_is_not_served() -> None:
+    # Only the React workspace is a browser client; the old shell must not stay reachable.
+    client = TestClient(create_app())
+    for path in ("/assets/app.js", "/assets/index.html", "/assets/style.css"):
+        assert client.get(path).status_code == 404, path

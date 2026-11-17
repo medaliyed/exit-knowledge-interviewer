@@ -453,11 +453,11 @@ retry, closing a secret-echo path found by the new generation privacy check.
 See `docs/flows/draft-plan.md` and `tests/test_generation.py`.
 
 
-Client logic can also be checked with `node --test tests/browser_client.test.cjs`
-using Node's built-in runner and no packages. It checks stable submission IDs,
-fragmented SSE, early disconnects and retryable failures; it does not replace
+Client logic is checked with `cd frontend && npm test` (Vitest): stable submission
+IDs, fragmented SSE, early disconnects and retryable failures; it does not replace
 real-browser visual/accessibility QA. New browser submissions keep their IDs
-across transport retries and query the receipt when acknowledgement is lost.
+across transport retries and query the receipt when acknowledgement is lost. The
+original pre-React client was retired; only the React workspace is served.
 
 ## Phase 6: browser accounts and sessions (F19)
 
