@@ -457,7 +457,9 @@ class FollowUpService:
                     "another active follow-up exists for this run; finish or stop it first"
                 )
             gaps = gap_store.GapService(self.dsn, self.domains, self.clock)
-            rows = {g: gaps.lock_gap(conn, run_id, UUID(g)) for g in sorted(ids)}
+            # One scan of the run's entries serves every selected gap.
+            live = {c["id"]: c for c in gap_store.candidates(conn, run_id)}
+            rows = {g: gaps.lock_gap(conn, run_id, UUID(g), live_gaps=live) for g in sorted(ids)}
             for row in rows.values():
                 if row["status"] == "scheduled":
                     raise ConflictError("a selected gap is already scheduled in a follow-up")

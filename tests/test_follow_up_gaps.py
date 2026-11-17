@@ -489,3 +489,47 @@ async def test_http_reader_save_receipt_and_owner_queue(scratch: Scratch) -> Non
             "/runbook/ask", headers=reader, json={"question": "How do I renew payroll certs?"}
         )
     assert answer.json()["reason"] == "no_supported_answer"
+
+
+# --- Cost: run-wide candidate scans are not repeated per gap ---
+
+
+def count_run_scans(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count calls that scan every entry of a run (no entry filter); calls go through."""
+    from eki.followup import gaps as gap_module
+
+    real = gap_module.candidates
+    scans = [0]
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("entry_id") is None:
+            scans[0] += 1
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(gap_module, "candidates", spy)
+    return scans
+
+
+async def test_triage_of_a_saved_question_scans_no_entries(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = await gap_world(scratch)
+    service = gaps(scratch)
+    saved, _ = request(service, world.run_id)
+    scans = count_run_scans(monkeypatch)
+    service.triage(
+        world.run_id, saved["id"], OWNER, action="defer", expected_revision=0, reason="Later."
+    )
+    assert scans[0] == 0
+
+
+async def test_preparing_several_gaps_scans_the_run_once(
+    scratch: Scratch, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.followup_support import prepare, triaged_world
+
+    world, open_section, mapped_request = await triaged_world(scratch)
+    scans = count_run_scans(monkeypatch)
+    plan = prepare(scratch, world, [open_section, mapped_request])
+    assert plan.topics
+    assert scans[0] <= 1

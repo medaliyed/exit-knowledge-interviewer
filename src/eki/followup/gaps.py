@@ -4,7 +4,7 @@ Lock order: run, session, entry, gap rows (ascending id), audit last. Intake and
 triage need only the run and gaps. Readers only see their own safe request receipts.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -63,18 +63,22 @@ def _public(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def candidates(conn: psycopg.Connection, run_id: UUID) -> list[dict[str, Any]]:
+def candidates(
+    conn: psycopg.Connection, run_id: UUID, *, entry_id: UUID | str | None = None
+) -> list[dict[str, Any]]:
     """Current public open sections of the run's draft and approved entries.
 
     A section whose source note is confidential is not a public gap, whatever the
     entry text says; rejected entries are excluded until they are reopened in review.
+    ``entry_id`` limits the scan to one entry; without it every entry of the run is read.
     """
     rows = conn.execute(
         "SELECT e.id,e.title,e.status,e.version,e.topic_id,e.session_id,e.content "
         "FROM runbook_entries e JOIN sessions s ON s.id=e.session_id "
         "JOIN interview_plans p ON p.id=s.plan_id WHERE p.run_id=%s AND "
-        "e.status IN ('draft','approved') ORDER BY e.id",
-        (run_id,),
+        "e.status IN ('draft','approved') AND (%s::uuid IS NULL OR e.id=%s::uuid) "
+        "ORDER BY e.id",
+        (run_id, entry_id, entry_id),
     ).fetchall()
     notes_by_session: dict[UUID, tuple[Any, ...]] = {}
     result: list[dict[str, Any]] = []
@@ -508,7 +512,11 @@ class GapService:
             )
             if saved is None:
                 raise RuntimeError("gap not saved")
-            live = next((c for c in candidates(conn, run_id) if c["id"] == str(saved["id"])), {})
+            live = (
+                _live(conn, run_id, saved["id"], saved["entry_id"]) or {}
+                if saved["kind"] == "open_section"
+                else {}
+            )
             return {**_blank_state(), **_public(saved), **live, "status": saved["status"]}
 
     def lock_gap(
@@ -518,19 +526,26 @@ class GapService:
         gap_id: UUID | str,
         *,
         require_live: bool = True,
+        live_gaps: Mapping[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Lock a gap row, creating the state row of a live open-section candidate first.
 
         A resolved open section that a later edit reopened is reset to pending here, keeping
         its revision so the queue's expected revision still matches; the caller's change
-        bumps it and audits.
+        bumps it and audits. ``live_gaps`` is the run's current candidates by ID, for a
+        caller locking many gaps; otherwise only the gap's own entry is read.
         """
         with conn.cursor(row_factory=dict_row) as cursor:
             row = cursor.execute(
                 "SELECT * FROM follow_up_gaps WHERE id=%s AND run_id=%s FOR UPDATE",
                 (gap_id, run_id),
             ).fetchone()
-            live = next((c for c in candidates(conn, run_id) if c["id"] == str(gap_id)), None)
+            if row is not None and row["kind"] != "open_section":
+                return dict(row)  # a saved question is never a live candidate
+            if live_gaps is not None:
+                live = live_gaps.get(str(gap_id))
+            else:
+                live = _live(conn, run_id, gap_id, None if row is None else row["entry_id"])
             if row is not None:
                 if row["kind"] == "open_section" and live is None:
                     if require_live:
@@ -559,6 +574,14 @@ class GapService:
             if row is None:
                 raise NotFoundError("gap not found")
             return dict(row)
+
+
+def _live(
+    conn: psycopg.Connection, run_id: UUID, gap_id: UUID | str, entry_id: UUID | str | None
+) -> dict[str, Any] | None:
+    """The live candidate for one gap. A new gap's entry is unknown, so the run is scanned."""
+    scope = candidates(conn, run_id, entry_id=entry_id)
+    return next((c for c in scope if c["id"] == str(gap_id)), None)
 
 
 def _resolve_row(
