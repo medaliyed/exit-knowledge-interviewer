@@ -426,17 +426,7 @@ def create_app(
     @app.get("/entries/{entry_id}")
     async def read_entry(entry_id: UUID, books: Runbooks, request: Request) -> dict[str, Any]:
         if request.state.runbook_reader:
-
-            def read() -> dict[str, Any]:
-                with books._connect() as conn:
-                    stored = access.approved_entry(conn, entry_id, identity(request))
-                return {
-                    **stored.entry.model_dump(mode="json"),
-                    "version": stored.version,
-                    **books.metadata(entry_id),
-                }
-
-            return await db(read)
+            return await db(books.reader_view, entry_id, identity(request))
         return await detail(books, entry_id)
 
     @app.patch("/entries/{entry_id}")
@@ -575,19 +565,17 @@ def create_app(
         return _plan(await service.draft_plan(run_id, generation_id=generation_id))
 
     @app.get("/runs/{run_id}/generations")
-    async def generation_list(run_id: UUID, books: Runbooks) -> list[dict[str, Any]]:
+    async def generation_list(run_id: UUID) -> list[dict[str, Any]]:
         def read() -> list[dict[str, Any]]:
-            with books._connect() as conn:
+            with pool.connection(database_dsn()) as conn:
                 return generation.listing(conn, run_id)
 
         return await db(read)
 
     @app.get("/runs/{run_id}/generations/{generation_id}")
-    async def generation_status(
-        run_id: UUID, generation_id: UUID, books: Runbooks
-    ) -> dict[str, Any]:
+    async def generation_status(run_id: UUID, generation_id: UUID) -> dict[str, Any]:
         def read() -> dict[str, Any]:
-            with books._connect() as conn:
+            with pool.connection(database_dsn()) as conn:
                 return generation.read(conn, run_id, generation_id)
 
         return await db(read)
@@ -721,30 +709,26 @@ def create_app(
         return message_response(await service.resume(session_id))
 
     @app.get("/runs/{run_id}/access")
-    async def read_access(run_id: UUID, request: Request, books: Runbooks) -> dict[str, object]:
+    async def read_access(run_id: UUID, request: Request) -> dict[str, object]:
         def work() -> dict[str, object]:
-            with books._connect() as conn:
+            with pool.connection(database_dsn()) as conn:
                 return access.readers(conn, run_id, identity(request))
 
         return await db(work)
 
     @app.put("/runs/{run_id}/access")
-    async def update_access(
-        run_id: UUID, body: Readers, request: Request, books: Runbooks
-    ) -> dict[str, object]:
+    async def update_access(run_id: UUID, body: Readers, request: Request) -> dict[str, object]:
         def work() -> dict[str, object]:
-            with books._connect() as conn:
+            with pool.connection(database_dsn()) as conn:
                 access.set_readers(conn, run_id, body.readers, identity(request))
                 return access.readers(conn, run_id, identity(request))
 
         return await operation(work)
 
     @app.put("/runs/{run_id}/owner")
-    async def update_owner(
-        run_id: UUID, body: Owner, request: Request, books: Runbooks
-    ) -> dict[str, object]:
+    async def update_owner(run_id: UUID, body: Owner, request: Request) -> dict[str, object]:
         def work() -> dict[str, object]:
-            with books._connect() as conn:
+            with pool.connection(database_dsn()) as conn:
                 access.set_owner(
                     conn,
                     run_id,

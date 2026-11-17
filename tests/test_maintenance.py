@@ -523,3 +523,18 @@ async def test_ask_never_opens_a_database_connection_on_the_event_loop(
     )
     assert answer.status == "answered"
     assert borrowed[0] > 0 and on_loop[0] == 0
+
+
+async def test_reader_view_shows_approved_entries_with_review_metadata_only(
+    scratch: Scratch,
+) -> None:
+    from tests.search_support import READER
+
+    world = await search_world(scratch)
+    books = RunbookService(scratch.dsn)
+    view = books.reader_view(world.billing, READER)
+    assert view["id"] == str(world.billing)
+    assert view["version"] == books.get(world.billing).version
+    assert view["freshness"] == "current" and "decisions" not in view
+    with pytest.raises(NotFoundError):
+        books.reader_view(world.draft, READER)

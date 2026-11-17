@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 
 from eki import access, maintenance, pool
 from eki.audit import AuditDetails, append_event
-from eki.auth import current_principal
+from eki.auth import Principal, current_principal
 from eki.errors import ConflictError, NotFoundError
 from eki.followup import gaps, proposals
 from eki.ingest.redaction import RedactedText, redact
@@ -554,6 +554,19 @@ class RunbookService:
     def metadata(self, entry_id: UUID) -> dict[str, Any]:
         with self._connect() as conn:
             return review_metadata.info(conn, entry_id, self.clock())
+
+    def reader_view(self, entry_id: UUID, principal: Principal) -> dict[str, Any]:
+        """An approved entry as a reader sees it: content, version and review metadata.
+
+        Raises ``NotFoundError`` unless the entry is approved and the principal may read it.
+        """
+        with self._connect() as conn:
+            stored = access.approved_entry(conn, entry_id, principal)
+            return {
+                **stored.entry.model_dump(mode="json"),
+                "version": stored.version,
+                **review_metadata.info(conn, entry_id, self.clock()),
+            }
 
     def review(
         self,
