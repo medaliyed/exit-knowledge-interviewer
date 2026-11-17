@@ -384,6 +384,28 @@ class TestAccountStore:
         )
         assert counts == ((0,), (0,), (0,))
 
+    def test_only_a_successful_sign_in_prunes(self, conn: psycopg.Connection) -> None:
+        account = accounts.create_account(
+            conn, email="n@example.com", name="Nadia Ferrand", subject="nadia", work_domains=DOMAINS
+        )
+        accounts.set_password(conn, account.id, GOOD, now=NOW)
+        accounts.sign_in(conn, "n@example.com", GOOD, now=NOW, client="1.1.1.1", policy=POLICY)
+        later = NOW + timedelta(days=8)  # the first session has expired by now
+
+        def sessions() -> int:
+            row = conn.execute("SELECT count(*) FROM auth_sessions").fetchone()
+            return int(row[0]) if row else -1
+
+        # Unauthenticated attempts must not run cleanup: it locks accounts and deletes rows,
+        # which a login spray could otherwise trigger on every request.
+        with pytest.raises(SignInRefused):
+            accounts.sign_in(
+                conn, "ghost@example.com", "x", now=later, client="2.2.2.2", policy=POLICY
+            )
+        assert sessions() == 1
+        accounts.sign_in(conn, "n@example.com", GOOD, now=later, client="1.1.1.1", policy=POLICY)
+        assert sessions() == 1  # the expired one is gone; only the new one remains
+
     def test_secrets_never_reach_audit_rows(self, conn: psycopg.Connection) -> None:
         account = accounts.create_account(
             conn, email="n@example.com", name="Nadia Ferrand", subject="nadia", work_domains=DOMAINS

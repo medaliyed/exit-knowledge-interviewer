@@ -675,9 +675,6 @@ def sign_in(
     email_key, ip_key = _throttle_keys(address, client)
     refusal: SignInRefused | Throttled | None = None
     signed: Signed | None = None
-    # Housekeeping has its own transaction: never hold counter locks while pruning other accounts.
-    with conn.transaction():
-        prune(conn, now=now, policy=policy)
     with conn.transaction():
         _lock_throttle(conn, (("email", email_key), ("ip", ip_key)))
         account = _by_email(conn, address)
@@ -719,6 +716,11 @@ def sign_in(
     if refusal is not None:
         raise refusal
     assert signed is not None  # noqa: S101 - either a refusal or a session is produced
+    # Housekeeping runs only after a real sign-in, so unauthenticated requests cannot make
+    # it lock accounts and delete rows on every attempt. Its own transaction: no counter
+    # locks are held while other accounts are pruned.
+    with conn.transaction():
+        prune(conn, now=now, policy=policy)
     return signed
 
 
@@ -838,7 +840,9 @@ def change_password(
 
 
 def prune(conn: psycopg.Connection, *, now: datetime, policy: SessionPolicy | None = None) -> None:
-    """Drop expired sessions, used or expired links and old throttle rows. Runs on sign-in."""
+    """Drop expired sessions, used or expired links and old throttle rows.
+
+    Runs after each successful sign-in."""
     idle_before = now - policy.idle if policy is not None else datetime.min.replace(tzinfo=UTC)
     expired = conn.execute(
         "SELECT a.id, a.subject FROM accounts a WHERE EXISTS "

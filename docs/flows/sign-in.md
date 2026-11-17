@@ -126,7 +126,7 @@ proxies cannot choose their counter by sending the header.
 Authentication audit is run-less and metadata only: operation, phase, account
 UUID and stable subject where known. No email, password, raw link, session ID
 or IP is included. Local operators page it with `eki audit --auth`; no browser
-authentication-audit route is exposed. Sign-in maintenance prunes expired
+authentication-audit route is exposed. Each successful sign-in prunes expired
 sessions, used/expired links and throttle rows older than twenty-four hours.
 
 `tests/test_accounts.py`, `tests/test_users_cli.py` and the authentication API
